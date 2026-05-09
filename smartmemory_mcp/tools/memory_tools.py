@@ -239,7 +239,8 @@ def register_free(mcp):
         multi_hop: bool = False,
         max_hops: int = 3,
         budget_ms: int = 1500,
-    ) -> str:
+        cite: bool = False,
+    ):
         """Search memories using semantic similarity with optional hybrid mode."""
         backend = get_backend()
         # SELF-IMPROVE-6 fix: pass actual top_k, not 3x over-fetch.
@@ -267,7 +268,27 @@ def register_free(mcp):
         results = results[:top_k]
 
         if not results:
+            if cite:
+                # RECALL-CITATIONS-1: distinguish "no results" from "no citations requested"
+                return {
+                    "items": [],
+                    "footnote_block": "",
+                    "citations": [],
+                    "message": f"No results found for query: {query}",
+                }
             return f"No results found for query: {query}"
+
+        # RECALL-CITATIONS-1: when cite=True, return structured payload with
+        # pre-formatted footnote_block ready for the consuming agent to paste.
+        if cite:
+            from smartmemory.search.citations import build_citations, build_footnote_block
+            citations = [c.to_dict() for c in build_citations(results)]
+            footnote_block = build_footnote_block(results)
+            return {
+                "items": list(results),
+                "citations": citations,
+                "footnote_block": footnote_block,
+            }
 
         # SELF-IMPROVE-6: capture search_session_id from backend (RemoteBackend stores it
         # on _last_search_session_id after reading the X-Search-Session-Id response header).
@@ -313,7 +334,7 @@ def register_free(mcp):
 
     @mcp.tool()
     @graceful
-    def memory_recall(query: str, session_id: Optional[str] = None, top_k: int = 5) -> str:
+    def memory_recall(query: str, session_id: Optional[str] = None, top_k: int = 5, cite: bool = False):
         """**Deprecated:** Use ``get_working_context``.
 
         Legacy surface kept for backward compatibility.  Internally
@@ -363,7 +384,22 @@ def register_free(mcp):
                 or (r.get("metadata") or {}).get("session_id", "") == session_id
             ]
 
-        return _format_recall(query, filtered[:top_k], session_id=session_id)
+        final = filtered[:top_k]
+
+        # RECALL-CITATIONS-1: structured response with footnote block when cite=True.
+        # Empty result set still returns citations=[] (never omitted) so consumers
+        # can distinguish "no results" from "no citations requested".
+        if cite:
+            from smartmemory.search.citations import build_citations, build_footnote_block
+            citations = [c.to_dict() for c in build_citations(final)]
+            return {
+                "items": final,
+                "citations": citations,
+                "footnote_block": build_footnote_block(final),
+                "session_id": session_id,
+            }
+
+        return _format_recall(query, final, session_id=session_id)
 
     @mcp.tool()
     @graceful
