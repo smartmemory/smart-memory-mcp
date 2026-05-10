@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (PLAT-PRE-PUSH-1, 2026-05-10)
+
+- **`scripts/hooks/pre-push`** — git pre-push hook that validates cross-repo Python imports against `origin/main` of sibling repos (`smart-memory-common`, `smart-memory-core`). Same hook code as `smart-memory-service` (vendored). Catches imports referencing symbols not yet on origin of the sibling.
+- **`scripts/install-git-hooks.sh`** — idempotent symlink installer.
+
 ### Added (RECALL-CITATIONS-1, 2026-05-10)
 
 - **`memory_recall` and `memory_search` accept `cite=True`** — when set, return a structured payload `{items, citations, footnote_block}` (recall also returns `session_id`) instead of the legacy formatted string. `footnote_block` is a markdown-footnote block ready for the consuming agent (Claude Code, Cursor, Codex) to paste verbatim into its reply, allowing inline `[^1]`/`[^2]`/`[^3]` references to SmartMemory items. Default shape (string output) unchanged when `cite=False`. Empty result set with `cite=True` returns `citations: []` and `footnote_block: ""` rather than omitting the fields, so consumers can distinguish "no results" from "no citations requested".

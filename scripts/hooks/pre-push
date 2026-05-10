@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""Pre-push hook: verify cross-repo Python imports resolve against origin/main of sibling repos.
+
+Catches the failure mode where a push to this repo introduces `from <sibling>.X import Y`
+referencing a symbol that exists in the local working copy of the sibling but not yet on
+the sibling's origin/main. Such pushes silently break CI (which checks out each repo at
+its remote-tracked state) while passing local dev.
+
+Usage: install via scripts/install-git-hooks.sh.
+Skip with `git push --no-verify` (DO NOT make a habit of it).
+"""
+
+from __future__ import annotations
+
+import ast
+import subprocess
+import sys
+from pathlib import Path
+
+# Module-name prefix → sibling repo path relative to this repo's root.
+SIBLING_REPOS = {
+    "service_common": "../smart-memory-common",
+    "smartmemory": "../smart-memory-core",
+}
+
+# Source dirs to inspect (production code; skip tests/scripts/venvs).
+PRODUCTION_DIRS = ("memory_service", "smartmemory_mcp")
+SKIP_PATH_PARTS = {"tests", "test", "scripts", ".git", "__pycache__", ".venv", "venv", "build", "dist"}
+
+
+def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> str:
+    return subprocess.check_output(cmd, cwd=cwd, stderr=subprocess.DEVNULL).decode()
+
+
+def repo_root() -> Path:
+    return Path(run(["git", "rev-parse", "--show-toplevel"]).strip())
+
+
+def files_changed_in_push(root: Path) -> list[Path]:
+    """Python files that differ between local HEAD and origin/main."""
+    try:
+        out = run(["git", "diff", "--name-only", "origin/main..HEAD", "--", "*.py"], cwd=root)
+    except subprocess.CalledProcessError:
+        return []
+    paths = []
+    for line in out.splitlines():
+        p = root / line.strip()
+        if any(part in SKIP_PATH_PARTS for part in p.parts):
+            continue
+        if PRODUCTION_DIRS and not any(part in PRODUCTION_DIRS for part in p.parts):
+            continue
+        if p.exists():
+            paths.append(p)
+    return paths
+
+
+def imports_from_file(path: Path) -> list[tuple[str, str]]:
+    try:
+        tree = ast.parse(path.read_text())
+    except (SyntaxError, UnicodeDecodeError):
+        return []
+    out = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            for alias in node.names:
+                if alias.name == "*":
+                    continue  # wildcard imports can't be validated
+                out.append((node.module, alias.name))
+    return out
+
+
+def fetch_origin(sibling: Path) -> bool:
+    try:
+        run(["git", "-C", str(sibling), "fetch", "origin", "main", "--quiet"])
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def symbol_exists_at_origin(sibling: Path, module: str, name: str) -> bool | None:
+    """Returns True/False if module file found, None if module file not at origin/main."""
+    parts = module.split(".")
+    candidates = ["/".join(parts) + ".py", "/".join(parts) + "/__init__.py"]
+    for relpath in candidates:
+        try:
+            content = run(["git", "-C", str(sibling), "show", f"origin/main:{relpath}"])
+        except subprocess.CalledProcessError:
+            continue
+        try:
+            tree = ast.parse(content)
+        except SyntaxError:
+            return True  # parse failure: be lenient, let CI catch it
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == name:
+                return True
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == name:
+                        return True
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == name:
+                return True
+            if isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    if (alias.asname or alias.name) == name:
+                        return True
+        return False
+    return None  # module not found at origin
+
+
+def main() -> int:
+    root = repo_root()
+    changed = files_changed_in_push(root)
+    if not changed:
+        return 0  # nothing to validate
+
+    failures: list[tuple[Path, str, str, Path]] = []
+    skipped: list[str] = []
+
+    for prefix, sib_relpath in SIBLING_REPOS.items():
+        sibling = (root / sib_relpath).resolve()
+        if not sibling.exists():
+            skipped.append(f"  {prefix}: sibling not checked out at {sib_relpath}")
+            continue
+        if not fetch_origin(sibling):
+            skipped.append(f"  {prefix}: could not fetch origin/main from {sib_relpath} (offline?)")
+            continue
+
+        for py_file in changed:
+            for module, name in imports_from_file(py_file):
+                if not module.split(".")[0] == prefix:
+                    continue
+                exists = symbol_exists_at_origin(sibling, module, name)
+                if exists is False:
+                    failures.append((py_file, module, name, sibling))
+                # exists is None (module file missing) is also a failure
+                elif exists is None:
+                    failures.append((py_file, module, name, sibling))
+
+    if skipped:
+        print("\n[pre-push] Cross-repo checks partially skipped:", file=sys.stderr)
+        for line in skipped:
+            print(line, file=sys.stderr)
+
+    if failures:
+        print("\n\033[31m[pre-push] BLOCKED: cross-repo imports will fail in CI\033[0m\n", file=sys.stderr)
+        print("These imports reference symbols not yet on origin/main of sibling repos:\n", file=sys.stderr)
+        for py_file, module, name, sibling in failures:
+            try:
+                rel = py_file.relative_to(root)
+            except ValueError:
+                rel = py_file
+            sib_name = sibling.name
+            print(f"  {rel}", file=sys.stderr)
+            print(f"    from {module} import {name}", file=sys.stderr)
+            print(f"    └─ not found in {sib_name}@origin/main\n", file=sys.stderr)
+        print("Fix: push the sibling repo first, or revert the new dependency.", file=sys.stderr)
+        print("Bypass (last resort): git push --no-verify\n", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
