@@ -89,13 +89,17 @@ def register(mcp):
         agent_id: str,
         dimension: str,
         domain: str,
-    ) -> str:
+    ) -> Optional[Dict]:
         """Get the current evaluation score for an agent on a given (dimension, domain) slot.
 
         CORE-AGENT-2 S03-T9. No tenant_id — matches agent_*_recall_profile sibling
         convention in the standalone MCP repo (Codex Round-2 F5 / OQ2-bis).
 
-        Returns the current evaluation as JSON, or a cold-start message.
+        Returns the current evaluation dict, or None when no evaluation has been
+        written yet (cold-start).
+
+        Returns raw dict | None per evaluation-contract.json §mcp_tools — NOT
+        a formatted string. Cross-slice Codex review must-fix.
 
         dimension: one of decision_volume, supersession_rate, confidence_trajectory,
                    reinforcement_balance.
@@ -104,11 +108,4 @@ def register(mcp):
         from smartmemory.agents.evaluation import get_evaluation as _get_evaluation
 
         backend = get_backend()
-        evaluation = _get_evaluation(backend, agent_id, dimension, domain)
-        if evaluation is None:
-            return (
-                f"No evaluation for agent {agent_id}, dimension={dimension}, "
-                f"domain={domain}. Run an evolution cycle first."
-            )
-        import json as _json
-        return f"Evaluation for {agent_id} [{dimension}/{domain}]: {_json.dumps(evaluation, indent=2)}"
+        return _get_evaluation(backend, agent_id, dimension, domain)
