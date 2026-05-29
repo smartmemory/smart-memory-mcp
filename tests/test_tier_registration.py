@@ -116,19 +116,19 @@ class TestToolRegistration:
         assert data["names"] == FREE_TOOLS
 
     def test_pro_tier_tool_count(self):
-        """PRO tier registers exactly 52 tools."""
+        """PRO tier registers exactly 57 tools."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
         data = _run_snippet(env)
-        assert data["count"] == 52, f"Expected 52 PRO tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 57, f"Expected 57 PRO tools, got {data['count']}: {data['names']}"
         # Verify FREE tools are a subset of PRO tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
 
     def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 83 tools."""
+        """PRO_PLUS tier registers exactly 88 tools."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true")
         data = _run_snippet(env)
-        assert data["count"] == 83, f"Expected 83 PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 88, f"Expected 88 PRO_PLUS tools, got {data['count']}: {data['names']}"
         # Verify FREE tools are a subset of PRO_PLUS tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO_PLUS tier"
