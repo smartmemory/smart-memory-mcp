@@ -118,6 +118,7 @@ def _register_tools():
         from smartmemory_mcp.tools import (
             decision_tools,
             code_tools,
+            graph_tools,
             anchor_tools,
             plan_tools,
             agent_tools,
@@ -127,6 +128,7 @@ def _register_tools():
 
         decision_tools.register(mcp)
         code_tools.register(mcp)
+        graph_tools.register(mcp)
         anchor_tools.register(mcp)
         plan_tools.register(mcp)
         agent_tools.register(mcp)
