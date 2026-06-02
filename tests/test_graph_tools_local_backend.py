@@ -48,12 +48,13 @@ def _tool():
 class _Report:
     """Stands in for smartmemory.graph.alias_resolution.AliasResolveReport — same to_dict()."""
 
-    def __init__(self, resolved, abstained, redirected_edges, ambiguous, dry_run):
+    def __init__(self, resolved, abstained, redirected_edges, ambiguous, dry_run, disambiguated=0):
         self._d = {
             "resolved": resolved,
             "abstained": abstained,
             "redirected_edges": redirected_edges,
             "ambiguous": list(ambiguous),
+            "disambiguated": disambiguated,
             "dry_run": dry_run,
         }
 
@@ -68,9 +69,10 @@ class _SmartMemory:
         self._report = report
         self.calls: list[dict] = []
 
-    def resolve_aliases(self, workspace_id=None, dry_run=False):
-        # Forcing function: the tool must NOT pass workspace_id (scope from auth).
-        self.calls.append({"workspace_id": workspace_id, "dry_run": dry_run})
+    def resolve_aliases(self, workspace_id=None, dry_run=False, disambiguate=False):
+        # Forcing function: the tool must NOT pass workspace_id (scope from auth). Signature MIRRORS the
+        # real SmartMemory.resolve_aliases (CORE-GRAPH-ALIAS-DISAMBIG-1 added the disambiguate kwarg).
+        self.calls.append({"workspace_id": workspace_id, "dry_run": dry_run, "disambiguate": disambiguate})
         return self._report
 
 
@@ -107,12 +109,27 @@ def test_local_calls_resolve_aliases_on_smart_memory_not_wrapper(monkeypatch):
     out = fn(dry_run=False)
 
     # Dispatched to the real SmartMemory with the right args, no workspace_id.
-    assert backend._mem.calls == [{"workspace_id": None, "dry_run": False}], (
-        f"must call _mem.resolve_aliases(dry_run=False) with no workspace_id; got {backend._mem.calls!r}"
+    assert backend._mem.calls == [{"workspace_id": None, "dry_run": False, "disambiguate": False}], (
+        f"must call _mem.resolve_aliases(dry_run=False, disambiguate=False) with no workspace_id; "
+        f"got {backend._mem.calls!r}"
     )
     assert isinstance(out, str)
     # Counts surfaced from AliasResolveReport.to_dict().
     assert "3 alias" in out and "abstained 1" in out and "7 edge" in out, out
+
+
+def test_local_threads_disambiguate_flag(monkeypatch):
+    """LOCAL: the opt-in disambiguate flag reaches the real SmartMemory and the recovered count is surfaced
+    (CORE-GRAPH-ALIAS-DISAMBIG-1) — the forcing function that the flag is actually threaded, not dropped."""
+    fn = _tool()
+    report = _Report(resolved=2, abstained=3, redirected_edges=4, ambiguous=["Hudson"], dry_run=False, disambiguated=1)
+    backend = _LocalBackend(report)
+
+    monkeypatch.setattr("smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend)
+    out = fn(disambiguate=True)
+
+    assert backend._mem.calls == [{"workspace_id": None, "dry_run": False, "disambiguate": True}], backend._mem.calls
+    assert "recovered by disambiguation" in out, out
     assert "Hudson" in out, f"abstained surface must be listed: {out!r}"
     assert "preview" not in out.lower() and "dry run" not in out.lower(), (
         f"a real run must not be labelled a preview: {out!r}"
@@ -128,7 +145,7 @@ def test_local_dry_run_is_a_preview_with_no_changes(monkeypatch):
     monkeypatch.setattr("smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend)
     out = fn(dry_run=True)
 
-    assert backend._mem.calls == [{"workspace_id": None, "dry_run": True}]
+    assert backend._mem.calls == [{"workspace_id": None, "dry_run": True, "disambiguate": False}]
     assert isinstance(out, str)
     low = out.lower()
     assert "preview" in low or "dry run" in low, f"dry run must be flagged: {out!r}"
@@ -250,7 +267,7 @@ def test_local_summary_follows_payload_dry_run_not_request_arg(monkeypatch):
     out = fn(dry_run=True)
 
     # The request flag is still forwarded to core (caller intent preserved)...
-    assert backend._mem.calls == [{"workspace_id": None, "dry_run": True}]
+    assert backend._mem.calls == [{"workspace_id": None, "dry_run": True, "disambiguate": False}]
     # ...but the summary trusts the payload: real run, no "no changes" claim.
     low = out.lower()
     assert "no change" not in low and "preview" not in low and "dry run" not in low, out

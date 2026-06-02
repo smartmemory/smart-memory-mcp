@@ -31,6 +31,7 @@ def _format_alias_report(data: dict) -> str:
     abstained = data.get("abstained", 0)
     redirected = data.get("redirected_edges", 0)
     ambiguous = data.get("ambiguous", []) or []
+    disambiguated = data.get("disambiguated", 0)
     dry_run = bool(data.get("dry_run", False))
 
     if dry_run:
@@ -44,6 +45,8 @@ def _format_alias_report(data: dict) -> str:
             f"on collision(s), redirected {redirected} edge(s)"
         )
 
+    if disambiguated:
+        lead += f" (incl. {disambiguated} recovered by disambiguation)"
     if ambiguous:
         lead += f" [ambiguous: {', '.join(str(a) for a in ambiguous)}]"
     return lead + "."
@@ -54,7 +57,7 @@ def register(mcp):
 
     @mcp.tool()
     @graceful
-    def memory_resolve_aliases(dry_run: bool = False) -> str:
+    def memory_resolve_aliases(dry_run: bool = False, disambiguate: bool = False) -> str:
         """Consolidate fragmented entity aliases over the workspace graph.
 
         Merges each unambiguous single-token alias node (e.g. "Hudson") into its
@@ -65,14 +68,20 @@ def register(mcp):
 
         Args:
             dry_run: If True, report the resolve/abstain plan without mutating the graph.
+            disambiguate: Opt-in (CORE-GRAPH-ALIAS-DISAMBIG-1, default False). Additionally recover
+                colliding surfaces by structural typed-neighbor overlap — merge only on a confident,
+                clear winner, else keep abstaining (never mis-merge). Extractor-dependent; helps
+                LLM-extracted graphs.
         """
         backend = get_backend()
 
-        # Try REST endpoint first (RemoteBackend) — dry_run is a QUERY parameter.
+        # Try REST endpoint first (RemoteBackend) — dry_run/disambiguate are QUERY parameters.
         if hasattr(backend, "request"):
             params: dict = {}
             if dry_run:
                 params["dry_run"] = "true"
+            if disambiguate:
+                params["disambiguate"] = "true"
             result = backend.request(
                 "POST", "/memory/graph/resolve-aliases", params=params or None
             )
@@ -91,6 +100,6 @@ def register(mcp):
                 "Alias resolution requires the local backend (smartmemory package) "
                 "or the remote REST API."
             )
-        report = mem.resolve_aliases(dry_run=dry_run)
+        report = mem.resolve_aliases(dry_run=dry_run, disambiguate=disambiguate)
         data = report.to_dict() if hasattr(report, "to_dict") else dict(report)
         return _format_alias_report(data)

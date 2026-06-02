@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (CORE-GRAPH-ALIAS-DISAMBIG-1, 2026-06-03) — `disambiguate` arg (0.2.4)
+- `memory_resolve_aliases(dry_run=False, disambiguate=False)` threads the opt-in collision-disambiguation
+  flag (default off) through both the REST and local-backend paths; the summary notes how many collisions
+  were recovered. Contract: `docs/features/CORE-GRAPH-ALIAS-DISAMBIG-1/disambiguate-contract.json`.
+
 ### Added (CORE-GRAPH-ALIAS-RESOLVE-2 B2, 2026-06-02)
 
 - **`memory_resolve_aliases(dry_run=False)`** (PRO tier) — graph-maintenance tool that consolidates fragmented single-token entity aliases ("Hudson") into their multi-token canonical ("Rock Hudson") over the COMPLETE workspace graph, redirecting the alias's edges onto the canonical and abstaining on collisions. Run after a bulk ingest, when the full ambiguity picture is present. New module `smartmemory_mcp/tools/graph_tools.py`, registered in the PRO block of `_register_tools()`. Dispatch mirrors `code_tools` exactly: REMOTE (`hasattr(backend, "request")`) POSTs `/memory/graph/resolve-aliases` with `dry_run` as a **query parameter** (`?dry_run=true`, lowercase string per the `clear_user_memories` `nuclear` precedent); LOCAL calls `backend._mem.resolve_aliases(dry_run=...)` on the real SmartMemory (never the MCP wrapper, never passing `workspace_id` — scope derives from auth) and consumes `AliasResolveReport.to_dict()`. Returns an agent-readable summary (resolved / abstained / redirected-edges / ambiguous list); a dry run is clearly flagged as a no-change preview. Forcing-function tests in `tests/test_graph_tools_local_backend.py` (6) cover both branches, the dry-run preview wording, the no-`_mem` refusal, and the error-dict path. PRO tier count 57→58, PRO+ 88→89 (`tests/test_tier_registration.py`). Contract: `smart-memory-docs/docs/features/CORE-GRAPH-ALIAS-RESOLVE-2/resolve-aliases-contract.json`. Bump 0.2.3.
