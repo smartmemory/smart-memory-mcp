@@ -10,7 +10,6 @@ is to copy that pattern. Lock the contract via a forcing-function test.
 
 from __future__ import annotations
 
-from typing import Optional
 from unittest.mock import patch
 
 
@@ -24,6 +23,7 @@ class _FakeMCP:
         def decorator(fn):
             self.tools[fn.__name__] = fn
             return fn
+
         return decorator
 
 
@@ -32,6 +32,7 @@ class TestAgentEvaluationGetReturnType:
 
     def _register(self):
         from smartmemory_mcp.tools import agent_tools
+
         mcp = _FakeMCP()
         agent_tools.register(mcp)
         assert "agent_evaluation_get" in mcp.tools, (
@@ -42,6 +43,7 @@ class TestAgentEvaluationGetReturnType:
     def test_signature_returns_optional_dict(self):
         """Annotated return type must be Optional[Dict] / dict | None — NOT str."""
         import typing
+
         fn = self._register()
         hints = typing.get_type_hints(fn)
         ret = hints.get("return")
@@ -58,36 +60,45 @@ class TestAgentEvaluationGetReturnType:
             f"got {ret!r}"
         )
 
-    def test_cold_start_returns_none(self):
-        """When the underlying get_evaluation returns None, the MCP tool
-        must propagate None (NOT 'no evaluation found' string).
-        """
-        fn = self._register()
+    @staticmethod
+    def _local_backend():
+        """A local-mode backend stand-in: exposes `_mem` (the real SmartMemory
+        in production). The 2026-06-02 bug hunt found the tool passed the MCP
+        backend WRAPPER to get_evaluation (which has no graph) so it ALWAYS
+        returned None; the fix passes `backend._mem`."""
 
-        with patch("smartmemory_mcp.tools.agent_tools.get_backend") as gb, \
-             patch("smartmemory.agents.evaluation.get_evaluation") as ge:
-            gb.return_value = object()  # backend stand-in
+        class _LocalBackend:
+            _mem = object()  # stands in for the real SmartMemory
+
+        return _LocalBackend()
+
+    def test_cold_start_returns_none(self):
+        """Local backend present, get_evaluation returns None (cold-start) ->
+        the tool propagates None (NOT a 'no evaluation found' string), and it
+        passed the SmartMemory (backend._mem), not the wrapper."""
+        fn = self._register()
+        backend = self._local_backend()
+
+        with (
+            patch("smartmemory_mcp.tools.agent_tools.get_backend") as gb,
+            patch("smartmemory.agents.evaluation.get_evaluation") as ge,
+        ):
+            gb.return_value = backend
             ge.return_value = None
 
-            result = fn(
-                agent_id="alpha",
-                dimension="decision_volume",
-                domain="python",
-            )
+            result = fn(agent_id="alpha", dimension="decision_volume", domain="python")
 
-        assert result is None, (
-            f"agent_evaluation_get must return None on cold-start, got {result!r} "
-            f"(type {type(result).__name__})"
-        )
-        assert not isinstance(result, str), (
-            "agent_evaluation_get returned a string on cold-start — contract violation"
+        assert result is None
+        assert not isinstance(result, str)
+        assert ge.call_args[0][0] is backend._mem, (
+            "must pass backend._mem (SmartMemory), not the wrapper"
         )
 
     def test_hot_path_returns_dict(self):
-        """When the underlying get_evaluation returns a dict, MCP tool
-        propagates it as a dict (NOT a json.dumps string).
-        """
+        """get_evaluation returns a dict -> propagated as a dict, and it received
+        backend._mem (the SmartMemory), not the MCP wrapper (the always-None bug)."""
         fn = self._register()
+        backend = self._local_backend()
         canned = {
             "evaluation_id": "alpha/decision_volume/python/2026-05-24",
             "agent_id": "alpha",
@@ -102,20 +113,34 @@ class TestAgentEvaluationGetReturnType:
             "recorded_at": "2026-05-24T00:00:00+00:00",
             "evaluator": "EvaluationEvolver/v1",
         }
-        with patch("smartmemory_mcp.tools.agent_tools.get_backend") as gb, \
-             patch("smartmemory.agents.evaluation.get_evaluation") as ge:
-            gb.return_value = object()
+        with (
+            patch("smartmemory_mcp.tools.agent_tools.get_backend") as gb,
+            patch("smartmemory.agents.evaluation.get_evaluation") as ge,
+        ):
+            gb.return_value = backend
             ge.return_value = canned
 
-            result = fn(
-                agent_id="alpha",
-                dimension="decision_volume",
-                domain="python",
-            )
+            result = fn(agent_id="alpha", dimension="decision_volume", domain="python")
 
         assert isinstance(result, dict), (
             f"agent_evaluation_get must return dict, got {type(result).__name__}: {result!r}"
         )
-        # Verify shape passes through unchanged (no stringification)
         assert result["dimension"] == "decision_volume"
         assert result["score"] == 0.75
+        # Forcing function for the bug: the SmartMemory (backend._mem) is passed.
+        assert ge.call_args[0][0] is backend._mem, (
+            "must pass backend._mem (SmartMemory), not the wrapper"
+        )
+
+    def test_remote_mode_returns_none_without_calling_get_evaluation(self):
+        """Remote backend has no `_mem` -> tool returns None and never calls
+        get_evaluation client-side (remote eval read is a follow-on)."""
+        fn = self._register()
+        with (
+            patch("smartmemory_mcp.tools.agent_tools.get_backend") as gb,
+            patch("smartmemory.agents.evaluation.get_evaluation") as ge,
+        ):
+            gb.return_value = object()  # remote-mode stand-in: no _mem
+            result = fn(agent_id="alpha", dimension="decision_volume", domain="python")
+        assert result is None
+        ge.assert_not_called()

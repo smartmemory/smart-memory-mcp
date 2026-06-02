@@ -7,6 +7,26 @@ from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
 
+_REMOTE_DECISION_MSG = (
+    "Decision tools require the local backend (smartmemory package). The managed "
+    "decision type needs a real SmartMemory instance, which the remote MCP backend "
+    "cannot provide; remote decision support is not yet implemented."
+)
+
+
+def _local_sm():
+    """Return the local SmartMemory backing the MCP backend, or None in remote mode.
+
+    Managed-type Managers/Queries (``DecisionManager``/``DecisionQueries``) call
+    ``sm.add(MemoryItem)``, ``sm.get``, and ``sm._graph``. The MCP ``LocalBackend``
+    wrapper's ``add(content: str, ...)`` would receive a MemoryItem as ``content``
+    and silently re-wrap it — losing decision_type/confidence/rationale and the
+    deterministic id, storing a semantic node — while its missing ``_graph`` makes
+    every read return nothing. So pass the real SmartMemory (``backend._mem``), not
+    the wrapper. (2026-06-02 bug hunt: CRITICAL silent data-loss in local mode.)
+    """
+    return getattr(get_backend(), "_mem", None)
+
 
 def register(mcp):
     """Register decision tools with the MCP server (10 tools)."""
@@ -33,8 +53,10 @@ def register(mcp):
         try:
             from smartmemory.decisions.manager import DecisionManager
 
-            backend = get_backend()
-            manager = DecisionManager(backend)
+            sm = _local_sm()
+            if sm is None:
+                return _REMOTE_DECISION_MSG
+            manager = DecisionManager(sm)
             decision = manager.create(
                 content=content,
                 decision_type=decision_type,
@@ -71,8 +93,10 @@ def register(mcp):
         try:
             from smartmemory.decisions.manager import DecisionManager
 
-            backend = get_backend()
-            manager = DecisionManager(backend)
+            sm = _local_sm()
+            if sm is None:
+                return _REMOTE_DECISION_MSG
+            manager = DecisionManager(sm)
             decision = manager.get_decision(decision_id)
 
             if not decision:
@@ -95,8 +119,10 @@ def register(mcp):
         try:
             from smartmemory.decisions.queries import DecisionQueries
 
-            backend = get_backend()
-            queries = DecisionQueries(backend)
+            sm = _local_sm()
+            if sm is None:
+                return _REMOTE_DECISION_MSG
+            queries = DecisionQueries(sm)
             decisions = queries.get_active_decisions(
                 domain=domain,
                 decision_type=decision_type,
@@ -125,8 +151,10 @@ def register(mcp):
         try:
             from smartmemory.decisions.queries import DecisionQueries
 
-            backend = get_backend()
-            queries = DecisionQueries(backend)
+            sm = _local_sm()
+            if sm is None:
+                return _REMOTE_DECISION_MSG
+            queries = DecisionQueries(sm)
             decisions = queries.get_decisions_about(topic=topic, limit=limit)
 
             if not decisions:
@@ -157,8 +185,10 @@ def register(mcp):
             from smartmemory.decisions.manager import DecisionManager
             from smartmemory.models.decision import Decision
 
-            backend = get_backend()
-            manager = DecisionManager(backend)
+            sm = _local_sm()
+            if sm is None:
+                return _REMOTE_DECISION_MSG
+            manager = DecisionManager(sm)
             new_decision = Decision(
                 content=new_content,
                 decision_type=new_decision_type,
@@ -180,8 +210,10 @@ def register(mcp):
         try:
             from smartmemory.decisions.manager import DecisionManager
 
-            backend = get_backend()
-            manager = DecisionManager(backend)
+            sm = _local_sm()
+            if sm is None:
+                return _REMOTE_DECISION_MSG
+            manager = DecisionManager(sm)
             manager.retract(decision_id, reason=reason)
             return f"Decision retracted: {decision_id}"
         except ValueError as e:
@@ -197,8 +229,10 @@ def register(mcp):
         try:
             from smartmemory.decisions.manager import DecisionManager
 
-            backend = get_backend()
-            manager = DecisionManager(backend)
+            sm = _local_sm()
+            if sm is None:
+                return _REMOTE_DECISION_MSG
+            manager = DecisionManager(sm)
             decision = manager.reinforce(decision_id, evidence_id)
 
             return (
@@ -219,8 +253,10 @@ def register(mcp):
         try:
             from smartmemory.decisions.manager import DecisionManager
 
-            backend = get_backend()
-            manager = DecisionManager(backend)
+            sm = _local_sm()
+            if sm is None:
+                return _REMOTE_DECISION_MSG
+            manager = DecisionManager(sm)
             decision = manager.contradict(decision_id, evidence_id)
 
             return (
@@ -241,8 +277,10 @@ def register(mcp):
         try:
             from smartmemory.decisions.queries import DecisionQueries
 
-            backend = get_backend()
-            queries = DecisionQueries(backend)
+            sm = _local_sm()
+            if sm is None:
+                return _REMOTE_DECISION_MSG
+            queries = DecisionQueries(sm)
             provenance = queries.get_decision_provenance(decision_id)
 
             if provenance["decision"] is None:
@@ -268,8 +306,10 @@ def register(mcp):
         try:
             from smartmemory.decisions.manager import DecisionManager
 
-            backend = get_backend()
-            manager = DecisionManager(backend)
+            sm = _local_sm()
+            if sm is None:
+                return _REMOTE_DECISION_MSG
+            manager = DecisionManager(sm)
             decision = manager.get_decision(decision_id)
 
             if not decision:
@@ -282,7 +322,9 @@ def register(mcp):
 
             output = [f"Found {len(conflicts)} conflicts for {decision_id}:\n"]
             for c in conflicts:
-                output.append(f"- [{c.decision_id}] ({c.decision_type}): {c.content[:100]}")
+                output.append(
+                    f"- [{c.decision_id}] ({c.decision_type}): {c.content[:100]}"
+                )
             return "\n".join(output)
         except Exception as e:
             logger.error(f"Failed to find conflicts: {e}", exc_info=True)

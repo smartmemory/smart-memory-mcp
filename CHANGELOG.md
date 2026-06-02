@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (bug-hunt 2026-06-02) — managed-type & evaluation tools passed the wrong object in local mode
+- **CRITICAL — decision tools silently corrupted data in local mode.** All 10 `decision_*`
+  tools built `DecisionManager`/`DecisionQueries` from the MCP backend *wrapper*. The managed
+  framework then called `LocalBackend.add(memory_item)` — signature `add(content: str, ...)` —
+  so the `MemoryItem` was received as `content` and re-wrapped: decision_type/confidence/
+  rationale/item_id discarded, stored as a semantic node, unreadable afterward, while the tool
+  reported success. Now resolve the real SmartMemory via `backend._mem` (new `_local_sm` helper);
+  in remote mode (no `_mem`) refuse with a clear message instead of corrupting data.
+- **`agent_evaluation_get` always returned None.** It passed the wrapper to `get_evaluation`,
+  which reads from the graph the wrapper doesn't expose. Now passes `backend._mem`; remote mode
+  returns None without a client-side read (follow-on).
+- Forcing-function tests: `tests/test_decision_tools_local_backend.py` (3) and an updated
+  `tests/test_agent_evaluation_get_contract.py` assert the SmartMemory (`backend._mem`) is used,
+  not the wrapper, and that remote mode refuses/returns-None rather than corrupting. Bump 0.2.2.
+
 ### Added (CORE-ADHERENCE-1, 2026-05-29)
 
 - **`memory_get_violation_patterns(rule_id?, rule_type="feedback", memory_dir?)`** (PRO tier) — returns the `## Detection patterns` catalog parsed from local `{rule_type}_*.md` rule files via `smartmemory.adherence.load_rule_patterns`. Filesystem-backed (resolves `memory_dir` arg → `SMARTMEMORY_RULES_DIR` env); unlike `pattern_query`/`pattern_get`/`pattern_list` it does **not** read the graph backend. Harnesses fetch this once per session to run their own pre-response adherence check. A missing/invalid directory returns a path-specific explanatory string, never a silently-empty list.

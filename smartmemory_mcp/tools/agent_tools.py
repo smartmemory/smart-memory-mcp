@@ -9,7 +9,6 @@ from .common import get_backend, graceful
 logger = logging.getLogger(__name__)
 
 
-
 def register(mcp):
     """Register agent recall profile tools with the MCP server."""
 
@@ -25,14 +24,18 @@ def register(mcp):
         if memory_type_weights:
             for k, v in memory_type_weights.items():
                 if not isinstance(v, (int, float)) or v < 0:
-                    return f"Error: weight for '{k}' must be non-negative number, got {v}"
+                    return (
+                        f"Error: weight for '{k}' must be non-negative number, got {v}"
+                    )
 
         profile = {"memory_type_weights": memory_type_weights or {}}
         content = json.dumps(profile)
 
         # Search for existing profile to update
-        existing = backend.search(f"recall profile {agent_id}", top_k=10, memory_type="procedural")
-        for item in (existing or []):
+        existing = backend.search(
+            f"recall profile {agent_id}", top_k=10, memory_type="procedural"
+        )
+        for item in existing or []:
             meta = item["metadata"]
             if meta.get("recall_profile") and meta.get("agent_id") == agent_id:
                 item_id = item["item_id"]
@@ -40,11 +43,18 @@ def register(mcp):
                     try:
                         backend.update(item_id, content=content)
                         if memory_type_weights:
-                            weight_str = ", ".join(f"{k}: {v}x" for k, v in memory_type_weights.items())
-                            return f"Recall profile updated for {agent_id}: {weight_str}"
+                            weight_str = ", ".join(
+                                f"{k}: {v}x" for k, v in memory_type_weights.items()
+                            )
+                            return (
+                                f"Recall profile updated for {agent_id}: {weight_str}"
+                            )
                         return f"Recall profile cleared for {agent_id}."
                     except Exception:
-                        logger.warning("Failed to update existing profile for %s, creating new", agent_id)
+                        logger.warning(
+                            "Failed to update existing profile for %s, creating new",
+                            agent_id,
+                        )
 
         # No existing profile found -- create new
         backend.add(
@@ -69,9 +79,11 @@ def register(mcp):
         """Get an agent's recall profile."""
         backend = get_backend()
 
-        results = backend.search(f"recall profile {agent_id}", top_k=10, memory_type="procedural")
+        results = backend.search(
+            f"recall profile {agent_id}", top_k=10, memory_type="procedural"
+        )
 
-        for item in (results or []):
+        for item in results or []:
             meta = item["metadata"]
             if meta.get("recall_profile") and meta.get("agent_id") == agent_id:
                 raw_content = item["content"]
@@ -108,4 +120,13 @@ def register(mcp):
         from smartmemory.agents.evaluation import get_evaluation as _get_evaluation
 
         backend = get_backend()
-        return _get_evaluation(backend, agent_id, dimension, domain)
+        sm = getattr(backend, "_mem", None)
+        if sm is None:
+            # Evaluations are read from the graph; passing the MCP backend wrapper
+            # (which has no SmartMemory/_graph) made get_evaluation ALWAYS return
+            # None (2026-06-02 bug hunt). Remote-mode client-side read is a follow-on.
+            logger.debug(
+                "agent_evaluation_get: no local SmartMemory (remote mode); returning None"
+            )
+            return None
+        return _get_evaluation(sm, agent_id, dimension, domain)
