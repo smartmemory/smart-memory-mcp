@@ -1,9 +1,9 @@
 """SmartMemory Unified MCP Server.
 
 Tiered tool registration:
-  FREE  (10 tools) — no login required
-  PRO   (47 tools) — after smartmemory login
-  PRO+  (78 tools) — PRO + SMARTMEMORY_MCP_FULL_TOOLS=true
+  FREE  (13 tools) — no login required
+  PRO   (58 tools) — after smartmemory login
+  PRO+  (89 tools) — PRO + SMARTMEMORY_MCP_FULL_TOOLS=true
 
 Backend is independent of tier:
   Local  — default, uses smartmemory package (pip install smartmemory)
