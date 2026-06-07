@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (DIST-LITE-QUIET-1, 2026-06-07) — local writes carry a real origin
+- `LocalBackend.add` tags writes `mcp:memory_add` and `LocalBackend.ingest` tags writes
+  `mcp:memory_ingest` (the `/remember` skill surface), so local MCP memories land as tier-2
+  recall+search-visible user content instead of `origin='unknown'` (tier 4, hidden). A
+  caller-supplied origin (e.g. an importer) is preserved; the `origin` convenience key is
+  not leaked into stored metadata.
+
 ### Added (CORE-GRAPH-ALIAS-DISAMBIG-1, 2026-06-03) — `disambiguate` arg (0.2.4)
 - `memory_resolve_aliases(dry_run=False, disambiguate=False)` threads the opt-in collision-disambiguation
   flag (default off) through both the REST and local-backend paths; the summary notes how many collisions

@@ -29,7 +29,12 @@ class LocalBackend:
     def add(self, content: str, memory_type: str = "semantic", metadata: dict | None = None, **kwargs: Any) -> str:
         """Store a memory item."""
         from smartmemory.models.memory_item import MemoryItem
-        item = MemoryItem(content=content, memory_type=memory_type, metadata=metadata or {})
+        # DIST-LITE-QUIET-1: attribute the write so it lands as tier-2 user content, not
+        # origin='unknown' (tier 4, hidden from recall+search). An explicit origin in
+        # metadata (e.g. an importer) wins; default to this producer.
+        meta = dict(metadata or {})
+        origin = meta.pop("origin", None) or kwargs.pop("origin", None) or "mcp:memory_add"
+        item = MemoryItem(content=content, memory_type=memory_type, metadata=meta, origin=origin)
         return self._mem.add(item)
 
     def get(self, item_id: str, **kwargs: Any) -> MemoryResult | None:
@@ -105,6 +110,10 @@ class LocalBackend:
         # storage.ingest() uses 'properties' not 'metadata'
         if "metadata" in kwargs:
             kwargs["properties"] = kwargs.pop("metadata")
+        # DIST-LITE-QUIET-1: attribute the write (the /remember skill + MCP memory_ingest
+        # surface) so it lands as tier-2 user content, not origin='unknown'. A caller-
+        # supplied origin is preserved.
+        kwargs.setdefault("origin", "mcp:memory_ingest")
         return ingest(content, memory_type, **kwargs)
 
     def recall(self, cwd: str | None = None, top_k: int = 10, **kwargs: Any) -> str:
