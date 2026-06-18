@@ -114,6 +114,7 @@ def test_resolve_requirement_calls_residuation():
         )
 
     assert captured["mem"] is backend._mem
+    assert captured["args"] == ("dec_123", "req_456", "mem_789")
     assert "req_456" in out
     assert "resolved" in out.lower()
 
@@ -153,5 +154,6 @@ def test_try_activate_calls_residuation():
         out = tools["decision_try_activate"](decision_id="dec_123")
 
     assert captured["mem"] is backend._mem
+    assert captured["decision_id"] == "dec_123"
     assert "dec_123" in out
     assert "activated" in out.lower()
