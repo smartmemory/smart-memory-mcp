@@ -1,7 +1,7 @@
 """Decision lifecycle MCP tools — create, query, supersede, retract, reinforce, contradict."""
 
 import logging
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from .common import get_backend, graceful
 
@@ -328,4 +328,78 @@ def register(mcp):
             return "\n".join(output)
         except Exception as e:
             logger.error(f"Failed to find conflicts: {e}", exc_info=True)
+            raise
+
+    @mcp.tool()
+    @graceful
+    def decision_create_pending(
+        content: str,
+        requirements: List[Dict[str, Any]],
+        domain: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+    ) -> str:
+        """Create a pending decision (GTM Acceptance Case) with unresolved requirements.
+
+        requirements: list of {description, requirement_type, query_hint?}. The
+        server assigns each requirement_id (req_<uuid8>); use those with
+        decision_resolve_requirement.
+        """
+        try:
+            sm = _local_sm()
+            if sm is None:
+                return _REMOTE_DECISION_MSG
+            from smartmemory.reasoning.residuation import ResiduationManager
+
+            residuation = ResiduationManager(sm)
+            decision = residuation.create_pending(
+                content=content, requirements=requirements, domain=domain, tags=tags or []
+            )
+            lines = [f"Pending decision created: {decision.decision_id}", f"Status: {decision.status}", "Requirements:"]
+            for r in decision.pending_requirements:
+                lines.append(f"  - {r.requirement_id}: {r.description} [{r.requirement_type}] resolved={r.resolved}")
+            return "\n".join(lines)
+        except Exception as e:
+            logger.error(f"Failed to create pending decision: {e}", exc_info=True)
+            raise
+
+    @mcp.tool()
+    @graceful
+    def decision_resolve_requirement(decision_id: str, requirement_id: str, memory_id: str) -> str:
+        """Mark a requirement on a pending decision resolved by a memory item."""
+        try:
+            sm = _local_sm()
+            if sm is None:
+                return _REMOTE_DECISION_MSG
+            from smartmemory.reasoning.residuation import ResiduationManager
+
+            residuation = ResiduationManager(sm)
+            ok = residuation.resolve_requirement(decision_id, requirement_id, memory_id)
+            return (
+                f"Requirement {requirement_id} resolved on {decision_id}"
+                if ok
+                else f"Requirement {requirement_id} NOT FOUND on {decision_id}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to resolve requirement: {e}", exc_info=True)
+            raise
+
+    @mcp.tool()
+    @graceful
+    def decision_try_activate(decision_id: str) -> str:
+        """Activate a pending decision if all requirements are resolved (no-op otherwise)."""
+        try:
+            sm = _local_sm()
+            if sm is None:
+                return _REMOTE_DECISION_MSG
+            from smartmemory.reasoning.residuation import ResiduationManager
+
+            residuation = ResiduationManager(sm)
+            activated = residuation.try_activate(decision_id)
+            return (
+                f"Decision {decision_id} activated (pending -> active)"
+                if activated
+                else f"Decision {decision_id} still pending (unresolved requirements remain)"
+            )
+        except Exception as e:
+            logger.error(f"Failed to activate pending decision: {e}", exc_info=True)
             raise
