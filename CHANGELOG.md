@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (CORE-RECALL-CENTERED-1 Phase 2, IDEA-441, 2026-06-22) — `read_around` tool
+- FREE-tier `read_around` MCP tool (`tools/memory_tools.py`) forwarding to `backend.read_around` (local + remote backends): given a matched conversation-chunk `item_id`, returns the char-budgeted centered window of the surrounding chunks plus a continue-cursor. Also corrected the pre-existing-stale PRO/PRO_PLUS tier-count assertions in `tests/test_tier_registration.py` to the true `read_around`-inclusive counts (FREE 13→14, PRO 58→62, PRO_PLUS 89→93; the +3 beyond read_around was prior committed drift).
+
 ### Changed (DIST-LITE-QUIET-1, 2026-06-07) — local writes carry a real origin
 - `LocalBackend.add` tags writes `mcp:memory_add` and `LocalBackend.ingest` tags writes
   `mcp:memory_ingest` (the `/remember` skill surface), so local MCP memories land as tier-2

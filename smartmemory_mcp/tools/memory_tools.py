@@ -427,6 +427,38 @@ def register_free(mcp):
 
     @mcp.tool()
     @graceful
+    def read_around(
+        item_id: str,
+        char_budget: int = 20000,
+        before_ratio: float = 0.3,
+        after_ratio: float = 0.7,
+        cursor: Optional[dict] = None,
+    ) -> dict:
+        """Auto-centered conversation read (CORE-RECALL-CENTERED-1 Phase 2).
+
+        Given a matched conversation-chunk ``item_id`` (from a recall hit's
+        ``conversation_handle``), return a char-budgeted ASYMMETRIC window of the
+        surrounding conversation chunks (~``before_ratio`` back / ``after_ratio``
+        forward; leftover spills to the other side) plus a continue-cursor — so a
+        caller pulls just the relevant slice of a long conversation into context
+        instead of the whole transcript. "Centered" is over neighbour 15-turn
+        chunks, not individual turns.
+
+        Returns ``{window_items, window_text, handle, continue_cursor:{prev_pos,
+        next_pos}, chars_used, char_budget}``. Pass a returned ``continue_cursor``
+        back as ``cursor`` to page further in one direction without overlap.
+        """
+        backend = get_backend()
+        return backend.read_around(
+            item_id,
+            char_budget=char_budget,
+            before_ratio=before_ratio,
+            after_ratio=after_ratio,
+            cursor=cursor,
+        )
+
+    @mcp.tool()
+    @graceful
     def memory_get(item_id: str) -> str:
         """Retrieve a memory item by ID with full content and metadata."""
         backend = get_backend()

@@ -151,6 +151,30 @@ class LocalBackend:
         )
         return asdict(response) if hasattr(response, "__dataclass_fields__") else response
 
+    def read_around(
+        self,
+        item_id: str,
+        char_budget: int = 20000,
+        before_ratio: float = 0.3,
+        after_ratio: float = 0.7,
+        cursor: dict | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Auto-centered conversation read via local SmartMemory (CORE-RECALL-CENTERED-1 P2).
+
+        Returns a char-budgeted asymmetric window of the conversation chunks
+        surrounding ``item_id``. Hard-truncates (raise_on_overflow=False) rather
+        than raising, so the MCP tool always returns a window.
+        """
+        return self._mem.read_around(
+            item_id,
+            char_budget=char_budget,
+            before_ratio=before_ratio,
+            after_ratio=after_ratio,
+            cursor=cursor,
+            raise_on_overflow=False,
+        )
+
     # -- Listing & Stats --
 
     def list_memories(self, limit: int = 100, offset: int = 0, **kwargs: Any) -> list[MemoryResult]:

@@ -104,31 +104,32 @@ FREE_TOOLS = sorted([
     "memory_auto",  # DIST-AGENT-HOOKS-1
     "memory_feedback",  # SELF-IMPROVE-* feedback surface
     "get_working_context",  # CORE-MEMORY-DYNAMICS-1 M1a
+    "read_around",  # CORE-RECALL-CENTERED-1 Phase 2
 ])
 
 
 class TestToolRegistration:
     def test_free_tier_tool_count(self):
-        """FREE tier registers exactly 13 tools."""
+        """FREE tier registers exactly 14 tools."""
         env = _clean_env()
         data = _run_snippet(env)
-        assert data["count"] == 13, f"Expected 13 FREE tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 14, f"Expected 14 FREE tools, got {data['count']}: {data['names']}"
         assert data["names"] == FREE_TOOLS
 
     def test_pro_tier_tool_count(self):
-        """PRO tier registers exactly 58 tools."""
+        """PRO tier registers exactly 62 tools."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
         data = _run_snippet(env)
-        assert data["count"] == 58, f"Expected 58 PRO tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 62, f"Expected 62 PRO tools, got {data['count']}: {data['names']}"
         # Verify FREE tools are a subset of PRO tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
 
     def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 89 tools."""
+        """PRO_PLUS tier registers exactly 93 tools."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true")
         data = _run_snippet(env)
-        assert data["count"] == 89, f"Expected 89 PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 93, f"Expected 93 PRO_PLUS tools, got {data['count']}: {data['names']}"
         # Verify FREE tools are a subset of PRO_PLUS tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO_PLUS tier"

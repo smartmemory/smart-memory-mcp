@@ -420,6 +420,26 @@ class RemoteBackend:
         """Not available in remote mode."""
         raise NotImplementedError("Not available in remote mode. Use local backend.")
 
+    def read_around(
+        self,
+        item_id: str,
+        char_budget: int = 20000,
+        before_ratio: float = 0.3,
+        after_ratio: float = 0.7,
+        cursor: dict | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """POST /memory/read-around — auto-centered conversation read (CORE-RECALL-CENTERED-1 P2)."""
+        body: dict[str, Any] = {
+            "item_id": item_id,
+            "char_budget": char_budget,
+            "before_ratio": before_ratio,
+            "after_ratio": after_ratio,
+        }
+        if cursor is not None:
+            body["cursor"] = cursor
+        return self._request("POST", "/memory/read-around", json=body)
+
     def find_shortest_path(self, source_id: str, target_id: str, **kwargs: Any) -> dict[str, Any]:
         """Not available in remote mode."""
         raise NotImplementedError("Not available in remote mode. Use local backend.")
