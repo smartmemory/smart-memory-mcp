@@ -102,6 +102,15 @@ class LocalBackend:
         """Search by metadata field."""
         return normalize_items(self._mem.search_by_metadata(metadata_key, metadata_value, top_k=top_k))
 
+    def blame_code(self, **kwargs: Any) -> dict[str, Any]:
+        """Code-provenance blame passthrough (CORE-CODE-PROVENANCE-1 Phase 2b).
+
+        Delegates to the in-process lite SmartMemory, which reads the same local
+        store the capture hook wrote to. Returns the forge-shaped BlameResult dict;
+        raises ValueError on a git error (the tool maps it to a graceful string).
+        """
+        return self._mem.blame_code(**kwargs)
+
     # -- Ingest & Recall --
 
     def ingest(self, content: str, memory_type: str = "episodic", **kwargs: Any) -> str:

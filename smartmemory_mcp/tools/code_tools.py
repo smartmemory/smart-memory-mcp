@@ -175,6 +175,75 @@ def register(mcp):
 
     @mcp.tool()
     @graceful
+    def code_blame(
+        commit: str = "",
+        file: str = "",
+        line: int = 0,
+        repo: str = "",
+        ref: str = "HEAD",
+        top_k: int = 5,
+    ) -> str:
+        """Which captured session authored this code? Given a git commit (or a
+        file + line) in a local repo, find the Claude Code / Codex session whose
+        edits structurally produced that code (CORE-CODE-PROVENANCE-1 Phase 2b).
+
+        Local-backend only: provenance is captured into the local store and git
+        runs against the local working tree. The hosted REST surface is Phase 2c.
+        """
+        if not repo:
+            return "Error: `repo` is required (path to the local git repository)."
+        if not commit and not (file and line):
+            return "Error: provide either `commit`, or both `file` and `line`."
+
+        backend = get_backend()
+        if hasattr(backend, "request"):
+            return "Provenance blame requires a local backend (the REST surface is Phase 2c)."
+
+        try:
+            res = backend.blame_code(
+                commit=commit or None,
+                file=file or None,
+                line=line or None,
+                repo=repo,
+                ref=ref,
+                top_k=top_k,
+            )
+        except ValueError as e:  # git error (unknown commit / not a repo / bad target)
+            return f"Error (git): {e}"
+
+        status = res.get("status")
+        matches = res.get("matches") or []
+        if status in {"no_indexable_content", "merge_no_direct_changes"}:
+            return f"No attributable code in target ({status})."
+        if not matches:
+            return "No captured session authored this code (no provenance match)."
+
+        target = res.get("query", {})
+        head = "Authoring session(s) for " + (
+            f"commit {target.get('commit', '')[:10]}" if target.get("commit")
+            else f"{target.get('file', '?')}:{target.get('line', '?')}"
+        )
+        if status == "no_clear_author":
+            head += "  [no clear author — candidates below]"
+        lines = [head + ":\n"]
+        for i, m in enumerate(matches, 1):
+            unconf = "  (repo-unconfirmed)" if m.get("repo_unconfirmed") else ""
+            cov = m.get("target_coverage")
+            cov_s = f"{cov:.0%}" if isinstance(cov, (int, float)) else "?"
+            surv = (m.get("survival") or {}).get("overall")
+            surv_s = f", survival {surv:.0%}" if isinstance(surv, (int, float)) else ""
+            lines.append(
+                f"{i}. [{m.get('source')}] session {m.get('session_id')}{unconf}\n"
+                f"   method={m.get('method')}  coverage={cov_s}{surv_s}\n"
+                f"   transcript: {m.get('source_path')}"
+            )
+        amb = res.get("ambiguous_spans") or []
+        if amb:
+            lines.append(f"\n{len(amb)} ambiguous span(s) (tied candidates).")
+        return "\n".join(lines)
+
+    @mcp.tool()
+    @graceful
     def code_dead_code(
         repo: str,
         exclude_decorators: Optional[str] = None,
