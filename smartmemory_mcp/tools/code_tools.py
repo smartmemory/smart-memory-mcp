@@ -1,6 +1,5 @@
 """Code indexing and search MCP tools."""
 
-import json
 import logging
 import os
 from typing import Any, Optional
@@ -8,6 +7,30 @@ from typing import Any, Optional
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
+
+# CORE-CODE-PROVENANCE-1 Phase 2c: the hosted REST surface is parked; provenance
+# blame + transcript read are local-only capabilities (the transcript JSONL and the
+# captured rows live on the developer's machine).
+_PARKED_MSG = (
+    "{cap} is a local capability; the hosted REST surface is parked "
+    "(CORE-CODE-PROVENANCE-1 Phase 2c). Run this against a local backend."
+)
+
+
+def _render_read_call(rh: dict) -> str:
+    """Format a copyable `code_read_transcript(...)` call from a blame match's
+    read_handle, so the user can chain blame -> read. Live CC (line_no None) carries
+    `locate={file, norm_hash}`; Codex / CC-import carries a real `line_no`."""
+    if not rh:
+        return "(read handle unavailable)"
+    parts = [f'source="{rh.get("source")}"', f'source_path="{rh.get("source_path")}"']
+    if rh.get("line_no") is not None:
+        parts.append(f'line_no={rh.get("line_no")}')
+    loc = rh.get("locate") or {}
+    if loc:
+        parts.append(f'file="{loc.get("file")}"')
+        parts.append(f'norm_hash="{loc.get("norm_hash")}"')
+    return "code_read_transcript(" + ", ".join(parts) + ")"
 
 
 def register(mcp):
@@ -197,7 +220,7 @@ def register(mcp):
 
         backend = get_backend()
         if hasattr(backend, "request"):
-            return "Provenance blame requires a local backend (the REST surface is Phase 2c)."
+            return _PARKED_MSG.format(cap="Provenance blame")
 
         try:
             res = backend.blame_code(
@@ -235,12 +258,79 @@ def register(mcp):
             lines.append(
                 f"{i}. [{m.get('source')}] session {m.get('session_id')}{unconf}\n"
                 f"   method={m.get('method')}  coverage={cov_s}{surv_s}\n"
-                f"   transcript: {m.get('source_path')}"
+                f"   transcript: {m.get('source_path')}\n"
+                f"   read: {_render_read_call(m.get('read_handle') or {})}"
             )
         amb = res.get("ambiguous_spans") or []
         if amb:
             lines.append(f"\n{len(amb)} ambiguous span(s) (tied candidates).")
         return "\n".join(lines)
+
+    @mcp.tool()
+    @graceful
+    def code_read_transcript(
+        source_path: str = "",
+        line_no: int = 0,
+        source: str = "cc",
+        file: str = "",
+        norm_hash: str = "",
+        char_budget: int = 20000,
+        next_line: int = 0,
+        prev_line: int = 0,
+    ) -> str:
+        """Read the conversation that authored a span of code (CORE-CODE-PROVENANCE-1
+        Phase 2c) — the *read* half of the blame->read chain. Copy the
+        `code_read_transcript(...)` call that `code_blame` prints for a match: it
+        renders a centered window of the authoring Claude Code / Codex transcript.
+
+        Local-backend only: the transcript JSONL lives on the developer's machine.
+        The hosted REST surface is parked. For live CC (no `line_no`), pass the
+        match's `file` + `norm_hash` so the authoring edit can be located. To page,
+        re-call with `next_line` (or `prev_line`) from the previous continue-cursor —
+        the window then extends directionally instead of recentering.
+        """
+        if not source_path:
+            return "Error: `source_path` is required (copy it from a code_blame read handle)."
+        if source not in ("cc", "codex"):
+            return f"Error: unknown source {source!r} (expected 'cc' or 'codex')."
+
+        backend = get_backend()
+        if hasattr(backend, "request"):
+            return _PARKED_MSG.format(cap="Transcript reading")
+
+        # Directional paging: a cursor makes center_over_rendered extend forward/back
+        # from the requested edge instead of recentering (the footer advertises this).
+        cursor = None
+        effective_line = line_no or None
+        if next_line:
+            cursor, effective_line = {"next_line": next_line}, next_line
+        elif prev_line:
+            cursor, effective_line = {"prev_line": prev_line}, prev_line
+
+        locate = {"file": file, "norm_hash": norm_hash} if (file and norm_hash) else None
+        try:
+            res = backend.read_transcript_centered(
+                source_path=source_path,
+                line_no=effective_line,
+                source=source,
+                locate=locate,
+                cursor=cursor,
+                char_budget=char_budget,
+            )
+        except (FileNotFoundError, OSError, ValueError) as e:
+            return f"Error: {e}"
+
+        handle = res.get("handle") or {}
+        cur = res.get("continue_cursor") or {}
+        head = (
+            f"Transcript [{handle.get('source')}] session {handle.get('session_id')} "
+            f"@ line {handle.get('line_no')}:"
+        )
+        footer = (
+            f"(continue: prev_line={cur.get('prev_line')}, next_line={cur.get('next_line')}; "
+            f"{res.get('chars_used')}/{res.get('char_budget')} chars)"
+        )
+        return f"{head}\n\n{res.get('window', '')}\n\n{footer}"
 
     @mcp.tool()
     @graceful

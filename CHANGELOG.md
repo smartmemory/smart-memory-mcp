@@ -9,8 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (CORE-CODE-PROVENANCE-1 Phase 2c, 2026-06-23) — `code_read_transcript` tool + `code_blame` chaining
+- New `code_read_transcript` MCP tool (`tools/code_tools.py`, local-backend only): the *read* half of the
+  blame→read chain. Given a `code_blame` match's read handle, renders a centered window of the authoring
+  Claude Code / Codex transcript (delegates to `SmartMemory.read_transcript_centered` via a new
+  `LocalBackend.read_transcript_centered` passthrough). For live CC it accepts `file` + `norm_hash` to locate
+  the authoring edit by content hash; `next_line`/`prev_line` page directionally.
+- **`code_blame` now emits a copyable read handle** per match — a ready-to-paste `code_read_transcript(...)`
+  call carrying `line_no` (Codex / CC-import) or `file`+`norm_hash` (live CC) — so the two tools chain.
+- **Remote-path wording corrected:** both `code_blame` and `code_read_transcript` now say the hosted REST
+  surface is *parked* (it is, as of 2c) rather than "the REST surface is Phase 2c" (which implied it was
+  coming). The capability is local-only.
+
 ### Added (CORE-CODE-PROVENANCE-1 Phase 2b, 2026-06-22) — `code_blame` tool
-- PRO-tier `code_blame` MCP tool (`tools/code_tools.py`): given a git commit (or file + line) in a local repo, returns the Claude Code / Codex session whose edits structurally authored that code, by a typed query over the persisted `code_provenance` rows (no transcript re-scan). Renders the authoring session(s) with method/coverage/survival and flags repo-unconfirmed leads. Local-backend only — a `LocalBackend.blame_code` passthrough delegates to the in-process lite `SmartMemory.blame_code`; the remote path returns a "Phase 2c" deferral message (the hosted REST surface is Phase 2c). `git_error` maps to a graceful string.
+- PRO-tier `code_blame` MCP tool (`tools/code_tools.py`): given a git commit (or file + line) in a local repo, returns the Claude Code / Codex session whose edits structurally authored that code, by a typed query over the persisted `code_provenance` rows (no transcript re-scan). Renders the authoring session(s) with method/coverage/survival and flags repo-unconfirmed leads. Local-backend only — a `LocalBackend.blame_code` passthrough delegates to the in-process lite `SmartMemory.blame_code`; the remote path returns a local-only/parked message (updated in Phase 2c — see above). `git_error` maps to a graceful string.
 
 ### Added (CORE-RECALL-CENTERED-1 Phase 2, IDEA-441, 2026-06-22) — `read_around` tool
 - FREE-tier `read_around` MCP tool (`tools/memory_tools.py`) forwarding to `backend.read_around` (local + remote backends): given a matched conversation-chunk `item_id`, returns the char-budgeted centered window of the surrounding chunks plus a continue-cursor. Also corrected the pre-existing-stale PRO/PRO_PLUS tier-count assertions in `tests/test_tier_registration.py` to the true `read_around`-inclusive counts (FREE 13→14, PRO 58→62, PRO_PLUS 89→93; the +3 beyond read_around was prior committed drift).

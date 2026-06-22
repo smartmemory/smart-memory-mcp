@@ -111,6 +111,15 @@ class LocalBackend:
         """
         return self._mem.blame_code(**kwargs)
 
+    def read_transcript_centered(self, **kwargs: Any) -> dict[str, Any]:
+        """Centered transcript-reader passthrough (CORE-CODE-PROVENANCE-1 Phase 2c).
+
+        The read half of the blame->read chain. Delegates to the in-process lite
+        SmartMemory, which reads the raw transcript JSONL on the local filesystem.
+        Local-only — the hosted REST surface is parked.
+        """
+        return self._mem.read_transcript_centered(**kwargs)
+
     # -- Ingest & Recall --
 
     def ingest(self, content: str, memory_type: str = "episodic", **kwargs: Any) -> str:

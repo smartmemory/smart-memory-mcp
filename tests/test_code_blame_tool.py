@@ -64,6 +64,10 @@ def _result(**ov):
                 "line_no": None, "handle": {}, "method": "exact", "score": 1.0, "jaccard": None,
                 "target_coverage": 1.0, "authored_spans": [], "survival": {"overall": 1.0, "by_file": []},
                 "evidence": [], "repo_unconfirmed": False,
+                "read_handle": {
+                    "source": "cc", "source_path": "/t/sess-A.jsonl", "session_id": "sess-A",
+                    "line_no": None, "locate": {"file": "auth.py", "norm_hash": "abc123"},
+                },
             }
         ],
         "ambiguous_spans": [],
@@ -87,11 +91,38 @@ def test_local_path_renders_matches():
     assert "survival 100%" in out
 
 
-def test_remote_path_defers_to_2c():
+def test_remote_path_is_parked():
     tool = _registered()["code_blame"]
     with patch("smartmemory_mcp.tools.code_tools.get_backend", return_value=_RemoteBackend()):
         out = tool(commit="abc1234567", repo="/r")
-    assert "Phase 2c" in out
+    low = out.lower()
+    # Phase 2c parks the hosted REST surface — the message says local-only/parked,
+    # not the old "the REST surface is Phase 2c" (which implied it was coming).
+    assert "local" in low and "parked" in low
+
+
+def test_local_path_emits_read_handle():
+    # The blame match must surface a copyable code_read_transcript(...) read handle so
+    # the user can chain to the reader — for live CC (line_no None) it carries locate.
+    tool = _registered()["code_blame"]
+    backend = _LocalBackend(result=_result())
+    with patch("smartmemory_mcp.tools.code_tools.get_backend", return_value=backend):
+        out = tool(commit="abc1234567", repo="/r")
+    assert "code_read_transcript(" in out
+    assert "norm_hash" in out  # live-CC match → locate{file,norm_hash} in the read call
+
+
+def test_real_line_read_handle_has_no_locate():
+    tool = _registered()["code_blame"]
+    m = _result()
+    m["matches"][0]["read_handle"] = {
+        "source": "codex", "source_path": "/t/r.jsonl", "session_id": "cs1", "line_no": 3,
+    }
+    backend = _LocalBackend(result=m)
+    with patch("smartmemory_mcp.tools.code_tools.get_backend", return_value=backend):
+        out = tool(commit="abc1234567", repo="/r")
+    assert "code_read_transcript(" in out and "line_no=3" in out
+    assert "norm_hash" not in out
 
 
 def test_git_error_is_graceful():
