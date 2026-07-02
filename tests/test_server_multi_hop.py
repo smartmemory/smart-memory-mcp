@@ -52,24 +52,45 @@ class TestServerMultiHop:
         assert search_kwargs["budget_ms"] == 1500
 
 
-class TestRemoteBackendMultiHop:
-    """Test that RemoteBackend.search() serializes multi-hop params."""
+class _SearchResponse:
+    """Minimal httpx.Response stand-in for RemoteBackend.search()."""
 
-    def test_remote_search_forwards_multi_hop(self):
-        from unittest.mock import MagicMock
+    status_code = 200
+    headers: dict = {}
+
+    def raise_for_status(self) -> None:
+        pass
+
+    def json(self):
+        return []
+
+
+class TestRemoteBackendMultiHop:
+    """Test that RemoteBackend.search() serializes multi-hop params.
+
+    search() posts via ``httpx.request`` directly (not ``self._request``), so we
+    patch that and capture the JSON body actually sent to the API.
+    """
+
+    def _backend_capturing(self, monkeypatch) -> tuple:
+        import smartmemory_mcp.backends.remote as remote_mod
         from smartmemory_mcp.backends.remote import RemoteBackend
 
-        backend = RemoteBackend.__new__(RemoteBackend)
-        backend._base_url = "http://test:9001"
-        backend._headers = {}
+        backend = RemoteBackend(api_url="http://test:9001", api_key="sk_test", team_id="ws-1")
+        # Skip the /auth/me bootstrap network call in _headers().
+        backend._session["_bootstrapped"] = True
 
-        captured_body = {}
+        captured_body: dict = {}
 
-        def mock_request(method, path, **kwargs):
+        def mock_request(method, url, **kwargs):
             captured_body.update(kwargs.get("json", {}))
-            return []
+            return _SearchResponse()
 
-        backend._request = mock_request
+        monkeypatch.setattr(remote_mod.httpx, "request", mock_request)
+        return backend, captured_body
+
+    def test_remote_search_forwards_multi_hop(self, monkeypatch):
+        backend, captured_body = self._backend_capturing(monkeypatch)
 
         backend.search("auth", top_k=5, multi_hop=True, max_hops=2, budget_ms=800)
 
@@ -77,21 +98,8 @@ class TestRemoteBackendMultiHop:
         assert captured_body.get("max_hops") == 2
         assert captured_body.get("budget_ms") == 800
 
-    def test_remote_search_omits_multi_hop_when_false(self):
-        from unittest.mock import MagicMock
-        from smartmemory_mcp.backends.remote import RemoteBackend
-
-        backend = RemoteBackend.__new__(RemoteBackend)
-        backend._base_url = "http://test:9001"
-        backend._headers = {}
-
-        captured_body = {}
-
-        def mock_request(method, path, **kwargs):
-            captured_body.update(kwargs.get("json", {}))
-            return []
-
-        backend._request = mock_request
+    def test_remote_search_omits_multi_hop_when_false(self, monkeypatch):
+        backend, captured_body = self._backend_capturing(monkeypatch)
 
         backend.search("auth", top_k=5)
 

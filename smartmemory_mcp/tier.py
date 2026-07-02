@@ -40,7 +40,7 @@ def get_api_key() -> str:
         app_key = _app_get_api_key()
         if app_key:
             return app_key
-    except (ImportError, Exception) as exc:
+    except Exception as exc:
         logger.debug("smartmemory_app keyring lookup unavailable: %s", exc)
 
     # 3. File fallback
@@ -72,7 +72,7 @@ def store_api_key(key: str) -> None:
         keyring.set_password("smartmemory", "api_key", key)
         logger.debug("API key stored in keyring")
         return
-    except (ImportError, Exception) as exc:
+    except Exception as exc:
         logger.debug("Keyring storage unavailable: %s", exc)
 
     # 2. File fallback
@@ -83,14 +83,25 @@ def store_api_key(key: str) -> None:
 
 
 def resolve_tier() -> Tier:
-    """Determine capability tier from local credentials. No network validation."""
+    """Determine which tools this MCP client *offers*, from local credentials.
+
+    ADVISORY ONLY — this is not a security boundary. It decides which tools are
+    registered/exposed in the local MCP client for UX (hide tools that would just
+    fail), based on whether an API key is present and whether the operator opted
+    into the full tool set. It performs no network validation and confers no
+    entitlement: actual authorization is enforced server-side on every call
+    (the hosted API re-checks the token's real plan per request). A user editing
+    ``SMARTMEMORY_MCP_FULL_TOOLS`` only changes which local tools appear; a call
+    to a tool they aren't entitled to still fails at the server.
+    """
 
     api_key = get_api_key()
 
     if not api_key:
         return Tier.FREE
 
-    # PRO_PLUS requires explicit opt-in via env var
+    # PRO_PLUS surfaces the full local tool set; opt-in via env var. Advisory only
+    # (see docstring) — the server still enforces the caller's real entitlement.
     full_tools = os.environ.get("SMARTMEMORY_MCP_FULL_TOOLS", "").lower()
     if full_tools in ("true", "1"):
         return Tier.PRO_PLUS

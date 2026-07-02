@@ -228,8 +228,11 @@ class RemoteBackend:
             result = {"error": f"API error {e.response.status_code}: {e.response.text}"}
         except Exception as e:
             result = {"error": f"Request failed: {e}"}
-        if isinstance(result, dict) and self._fmt_error(result):
-            return [result]
+        # Surface backend errors instead of returning the error dict as if it were
+        # a memory item (which mis-renders / KeyErrors downstream). @graceful turns
+        # this into a clean tool error.
+        if isinstance(result, dict) and (err := self._fmt_error(result)):
+            raise RuntimeError(err)
         raw = result if isinstance(result, list) else []
         return normalize_items(raw)
 
@@ -238,8 +241,9 @@ class RemoteBackend:
         params = {"metadata_key": metadata_key, "metadata_value": metadata_value}
         result = self._request("GET", "/memory/by-metadata", params=params)
         if isinstance(result, dict):
-            if self._fmt_error(result):
-                return [result]
+            # Surface the error rather than returning [error_dict] as a fake item.
+            if err := self._fmt_error(result):
+                raise RuntimeError(err)
             return normalize_items([result])  # Single item returned by service
         raw = result if isinstance(result, list) else []
         return normalize_items(raw)
@@ -343,8 +347,9 @@ class RemoteBackend:
             params["offset"] = str(kwargs["offset"])
         result = self._request("GET", "/memory/list", params=params or None)
         if isinstance(result, dict):
-            if self._fmt_error(result):
-                return []
+            # Surface the error instead of masking a backend 500 as "no memories".
+            if err := self._fmt_error(result):
+                raise RuntimeError(err)
             # Service returns paginated dict with "items" and "total"
             raw = result.get("items", [])
         else:
