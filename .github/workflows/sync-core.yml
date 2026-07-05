@@ -80,7 +80,7 @@ jobs:
           print(f"smartmemory-mcp -> {version} (copied)")
           PY
 
-      - name: Commit, push, release
+      - name: Commit, push, release, publish
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           V: ${{ steps.bump.outputs.version }}
@@ -89,11 +89,20 @@ jobs:
           git config user.name "smartmem-dev[bot]"
           git config user.email "smartmem-dev@users.noreply.github.com"
           if git diff --quiet; then
-            echo "Already at $V; nothing to do."
-            exit 0
+            echo "Already at $V; no version commit needed."
+          else
+            git add pyproject.toml CHANGELOG.md
+            git commit -m "chore(version): track product version $V (single-source lockstep)"
+            git push origin HEAD:main
           fi
-          git add -A
-          git commit -m "chore(version): track product version $V (single-source lockstep)"
-          git push origin HEAD:main
-          gh release create "v$V" --title "v$V" --notes "Unified product release $V."
-          echo "✅ Released smartmemory-mcp v$V (publish.yml will ship to PyPI)."
+
+          if gh release view "v$V" >/dev/null 2>&1; then
+            echo "Release v$V already exists."
+          else
+            gh release create "v$V" --title "v$V" --notes "Unified product release $V."
+          fi
+
+          # Do not rely solely on the release-created event. Explicit dispatch
+          # makes reruns publish a missing artifact and avoids wrapper races.
+          gh workflow run publish.yml --ref main
+          echo "✅ Ensured smartmemory-mcp v$V release and dispatched publish.yml."
