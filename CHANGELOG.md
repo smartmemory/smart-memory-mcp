@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## [Unreleased]
+### Changed (auto, lockstep) — track product version 1.4.39 (1.4.39)
+- Version copied from the smartmemory-core release (single-source lockstep).
+
 
 ### Added (CORE-CODE-PROVENANCE-1 Phase 2c, 2026-06-23) — `code_read_transcript` tool + `code_blame` chaining
 - New `code_read_transcript` MCP tool (`tools/code_tools.py`, local-backend only): the *read* half of the
