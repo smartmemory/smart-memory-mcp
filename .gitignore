@@ -1,6 +1,10 @@
 __pycache__/
 *.egg-info/
 .venv/
+dist/
+build/
+install-env/
+test-env/
 *.pyc
 
 # Local secrets

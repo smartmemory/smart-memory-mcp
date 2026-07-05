@@ -46,7 +46,13 @@ jobs:
         run: |
           set -euo pipefail
           if grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' \
-              --exclude-dir=.git --exclude-dir=dist --exclude-dir=build .; then
+              --exclude-dir=.git \
+              --exclude-dir=.venv \
+              --exclude-dir=venv \
+              --exclude-dir=install-env \
+              --exclude-dir=test-env \
+              --exclude-dir=dist \
+              --exclude-dir=build .; then
             echo "::error::Unresolved merge-conflict markers found."
             exit 1
           fi
@@ -83,24 +89,32 @@ jobs:
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
-        run: twine upload --repository testpypi dist/*
+        run: twine upload --repository testpypi --skip-existing dist/*
 
       - name: Publish to PyPI
         if: github.event.inputs.test_pypi != 'true'
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: twine upload dist/*
+        run: twine upload --skip-existing dist/*
 
       - name: Test installation from PyPI
         if: github.event.inputs.test_pypi != 'true'
         run: |
           set -euo pipefail
-          sleep 60
           python -m venv test-env
           source test-env/bin/activate
           python -m pip install --upgrade pip
-          pip install "smartmemory-mcp==${{ steps.meta.outputs.version }}" --only-binary=:all: --no-cache-dir
+          for attempt in {1..10}; do
+            if pip install "smartmemory-mcp==${{ steps.meta.outputs.version }}" --only-binary=:all: --no-cache-dir; then
+              break
+            fi
+            if [ "$attempt" = "10" ]; then
+              exit 1
+            fi
+            echo "PyPI propagation pending; retrying in 30s ($attempt/10)"
+            sleep 30
+          done
           python - <<'PY'
           from importlib.metadata import version
           import smartmemory_mcp.server as server
