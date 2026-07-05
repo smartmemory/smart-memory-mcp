@@ -1,0 +1,112 @@
+name: Publish smartmemory-mcp to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      test_pypi:
+        description: 'Publish to Test PyPI instead of PyPI'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v4
+        with:
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Read package version
+        id: meta
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import tomllib
+          from pathlib import Path
+
+          data = tomllib.loads(Path("pyproject.toml").read_text())
+          print(f"version={data['project']['version']}")
+          PY
+
+      - name: Block unresolved merge-conflict markers
+        run: |
+          set -euo pipefail
+          if grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' \
+              --exclude-dir=.git --exclude-dir=dist --exclude-dir=build .; then
+            echo "::error::Unresolved merge-conflict markers found."
+            exit 1
+          fi
+
+      - name: Build package
+        run: |
+          set -euo pipefail
+          rm -rf dist/ build/ *.egg-info
+          python -m build
+
+      - name: Check package
+        run: twine check dist/*
+
+      - name: Pre-upload clean install smoke
+        if: github.event.inputs.test_pypi != 'true'
+        run: |
+          set -euo pipefail
+          python -m venv install-env
+          source install-env/bin/activate
+          python -m pip install --upgrade pip
+          pip install --find-links dist "smartmemory-mcp==${{ steps.meta.outputs.version }}" --only-binary=:all: --no-cache-dir
+          python - <<'PY'
+          from importlib.metadata import version
+          import smartmemory_mcp.server as server
+
+          assert version("smartmemory-mcp")
+          assert server.mcp is not None
+          print("✅ smartmemory-mcp import OK")
+          PY
+          deactivate
+
+      - name: Publish to Test PyPI
+        if: github.event.inputs.test_pypi == 'true'
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: twine upload --repository testpypi dist/*
+
+      - name: Publish to PyPI
+        if: github.event.inputs.test_pypi != 'true'
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload dist/*
+
+      - name: Test installation from PyPI
+        if: github.event.inputs.test_pypi != 'true'
+        run: |
+          set -euo pipefail
+          sleep 60
+          python -m venv test-env
+          source test-env/bin/activate
+          python -m pip install --upgrade pip
+          pip install "smartmemory-mcp==${{ steps.meta.outputs.version }}" --only-binary=:all: --no-cache-dir
+          python - <<'PY'
+          from importlib.metadata import version
+          import smartmemory_mcp.server as server
+
+          assert version("smartmemory-mcp")
+          assert server.mcp is not None
+          print("✅ smartmemory-mcp import OK")
+          PY
+          deactivate

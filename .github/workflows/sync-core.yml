@@ -1,0 +1,99 @@
+name: Sync to core release
+
+# The standalone MCP package follows the unified product version. Core is the
+# source of truth: when smartmemory-core publishes X, this workflow copies X into
+# pyproject.toml, commits it, and creates a GitHub Release. The release triggers
+# publish.yml, which ships smartmemory-mcp to PyPI.
+on:
+  repository_dispatch:
+    types: [core-released]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Product version to copy (e.g. 1.4.39)'
+        required: true
+        type: string
+
+concurrency:
+  group: sync-core
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # PAT so the release we create triggers publish.yml.
+          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v4
+        with:
+          python-version: '3.11'
+
+      - name: Copy product version into pyproject.toml
+        id: bump
+        env:
+          PRODUCT_VERSION: ${{ github.event.client_payload.version || github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+          import sys
+
+          version = os.environ["PRODUCT_VERSION"].strip()
+          if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+              sys.exit(f"::error::Bad version '{version}'")
+
+          pyproject = pathlib.Path("pyproject.toml")
+          text = pyproject.read_text()
+          text, count = re.subn(
+              r'^version = "[^"]+"',
+              f'version = "{version}"',
+              text,
+              count=1,
+              flags=re.M,
+          )
+          if count != 1:
+              sys.exit("::error::Could not find project version line")
+          pyproject.write_text(text)
+
+          changelog = pathlib.Path("CHANGELOG.md")
+          if changelog.exists():
+              current = changelog.read_text()
+              entry = (
+                  f"\n### Changed (auto, lockstep) — track product version {version} ({version})\n"
+                  "- Version copied from the smartmemory-core release (single-source lockstep).\n"
+              )
+              if "## [Unreleased]" in current:
+                  changelog.write_text(current.replace("## [Unreleased]", "## [Unreleased]" + entry, 1))
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"version={version}\n")
+          print(f"smartmemory-mcp -> {version} (copied)")
+          PY
+
+      - name: Commit, push, release
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          V: ${{ steps.bump.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "smartmem-dev[bot]"
+          git config user.email "smartmem-dev@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Already at $V; nothing to do."
+            exit 0
+          fi
+          git add -A
+          git commit -m "chore(version): track product version $V (single-source lockstep)"
+          git push origin HEAD:main
+          gh release create "v$V" --title "v$V" --notes "Unified product release $V."
+          echo "✅ Released smartmemory-mcp v$V (publish.yml will ship to PyPI)."
