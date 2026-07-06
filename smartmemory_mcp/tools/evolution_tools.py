@@ -55,33 +55,24 @@ def register(mcp):
     @graceful
     def evolution_synthesize_opinions() -> str:
         """Run opinion synthesis — detect patterns in episodic memories and form opinions."""
-        from smartmemory.plugins.evolvers.opinion_synthesis import OpinionSynthesisEvolver
-
         backend = get_backend()
-        evolver = OpinionSynthesisEvolver()
-        backend.run_evolver(evolver, log=logger)
+        backend.run_evolver("opinion_synthesis", log=logger)
         return "Opinion synthesis completed."
 
     @mcp.tool()
     @graceful
     def evolution_synthesize_observations() -> str:
         """Run observation synthesis — create entity summaries from scattered facts."""
-        from smartmemory.plugins.evolvers.observation_synthesis import ObservationSynthesisEvolver
-
         backend = get_backend()
-        evolver = ObservationSynthesisEvolver()
-        backend.run_evolver(evolver, log=logger)
+        backend.run_evolver("observation_synthesis", log=logger)
         return "Observation synthesis completed."
 
     @mcp.tool()
     @graceful
     def evolution_reinforce_opinions() -> str:
         """Run opinion reinforcement — update confidence scores based on new evidence."""
-        from smartmemory.plugins.evolvers.opinion_reinforcement import OpinionReinforcementEvolver
-
         backend = get_backend()
-        evolver = OpinionReinforcementEvolver()
-        backend.run_evolver(evolver, log=logger)
+        backend.run_evolver("opinion_reinforcement", log=logger)
         return "Opinion reinforcement completed."
 
     @mcp.tool()

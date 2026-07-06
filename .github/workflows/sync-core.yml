@@ -104,5 +104,5 @@ jobs:
 
           # Do not rely solely on the release-created event. Explicit dispatch
           # makes reruns publish a missing artifact and avoids wrapper races.
-          gh workflow run publish.yml --ref main
+          gh workflow run publish.yml --ref "v$V"
           echo "✅ Ensured smartmemory-mcp v$V release and dispatched publish.yml."

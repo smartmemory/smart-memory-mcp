@@ -224,9 +224,9 @@ class LocalBackend:
     # are gone, ConsolidationRouter routes at ingest. Use add()/ingest() with
     # memory_type="pending" instead.
 
-    def run_evolver(self, evolver_class: Any, **kwargs: Any) -> dict:
-        """Run a specific evolver."""
-        return self._mem.run_evolver(evolver_class, **kwargs)
+    def run_evolver(self, evolver_name: str, **kwargs: Any) -> dict:
+        """Run a specific evolver by name."""
+        return self._mem.run_evolver(evolver_name, **kwargs)
 
     def run_clustering(self, **kwargs: Any) -> dict:
         """Run clustering."""
