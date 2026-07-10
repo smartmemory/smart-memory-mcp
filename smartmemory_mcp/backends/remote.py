@@ -231,9 +231,17 @@ class RemoteBackend:
         # Surface backend errors instead of returning the error dict as if it were
         # a memory item (which mis-renders / KeyErrors downstream). @graceful turns
         # this into a clean tool error.
-        if isinstance(result, dict) and (err := self._fmt_error(result)):
-            raise RuntimeError(err)
-        raw = result if isinstance(result, list) else []
+        if isinstance(result, dict):
+            if err := self._fmt_error(result):
+                raise RuntimeError(err)
+            # CORE-RECALL-LINEAGE-1 SearchResponse envelope: {"results": [...], ...}.
+            # Pre-LINEAGE-1 callers expecting a bare array must read .results —
+            # treating the envelope as "not a list" silently emptied every search.
+            rows = result.get("results")
+            raw = rows if isinstance(rows, list) else []
+        else:
+            # Pre-LINEAGE-1 services returned a bare top-level array.
+            raw = result if isinstance(result, list) else []
         return normalize_items(raw)
 
     def search_by_metadata(self, metadata_key: str, metadata_value: str, top_k: int = 10, **kwargs: Any) -> list[MemoryResult]:

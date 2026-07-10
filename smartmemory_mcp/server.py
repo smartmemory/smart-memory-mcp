@@ -53,27 +53,19 @@ def whoami() -> str:
     from smartmemory_mcp.backends.dispatch import resolve_backend
 
     tier = resolve_tier()
-    key = get_api_key()
     lines = [f"Tier: {tier.name}"]
 
-    if key:
-        # Try to get user info from API
-        from smartmemory_mcp.backends.remote import RemoteBackend
-
-        temp = RemoteBackend(api_key=key)
-        info = temp.whoami()
-        lines.append(info)
-    else:
-        lines.append("Not logged in. Run login(api_key) to authenticate.")
-
-    # Detect backend mode
+    # Report the ACTUAL resolved backend — constructing a throwaway
+    # RemoteBackend(api_key=...) here printed the env-default api_url
+    # (api.smartmemory.ai) and an empty team even when the real backend was
+    # configured against a different service, and duplicated the "Backend:"
+    # line the remote whoami already emits.
     try:
-        from smartmemory_app.config import load_config
-
-        cfg = load_config()
-        lines.append(f"Backend: {cfg.mode or 'local'}")
-    except ImportError:
-        lines.append("Backend: remote (smartmemory package not installed)")
+        backend = resolve_backend()
+        lines.append(backend.whoami())
+    except RuntimeError:
+        lines.append("Not logged in. Run login(api_key) to authenticate.")
+        lines.append("Backend: none resolved")
 
     return "\n".join(lines)
 

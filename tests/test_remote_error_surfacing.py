@@ -60,6 +60,47 @@ def test_search_by_metadata_returns_item_on_success(monkeypatch) -> None:
     assert [i["item_id"] for i in out] == ["m-2"]
 
 
+def test_search_unwraps_lineage_response_envelope(monkeypatch) -> None:
+    """CORE-RECALL-LINEAGE-1: the service returns {"results": [...], "group_roots": {...}}.
+
+    search() must unwrap the envelope — treating the dict as "not a list" silently
+    rendered every remote memory_search as "No results" (found live in
+    DEMO-WALKTHROUGH-4 spike 0.5/0.10 against the local full stack).
+    """
+    import httpx
+
+    backend = _backend()
+    envelope = {
+        "results": [{"item_id": "m-3", "content": "hit", "memory_type": "episodic"}],
+        "group_roots": {},
+    }
+
+    def _ok(*a, **k):
+        return httpx.Response(
+            200, json=envelope, request=httpx.Request("POST", "https://api.test/memory/search")
+        )
+
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", _ok)
+
+    out = backend.search("anything")
+    assert [i["item_id"] for i in out] == ["m-3"]
+
+
+def test_search_returns_empty_on_malformed_envelope(monkeypatch) -> None:
+    """A dict response without a list under "results" degrades to [] (not a crash)."""
+    import httpx
+
+    backend = _backend()
+
+    def _ok(*a, **k):
+        return httpx.Response(
+            200, json={"results": "not-a-list"}, request=httpx.Request("POST", "https://api.test/memory/search")
+        )
+
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", _ok)
+    assert backend.search("anything") == []
+
+
 def test_search_raises_on_error_dict(monkeypatch) -> None:
     """search() must also surface errors rather than returning [error_dict]
     (which KeyErrors in the catalog formatter)."""
