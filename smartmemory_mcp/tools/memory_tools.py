@@ -18,6 +18,17 @@ _LEGACY_RECALL_TYPE_SCOPE: set = {"pending"}
 # Module-level one-shot deprecation flag — logs exactly once per process.
 _RECALL_DEPRECATION_WARNED: bool = False
 
+_IDENTITY_METADATA_KEYS = frozenset({"tenant_id", "workspace_id", "team_id", "user_id", "run_id"})
+
+
+def _strip_identity_metadata(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Return an item copy without server-only tenant and execution identity."""
+    sanitized = {key: value for key, value in item.items() if key not in _IDENTITY_METADATA_KEYS}
+    metadata = item.get("metadata")
+    if isinstance(metadata, dict):
+        sanitized["metadata"] = {key: value for key, value in metadata.items() if key not in _IDENTITY_METADATA_KEYS}
+    return sanitized
+
 
 def _estimate_tokens(text: str) -> int:
     """Cheap per-item token estimate — 1 token ≈ 4 characters."""
@@ -63,28 +74,30 @@ def _build_working_context(
         if max_tokens is not None and tokens_used + item_tokens > max_tokens:
             break
         activation_score = compute_activation_score(row)
-        items.append({
-            "item_id": row.get("item_id"),
-            "content": content,
-            "memory_type": row.get("memory_type"),
-            "metadata": row.get("metadata") or {},
-            "score_breakdown": {
-                "activation": activation_score,
-                "relevance": float(row.get("score") or 0.0),
-                "recency": 1.0,
-                "centrality": 1.0,
-                "anchor_forced": False,
-                "session_pin_boost": 0.0,
-                "freshness_boost": 0.0,
-            },
-        })
+        items.append(
+            _strip_identity_metadata(
+                {
+                    "item_id": row.get("item_id"),
+                    "content": content,
+                    "memory_type": row.get("memory_type"),
+                    "metadata": row.get("metadata") or {},
+                    "score_breakdown": {
+                        "activation": activation_score,
+                        "relevance": float(row.get("score") or 0.0),
+                        "recency": 1.0,
+                        "centrality": 1.0,
+                        "anchor_forced": False,
+                        "session_pin_boost": 0.0,
+                        "freshness_boost": 0.0,
+                    },
+                }
+            )
+        )
         tokens_used += item_tokens
 
     if max_tokens is not None and raw and not items:
         # Smallest mandatory item exceeds budget.
-        raise ValueError(
-            f"budget_too_small: max_tokens={max_tokens} cannot fit the smallest item"
-        )
+        raise ValueError(f"budget_too_small: max_tokens={max_tokens} cannot fit the smallest item")
 
     return {
         "decision_id": decision_id,
@@ -179,11 +192,7 @@ def _format_recall(query: str, results: list, session_id: str = None, drift_warn
         lines.append(f"[{i}] {age_part}{snippet}")
         lines.append("")
 
-    item_ids = ", ".join(
-        str(item["item_id"])
-        for item in results
-        if item["item_id"]
-    )
+    item_ids = ", ".join(str(item["item_id"]) for item in results if item["item_id"])
     lines.append(
         f"(Retrieved {len(results)} turns."
         + (f" Use memory_get(item_id) for full content. IDs: {item_ids}" if item_ids else "")
@@ -261,6 +270,7 @@ def register_free(mcp):
         # CORE-ORIGIN-1: apply search tier policy
         try:
             from smartmemory.origin_policy import filter_by_tiers, get_default_tiers
+
             results = filter_by_tiers(results, get_default_tiers("search"))
         except Exception:
             pass
@@ -281,11 +291,15 @@ def register_free(mcp):
         # RECALL-CITATIONS-1: when cite=True, return structured payload with
         # pre-formatted footnote_block ready for the consuming agent to paste.
         if cite:
-            from smartmemory.search.citations import build_citations, build_footnote_block
+            from smartmemory.search.citations import (
+                build_citations,
+                build_footnote_block,
+            )
+
             citations = [c.to_dict() for c in build_citations(results)]
             footnote_block = build_footnote_block(results)
             return {
-                "items": list(results),
+                "items": [_strip_identity_metadata(item) for item in results],
                 "citations": citations,
                 "footnote_block": footnote_block,
             }
@@ -365,8 +379,12 @@ def register_free(mcp):
         # post-filter has headroom when cross-type retrieval returns few
         # working-typed items in its top-k (Codex review).
         response = _build_working_context(
-            backend, session_id=session_id or "", query=query,
-            k=min(max(top_k * 10, top_k), 100), max_tokens=None, strategy=None,
+            backend,
+            session_id=session_id or "",
+            query=query,
+            k=min(max(top_k * 10, top_k), 100),
+            max_tokens=None,
+            strategy=None,
         )
 
         filtered: List[dict] = []
@@ -379,7 +397,8 @@ def register_free(mcp):
         # Additional session_id filter preserved from pre-shim behavior.
         if session_id:
             filtered = [
-                r for r in filtered
+                r
+                for r in filtered
                 if (r.get("metadata") or {}).get("conversation_id", "") == session_id
                 or (r.get("metadata") or {}).get("session_id", "") == session_id
             ]
@@ -390,7 +409,11 @@ def register_free(mcp):
         # Empty result set still returns citations=[] (never omitted) so consumers
         # can distinguish "no results" from "no citations requested".
         if cite:
-            from smartmemory.search.citations import build_citations, build_footnote_block
+            from smartmemory.search.citations import (
+                build_citations,
+                build_footnote_block,
+            )
+
             citations = [c.to_dict() for c in build_citations(final)]
             return {
                 "items": final,
@@ -421,8 +444,12 @@ def register_free(mcp):
             raise ValueError("k must be in 1..100")
         backend = get_backend()
         return _build_working_context(
-            backend, session_id=session_id, query=query,
-            k=k, max_tokens=max_tokens, strategy=strategy,
+            backend,
+            session_id=session_id,
+            query=query,
+            k=k,
+            max_tokens=max_tokens,
+            strategy=strategy,
         )
 
     @mcp.tool()

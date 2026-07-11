@@ -1,6 +1,6 @@
 """Tests for MemoryResult normalization."""
 
-from smartmemory_mcp.backends.models import MemoryResult, normalize_item, normalize_items
+from smartmemory_mcp.backends.models import normalize_item, normalize_items
 
 
 class TestNormalizeItem:
@@ -110,6 +110,11 @@ class TestNormalizeItem:
             "stale": True,
             "derived_from": "parent-id",
             "origin": "cli:add",
+            "workspace_id": "workspace-1",
+            "valid_start_time": "2026-01-01T00:00:00Z",
+            "valid_end_time": "2026-12-31T00:00:00Z",
+            "transaction_time": "2026-07-11T00:00:00Z",
+            "reference": True,
             "entities": [{"name": "Alice"}],
             "relations": [{"type": "KNOWS"}],
             "drift_warnings": [{"severity": "high"}],
@@ -119,6 +124,12 @@ class TestNormalizeItem:
         assert result["stale"] is True
         assert result["derived_from"] == "parent-id"
         assert result["origin"] == "cli:add"
+        # Server-only identity is never carried into the client-facing model.
+        assert "workspace_id" not in result
+        assert result["valid_start_time"] == "2026-01-01T00:00:00Z"
+        assert result["valid_end_time"] == "2026-12-31T00:00:00Z"
+        assert result["transaction_time"] == "2026-07-11T00:00:00Z"
+        assert result["reference"] is True
         assert len(result["entities"]) == 1
         assert len(result["relations"]) == 1
         assert len(result["drift_warnings"]) == 1

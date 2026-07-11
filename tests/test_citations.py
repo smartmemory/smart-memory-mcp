@@ -1,4 +1,5 @@
 """Tests for RECALL-CITATIONS-1 — MCP memory_search/memory_recall cite=True."""
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -27,6 +28,7 @@ def _mk_item(item_id: str, content: str, score: float = 0.5, mtype: str = "seman
 
 def _get_tool(name: str):
     import smartmemory_mcp.server as srv
+
     for tool in srv.mcp._tool_manager._tools.values():
         if tool.name == name:
             return tool.fn
@@ -78,3 +80,23 @@ class TestMemorySearchCite:
         assert out["items"] == []
         assert out["citations"] == []
         assert out["footnote_block"] == ""
+
+    def test_cite_true_strips_identity_metadata_from_items(self):
+        fn = _get_tool("memory_search")
+        item = _mk_item("id-1", "content")
+        item.update({"workspace_id": "top-ws", "run_id": "top-run", "origin": "test"})
+        item["metadata"] = {
+            "tenant_id": "tenant",
+            "workspace_id": "workspace",
+            "team_id": "team",
+            "user_id": "user",
+            "run_id": "run",
+            "legitimate": "kept",
+        }
+        with patch("smartmemory_mcp.tools.common._backend", MockBackend(items=[item])):
+            out = fn(query="anything", cite=True)
+
+        returned = out["items"][0]
+        assert returned["metadata"] == {"legitimate": "kept"}
+        assert returned["origin"] == "test"
+        assert not {"tenant_id", "workspace_id", "team_id", "user_id", "run_id"} & returned.keys()

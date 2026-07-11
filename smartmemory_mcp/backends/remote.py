@@ -3,11 +3,13 @@
 Extracted from server.py. Session state is instance-level (not module globals).
 _request() never raises — returns error dicts on all failure modes.
 """
+
 from __future__ import annotations
 
 import json
 import os
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -77,10 +79,11 @@ class RemoteBackend:
     ) -> Any:
         """Execute an API request. Never raises — returns error dict on any failure."""
         try:
+            headers = kwargs.pop("headers", None) or self._headers(workspace_id)
             r = httpx.request(
                 method,
                 f"{self._api_url}{path}",
-                headers=self._headers(workspace_id),
+                headers=headers,
                 timeout=timeout,
                 **kwargs,
             )
@@ -96,6 +99,54 @@ class RemoteBackend:
     def request(self, method: str, path: str, **kwargs: Any) -> Any:
         """Public request method for tools that need REST calls not in the protocol."""
         return self._request(method, path, **kwargs)
+
+    @property
+    def active_workspace_id(self) -> str:
+        """Return the workspace carried by the active remote session."""
+        self._bootstrap_from_api_key()
+        return str(self._session.get("team_id", ""))
+
+    def export_okf(self, archive_path: str) -> None:
+        """Stream the active workspace's OKF archive to disk."""
+        destination = Path(archive_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        workspace_id = self.active_workspace_id
+        try:
+            with httpx.stream(
+                "GET",
+                f"{self._api_url}/memory/okf/export",
+                headers=self._headers(workspace_id=workspace_id),
+                timeout=120,
+            ) as response:
+                response.raise_for_status()
+                with destination.open("wb") as handle:
+                    for chunk in response.iter_bytes():
+                        handle.write(chunk)
+        except httpx.HTTPStatusError as exc:
+            destination.unlink(missing_ok=True)
+            raise RuntimeError(f"API error {exc.response.status_code}: {exc.response.text}") from exc
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
+
+    def import_okf(self, archive_path: str) -> dict[str, Any]:
+        """Upload an OKF archive into the active workspace."""
+        workspace_id = self.active_workspace_id
+        headers = self._headers(workspace_id=workspace_id)
+        headers.pop("Content-Type", None)
+        path = Path(archive_path)
+        with path.open("rb") as handle:
+            result = self._request(
+                "POST",
+                "/memory/okf/import",
+                workspace_id=workspace_id,
+                timeout=300,
+                headers=headers,
+                files={"file": (path.name, handle, "application/gzip")},
+            )
+        if err := self._fmt_error(result):
+            raise RuntimeError(err)
+        return result or {}
 
     @staticmethod
     def _fmt_error(result: Any) -> str | None:
@@ -118,7 +169,10 @@ class RemoteBackend:
         try:
             r = httpx.get(
                 f"{self._api_url}/auth/me",
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                },
                 timeout=15,
             )
             r.raise_for_status()
@@ -244,7 +298,9 @@ class RemoteBackend:
             raw = result if isinstance(result, list) else []
         return normalize_items(raw)
 
-    def search_by_metadata(self, metadata_key: str, metadata_value: str, top_k: int = 10, **kwargs: Any) -> list[MemoryResult]:
+    def search_by_metadata(
+        self, metadata_key: str, metadata_value: str, top_k: int = 10, **kwargs: Any
+    ) -> list[MemoryResult]:
         """GET /memory/by-metadata — exact metadata match."""
         params = {"metadata_key": metadata_key, "metadata_value": metadata_value}
         result = self._request("GET", "/memory/by-metadata", params=params)

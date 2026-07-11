@@ -19,12 +19,20 @@ class MemoryResult(TypedDict, total=False):
     content: str
     memory_type: str
     metadata: dict
+    # NOTE: server-only identity (workspace_id/tenant_id/team_id/user_id/run_id) is
+    # deliberately NOT a field here — it must never reach an MCP client. Portability
+    # (export/import) works off the scoped core exporter / service routes, not this
+    # normalized model, so it does not need per-item workspace_id.
     created_at: str  # Canonical — resolved from transaction_time or created_at
+    valid_start_time: Optional[str]
+    valid_end_time: Optional[str]
+    transaction_time: Optional[str]
     score: Optional[float]
     confidence: Optional[float]
     stale: bool
     derived_from: Optional[str]
     origin: Optional[str]
+    reference: Optional[bool]
     entities: Optional[list]
     relations: Optional[list]
     drift_warnings: Optional[list]
@@ -59,11 +67,15 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         memory_type=d.get("memory_type", default_type),
         metadata=d.get("metadata") or {},
         created_at=d.get("transaction_time") or d.get("created_at", ""),
+        valid_start_time=d.get("valid_start_time"),
+        valid_end_time=d.get("valid_end_time"),
+        transaction_time=d.get("transaction_time"),
         score=d.get("score"),
         confidence=d.get("confidence"),
         stale=d.get("stale", False),
         derived_from=d.get("derived_from"),
         origin=d.get("origin"),
+        reference=d.get("reference"),
         entities=d.get("entities"),
         relations=d.get("relations"),
         drift_warnings=d.get("drift_warnings"),

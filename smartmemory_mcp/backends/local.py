@@ -16,19 +16,36 @@ class LocalBackend:
     def __init__(self) -> None:
         try:
             from smartmemory_app.storage import get_memory
+
             self._get_memory = get_memory
             self._mem = get_memory()
         except ImportError:
-            raise RuntimeError(
-                "Local backend requires the smartmemory package.\n"
-                "Install with: pip install smartmemory"
-            )
+            raise RuntimeError("Local backend requires the smartmemory package.\nInstall with: pip install smartmemory")
 
     # -- Core CRUD --
 
-    def add(self, content: str, memory_type: str = "semantic", metadata: dict | None = None, **kwargs: Any) -> str:
+    def export_okf(self, bundle_path: str) -> int:
+        """Export the active local workspace to an OKF bundle directory."""
+        from smartmemory.corpus.exporter import CorpusExporter
+
+        return CorpusExporter(self._mem).run(bundle_path)
+
+    def import_okf(self, bundle_path: str) -> Any:
+        """Losslessly import an OKF bundle through the direct add path."""
+        from smartmemory.corpus.importer import CorpusImporter
+
+        return CorpusImporter(self._mem, mode="direct").run(bundle_path)
+
+    def add(
+        self,
+        content: str,
+        memory_type: str = "semantic",
+        metadata: dict | None = None,
+        **kwargs: Any,
+    ) -> str:
         """Store a memory item."""
         from smartmemory.models.memory_item import MemoryItem
+
         # DIST-LITE-QUIET-1: attribute the write so it lands as tier-2 user content, not
         # origin='unknown' (tier 4, hidden from recall+search). An explicit origin in
         # metadata (e.g. an importer) wins; default to this producer.
@@ -92,13 +109,16 @@ class LocalBackend:
     def search(self, query: str, top_k: int = 5, **kwargs: Any) -> list[MemoryResult]:
         """Semantic search."""
         from smartmemory_app.storage import search
+
         results = normalize_items(search(query, top_k, **kwargs))
         # SELF-IMPROVE-6: track shown IDs for local-mode feedback
         self._last_search_session_id = f"local:{id(results)}:{top_k}"
         self._last_shown_ids = [r.get("item_id", "") for r in results if r.get("item_id")]
         return results
 
-    def search_by_metadata(self, metadata_key: str, metadata_value: str, top_k: int = 10, **kwargs: Any) -> list[MemoryResult]:
+    def search_by_metadata(
+        self, metadata_key: str, metadata_value: str, top_k: int = 10, **kwargs: Any
+    ) -> list[MemoryResult]:
         """Search by metadata field."""
         return normalize_items(self._mem.search_by_metadata(metadata_key, metadata_value, top_k=top_k))
 
@@ -125,6 +145,7 @@ class LocalBackend:
     def ingest(self, content: str, memory_type: str = "episodic", **kwargs: Any) -> str:
         """Full pipeline ingestion."""
         from smartmemory_app.storage import ingest
+
         # storage.ingest() uses 'properties' not 'metadata'
         if "metadata" in kwargs:
             kwargs["properties"] = kwargs.pop("metadata")
@@ -137,9 +158,16 @@ class LocalBackend:
     def recall(self, cwd: str | None = None, top_k: int = 10, **kwargs: Any) -> str:
         """Context-aware recall."""
         from smartmemory_app.storage import recall
+
         return recall(cwd, top_k)
 
-    def ingest_structured(self, data: dict, schema: str | None = None, schema_name: str | None = None, **kwargs: Any) -> str:
+    def ingest_structured(
+        self,
+        data: dict,
+        schema: str | None = None,
+        schema_name: str | None = None,
+        **kwargs: Any,
+    ) -> str:
         """Structured data ingestion."""
         name = schema or schema_name
         return self._mem.ingest_structured(data, schema=name)
@@ -250,9 +278,20 @@ class LocalBackend:
         """Find notes older than the given number of days."""
         return normalize_items(self._mem.find_old_notes(days, **kwargs))
 
-    def personalize(self, user_id: str = "mcp-user", traits: dict | None = None, preferences: dict | None = None, **kwargs: Any) -> str:
+    def personalize(
+        self,
+        user_id: str = "mcp-user",
+        traits: dict | None = None,
+        preferences: dict | None = None,
+        **kwargs: Any,
+    ) -> str:
         """Personalize memory system."""
-        return self._mem.personalize(user_id=user_id, traits=traits or {}, preferences=preferences or {}, **kwargs)
+        return self._mem.personalize(
+            user_id=user_id,
+            traits=traits or {},
+            preferences=preferences or {},
+            **kwargs,
+        )
 
     def update_from_feedback(self, feedback: dict | None = None, memory_type: str = "semantic", **kwargs: Any) -> str:
         """Update from user feedback."""
@@ -264,7 +303,13 @@ class LocalBackend:
 
     # -- Graph --
 
-    def link(self, source_id: str, target_id: str, link_type: str = "RELATES_TO", **kwargs: Any) -> str:
+    def link(
+        self,
+        source_id: str,
+        target_id: str,
+        link_type: str = "RELATES_TO",
+        **kwargs: Any,
+    ) -> str:
         """Link two memories."""
         return self._mem.link(source_id, target_id, link_type=link_type)
 
@@ -307,7 +352,9 @@ class LocalBackend:
         accurate selection rate data (not just result_used == result_shown).
         """
         try:
-            from smartmemory.observability.retrieval_tracking import emit_result_feedback
+            from smartmemory.observability.retrieval_tracking import (
+                emit_result_feedback,
+            )
 
             # Use shown_ids from the search that produced these results
             shown_ids = getattr(self, "_last_shown_ids", None) or []
@@ -322,6 +369,10 @@ class LocalBackend:
                 workspace_id="default",
                 search_session_id=search_session_id,
             )
-            return {"status": "ok", "search_session_id": search_session_id, "result_used_count": len(result_used)}
+            return {
+                "status": "ok",
+                "search_session_id": search_session_id,
+                "result_used_count": len(result_used),
+            }
         except Exception as exc:
             return {"error": str(exc)}

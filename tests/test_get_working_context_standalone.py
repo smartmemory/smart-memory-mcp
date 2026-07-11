@@ -55,9 +55,22 @@ def test_build_working_context_produces_contract_shape():
     backend.search.return_value = [_mk_row("w1", "hi", "pending")]
 
     resp = memory_tools._build_working_context(
-        backend, session_id="s", query="q", k=5, max_tokens=None, strategy=None,
+        backend,
+        session_id="s",
+        query="q",
+        k=5,
+        max_tokens=None,
+        strategy=None,
     )
-    for key in ("decision_id", "items", "drift_warnings", "strategy_used", "tokens_used", "tokens_budget", "deprecation"):
+    for key in (
+        "decision_id",
+        "items",
+        "drift_warnings",
+        "strategy_used",
+        "tokens_used",
+        "tokens_budget",
+        "deprecation",
+    ):
         assert key in resp
     assert resp["strategy_used"] == "fast:recency"
     assert resp["deprecation"] is None
@@ -72,7 +85,12 @@ def test_build_working_context_respects_max_tokens():
     ]
     # Budget of 30 → ~25 tokens per item; fits one.
     resp = memory_tools._build_working_context(
-        backend, session_id="s", query="q", k=10, max_tokens=30, strategy=None,
+        backend,
+        session_id="s",
+        query="q",
+        k=10,
+        max_tokens=30,
+        strategy=None,
     )
     assert len(resp["items"]) < 3
     assert resp["tokens_used"] <= 30
@@ -83,7 +101,12 @@ def test_build_working_context_budget_too_small_raises():
     backend.search.return_value = [_mk_row("w1", "a" * 100, "pending")]
     with pytest.raises(ValueError, match="budget_too_small"):
         memory_tools._build_working_context(
-            backend, session_id="s", query="q", k=5, max_tokens=1, strategy=None,
+            backend,
+            session_id="s",
+            query="q",
+            k=5,
+            max_tokens=1,
+            strategy=None,
         )
 
 
@@ -102,6 +125,50 @@ def test_get_working_context_tool_happy_path():
 
     assert resp["strategy_used"] == "fast:recency"
     assert len(resp["items"]) >= 1
+
+
+def test_strip_identity_metadata_removes_exact_identity_fields():
+    item = {
+        "content": "kept",
+        "workspace_id": "top-workspace",
+        "run_id": "top-run",
+        "metadata": {
+            "tenant_id": "tenant",
+            "workspace_id": "workspace",
+            "team_id": "team",
+            "user_id": "user",
+            "run_id": "run",
+            "session_id": "legitimate-session",
+            "tags": ["kept"],
+        },
+    }
+
+    sanitized = memory_tools._strip_identity_metadata(item)
+
+    assert sanitized == {
+        "content": "kept",
+        "metadata": {"session_id": "legitimate-session", "tags": ["kept"]},
+    }
+    assert item["workspace_id"] == "top-workspace"
+    assert item["metadata"]["tenant_id"] == "tenant"
+
+
+def test_get_working_context_strips_identity_metadata():
+    tools = _registered()
+    backend = MagicMock()
+    backend.search.return_value = [
+        _mk_row(
+            "w1",
+            "hello",
+            "pending",
+            metadata={"workspace_id": "secret", "team_id": "secret", "topic": "kept"},
+        )
+    ]
+
+    with patch("smartmemory_mcp.tools.memory_tools.get_backend", return_value=backend):
+        response = tools["get_working_context"](session_id="s1", query="hello")
+
+    assert response["items"][0]["metadata"] == {"topic": "kept"}
 
 
 def test_get_working_context_tool_rejects_bad_k():
@@ -168,7 +235,12 @@ def test_build_working_context_with_none_search_result():
     backend = MagicMock()
     backend.search.return_value = None
     resp = memory_tools._build_working_context(
-        backend, session_id="s", query="q", k=5, max_tokens=None, strategy=None,
+        backend,
+        session_id="s",
+        query="q",
+        k=5,
+        max_tokens=None,
+        strategy=None,
     )
     assert resp["items"] == []
     assert resp["tokens_used"] == 0
@@ -180,7 +252,12 @@ def test_build_working_context_with_empty_search_result():
     backend = MagicMock()
     backend.search.return_value = []
     resp = memory_tools._build_working_context(
-        backend, session_id="s", query="q", k=5, max_tokens=None, strategy=None,
+        backend,
+        session_id="s",
+        query="q",
+        k=5,
+        max_tokens=None,
+        strategy=None,
     )
     assert resp["items"] == []
     assert resp["tokens_used"] == 0
@@ -193,7 +270,12 @@ def test_build_working_context_exact_fit_budget():
     # content 40 chars → max(1, 40//4) = 10 tokens
     backend.search.return_value = [_mk_row("w1", "x" * 40, "pending")]
     resp = memory_tools._build_working_context(
-        backend, session_id="s", query="q", k=5, max_tokens=10, strategy=None,
+        backend,
+        session_id="s",
+        query="q",
+        k=5,
+        max_tokens=10,
+        strategy=None,
     )
     assert len(resp["items"]) == 1
     assert resp["tokens_used"] == 10
@@ -203,9 +285,17 @@ def test_build_working_context_empty_content_contributes_zero_tokens():
     """Codex coverage: zero-token item (empty content) consumes zero budget per
     standalone's _estimate_tokens contract (short-circuits to 0 on falsy input)."""
     backend = MagicMock()
-    backend.search.return_value = [_mk_row("w1", "", "pending"), _mk_row("w2", "y" * 40, "pending")]
+    backend.search.return_value = [
+        _mk_row("w1", "", "pending"),
+        _mk_row("w2", "y" * 40, "pending"),
+    ]
     resp = memory_tools._build_working_context(
-        backend, session_id="s", query="q", k=5, max_tokens=10, strategy=None,
+        backend,
+        session_id="s",
+        query="q",
+        k=5,
+        max_tokens=10,
+        strategy=None,
     )
     # Empty content = 0 tokens, 40-char content = 10 tokens → both fit within 10.
     assert len(resp["items"]) == 2
