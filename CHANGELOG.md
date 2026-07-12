@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## [Unreleased]
+### Changed (auto, lockstep) — track product version 1.4.46 (1.4.46)
+- Version copied from the smartmemory-core release (single-source lockstep).
+
 ### Fixed
 - Remote-mode `memory_search` (and the recall built on it) always returned "No results": `RemoteBackend.search()` predated the CORE-RECALL-LINEAGE-1 `SearchResponse` envelope (`{"results": [...]}`) and silently emptied every dict response. It now unwraps the envelope; bare-array responses from pre-LINEAGE-1 services still work. Found live in DEMO-WALKTHROUGH-4 spike 0.10.
 - `whoami` reported the env-default API URL (`api.smartmemory.ai`) and an empty team even when the resolved backend targeted a different service, and printed the "Backend:" line twice — it now reports the actual resolved backend.
