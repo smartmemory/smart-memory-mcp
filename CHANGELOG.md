@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## [Unreleased]
+### Changed (auto, lockstep) — track product version 1.4.47 (1.4.47)
+- Version copied from the smartmemory-core release (single-source lockstep).
+
 ### Changed (auto, lockstep) — track product version 1.4.46 (1.4.46)
 - Version copied from the smartmemory-core release (single-source lockstep).
 
