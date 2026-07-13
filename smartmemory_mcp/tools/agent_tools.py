@@ -9,6 +9,23 @@ from .common import get_backend, graceful
 logger = logging.getLogger(__name__)
 
 
+_LOCAL_UNSUPPORTED = (
+    "Recall profiles are not supported in local mode: nothing on the local search path "
+    "reads them (`apply_recall_profile` is only called by the hosted service). Use remote "
+    "mode (set SMARTMEMORY_API_URL + SMARTMEMORY_API_KEY) to set an agent recall profile."
+)
+
+
+def _rest(backend):
+    """The REST escape hatch, or None in local mode.
+
+    The recall profile lives in the service's agent record and is applied at search time
+    by the service. Writing it anywhere else (this module used to store it as a procedural
+    memory item) produces a profile that reads back correctly and is never applied.
+    """
+    return getattr(backend, "request", None)
+
+
 def register(mcp):
     """Register agent recall profile tools with the MCP server."""
 
@@ -28,45 +45,18 @@ def register(mcp):
                         f"Error: weight for '{k}' must be non-negative number, got {v}"
                     )
 
+        request = _rest(backend)
+        if request is None:
+            raise NotImplementedError(_LOCAL_UNSUPPORTED)
+
         profile = {"memory_type_weights": memory_type_weights or {}}
-        content = json.dumps(profile)
-
-        # Search for existing profile to update
-        existing = backend.search(
-            f"recall profile {agent_id}", top_k=10, memory_type="procedural"
+        result = request(
+            "PUT",
+            f"/memory/agents/{agent_id}/recall-profile",
+            json={"recall_profile": profile},
         )
-        for item in existing or []:
-            meta = item["metadata"]
-            if meta.get("recall_profile") and meta.get("agent_id") == agent_id:
-                item_id = item["item_id"]
-                if item_id:
-                    try:
-                        backend.update(item_id, content=content)
-                        if memory_type_weights:
-                            weight_str = ", ".join(
-                                f"{k}: {v}x" for k, v in memory_type_weights.items()
-                            )
-                            return (
-                                f"Recall profile updated for {agent_id}: {weight_str}"
-                            )
-                        return f"Recall profile cleared for {agent_id}."
-                    except Exception:
-                        logger.warning(
-                            "Failed to update existing profile for %s, creating new",
-                            agent_id,
-                        )
-
-        # No existing profile found -- create new
-        backend.add(
-            content=content,
-            memory_type="procedural",
-            metadata={
-                "recall_profile": True,
-                "agent_id": agent_id,
-                "entity_type": "recall_profile",
-                "tags": ["recall-profile", f"agent-{agent_id}"],
-            },
-        )
+        if isinstance(result, dict) and result.get("error"):
+            return f"Failed to set recall profile for {agent_id}: {result['error']}"
 
         if memory_type_weights:
             weight_str = ", ".join(f"{k}: {v}x" for k, v in memory_type_weights.items())
@@ -79,21 +69,18 @@ def register(mcp):
         """Get an agent's recall profile."""
         backend = get_backend()
 
-        results = backend.search(
-            f"recall profile {agent_id}", top_k=10, memory_type="procedural"
-        )
+        request = _rest(backend)
+        if request is None:
+            raise NotImplementedError(_LOCAL_UNSUPPORTED)
 
-        for item in results or []:
-            meta = item["metadata"]
-            if meta.get("recall_profile") and meta.get("agent_id") == agent_id:
-                raw_content = item["content"]
-                try:
-                    profile = json.loads(raw_content)
-                    return f"Recall profile for {agent_id}: {json.dumps(profile, indent=2)}"
-                except (json.JSONDecodeError, TypeError):
-                    return f"Recall profile for {agent_id}: {raw_content}"
+        result = request("GET", f"/memory/agents/{agent_id}/recall-profile")
+        if isinstance(result, dict) and result.get("error"):
+            return f"Failed to read recall profile for {agent_id}: {result['error']}"
 
-        return f"Agent {agent_id} has no recall profile (default behavior)."
+        profile = (result or {}).get("recall_profile") or {}
+        if not profile.get("memory_type_weights"):
+            return f"Agent {agent_id} has no recall profile (default behavior)."
+        return f"Recall profile for {agent_id}: {json.dumps(profile, indent=2)}"
 
     @mcp.tool()
     @graceful
