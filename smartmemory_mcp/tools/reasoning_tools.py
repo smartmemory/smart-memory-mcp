@@ -140,12 +140,10 @@ def register(mcp):
         from smartmemory.reasoning.proof_tree import ProofTreeBuilder
 
         backend = get_backend()
-        try:
-            graph = getattr(backend, '_graph', None) or getattr(
-                getattr(backend, '_smart_memory', None), '_graph', None
-            )
-        except AttributeError:
-            return _GRAPH_UNAVAILABLE_MSG
+        # Backends expose the SmartMemory instance as `_mem` (see local.py); the
+        # graph hangs off that, not off the backend itself.
+        sm = getattr(backend, "_mem", None)
+        graph = getattr(sm, "graph", None) if sm is not None else None
 
         if not graph:
             return _GRAPH_UNAVAILABLE_MSG
@@ -166,18 +164,18 @@ def register(mcp):
         from smartmemory.reasoning.fuzzy_confidence import FuzzyConfidenceCalculator
 
         backend = get_backend()
-        dm = DecisionManager(backend)
+        # DecisionManager takes the SmartMemory instance (cf. smart_memory.py's
+        # `DecisionManager(self)`), not the MCP backend wrapper.
+        sm = getattr(backend, "_mem", None)
+        if sm is None:
+            return _GRAPH_UNAVAILABLE_MSG
+
+        dm = DecisionManager(sm)
         decision = dm.get_decision(decision_id)
         if not decision:
             return f"Decision not found: {decision_id}"
 
-        try:
-            graph = getattr(backend, '_graph', None) or getattr(
-                getattr(backend, '_smart_memory', None), '_graph', None
-            )
-        except AttributeError:
-            return _GRAPH_UNAVAILABLE_MSG
-
+        graph = getattr(sm, "graph", None)
         if not graph:
             return _GRAPH_UNAVAILABLE_MSG
 
