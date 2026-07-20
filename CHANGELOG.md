@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.4.53]
+
+### Fixed
+
+- **Tier tool-count expectations were stale** — `code_blame` and `code_read_transcript`
+  (CORE-CODE-PROVENANCE-1 Phase 2c) were registered without bumping the counts, so PRO
+  and PRO_PLUS asserted 62/93 against an actual 64/95. Counts corrected; the tools are
+  legitimate, the test was behind. Nothing caught it because **`publish.yml` runs no
+  pytest step** — these 24 test files only ever run locally.
+
+### Notes
+
+- The FREE-tier count test is **not hermetic**: `_clean_env` strips the two tier env vars
+  but cannot reach the keyring/file credential store `tier.get_api_key()` also consults,
+  so a logged-in dev machine sees 64 instead of 14. Documented in the test. Verified
+  correct (14) in a clean container.
+- **Tests are pinned to fastmcp 2.x internals.** `fastmcp>=2.0` is unpinned, and a fresh
+  install now resolves 3.4.4, where the private `_tool_manager` the tests enumerate is
+  gone — 44 tests fail on a clean install. The **package itself is unaffected**: no
+  product code touches `_tool_manager`, and the server imports and registers fine on
+  3.4.4. Test-only fragility; worth a follow-up.
+
+
 All notable changes to the standalone `smart-memory-mcp` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
