@@ -10,6 +10,27 @@ from .models import MemoryResult, normalize_item, normalize_items
 log = logging.getLogger(__name__)
 
 
+def _metadata_matches(metadata: dict, key: str, value: Any) -> bool:
+    """Exact metadata match, honouring the service's dotted-path syntax.
+
+    Mirrors `/memory/list`'s `metadata_key` contract (`profile.tier` descends
+    into nested dicts). The value always arrives as a string from an MCP tool
+    argument, so comparison is string-based — which keeps bool and int distinct
+    for free: `str(True) == "True"` never equals `str(1) == "1"`, so `flag=1`
+    cannot match `flag=true`. That is the same bool/int divergence guarded on
+    the service side, where Python's `True == 1` disagrees with type-aware
+    FalkorDB. Only bools are case-folded, so `"true"` matches stored `True`.
+    """
+    cur: Any = metadata
+    for part in key.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return False
+        cur = cur[part]
+    if isinstance(cur, bool):
+        return str(cur).lower() == str(value).strip().lower()
+    return str(cur) == str(value)
+
+
 class LocalBackend:
     """Wraps smartmemory package for local-mode operations."""
 
@@ -119,8 +140,35 @@ class LocalBackend:
     def search_by_metadata(
         self, metadata_key: str, metadata_value: str, top_k: int = 10, **kwargs: Any
     ) -> list[MemoryResult]:
-        """Search by metadata field."""
-        return normalize_items(self._mem.search_by_metadata(metadata_key, metadata_value, top_k=top_k))
+        """Search by metadata field.
+
+        `smartmemory.SmartMemory` has no `search_by_metadata` — this delegation
+        raised AttributeError on every local-mode call (verified 2026-08-02
+        against the core facade). Filter `search()` results instead so the tool
+        works in local mode at all. `search("*")` is required because CORE-GATE-1
+        makes `search("")` return [].
+        """
+        if not metadata_key:
+            raise ValueError("metadata_key is required.")
+        hits = self._mem.search("*", top_k=max(top_k * 10, 100))
+        out: list[MemoryResult] = []
+        for raw in hits or []:
+            item = normalize_item(raw)
+            if _metadata_matches(item.get("metadata") or {}, metadata_key, metadata_value):
+                out.append(item)
+            if len(out) >= top_k:
+                break
+        # An over-fetch that fills top_k exactly may have truncated real matches.
+        # Say so rather than presenting a possibly-partial result as complete.
+        if len(out) >= top_k:
+            log.warning(
+                "search_by_metadata hit the local top_k cap (%d) for %s=%s; "
+                "additional matches may exist beyond the scanned window.",
+                top_k,
+                metadata_key,
+                metadata_value,
+            )
+        return out
 
     def blame_code(self, **kwargs: Any) -> dict[str, Any]:
         """Code-provenance blame passthrough (CORE-CODE-PROVENANCE-1 Phase 2b).
@@ -224,14 +272,43 @@ class LocalBackend:
     # -- Listing & Stats --
 
     def list_memories(self, limit: int = 100, offset: int = 0, **kwargs: Any) -> list[MemoryResult]:
-        """List memories with pagination."""
-        return normalize_items(self._mem.list_memories(limit=limit, offset=offset))
+        """List memories with pagination, optionally filtered by metadata.
+
+        `smartmemory.SmartMemory` has no `list_memories` — this delegation
+        raised AttributeError on every local-mode call (verified 2026-08-02).
+        There is no core listing API to wire to: `get_all_items_debug()` returns
+        `{total_items, items_by_type, sample_items}`, i.e. a stats summary with
+        SAMPLE items, not a complete page. Listing is therefore served from the
+        same scan `search_by_metadata` uses, and paginated locally.
+        """
+        mkey, mval = kwargs.get("metadata_key"), kwargs.get("metadata_value")
+        if (mkey is None) != (mval is None):
+            missing = "metadata_value" if mkey is not None else "metadata_key"
+            raise ValueError(f"metadata_key and metadata_value must be supplied together; {missing} is missing.")
+
+        window = max((limit + offset) * 10, 200)
+        hits = self._mem.search("*", top_k=window)
+        items = [normalize_item(raw) for raw in hits or []]
+        if mkey is not None:
+            items = [i for i in items if _metadata_matches(i.get("metadata") or {}, mkey, mval)]
+        if len(hits or []) >= window:
+            log.warning(
+                "list_memories scanned the local cap (%d items); results beyond that window "
+                "are not represented in this page or its offset.",
+                window,
+            )
+        return items[offset : offset + limit]
 
     def clear_user_memories(self, confirm: bool = False, **kwargs: Any) -> str:
-        """Clear all user memories."""
+        """Clear all user memories.
+
+        Core exposes `clear()`, not `clear_user_memories` — the old delegation
+        raised AttributeError, so this tool never cleared anything in local mode
+        (verified 2026-08-02 against the core facade).
+        """
         if not confirm:
             return "Pass confirm=True to clear all memories."
-        self._mem.clear_user_memories()
+        self._mem.clear()
         return "All memories cleared."
 
     def get_all_items_debug(self, **kwargs: Any) -> dict:

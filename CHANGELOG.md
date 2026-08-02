@@ -1,5 +1,34 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Three local-mode tools raised `AttributeError` on every call.**
+  `LocalBackend.list_memories`, `.search_by_metadata` and `.clear_user_memories`
+  delegated to `list_memories` / `search_by_metadata` / `clear_user_memories` on
+  `smartmemory.SmartMemory` — **none of which exist** on the core facade (verified
+  by sweeping all 28 delegations against it: 25 resolve, these 3 do not). So
+  `memory_list`, `memory_search_by_metadata` and `memory_clear` were inert in local
+  mode, and `memory_clear` in particular never cleared anything. `clear_user_memories`
+  now calls core's `clear()`; the other two filter a `search("*")` scan, since core
+  exposes no listing API (`get_all_items_debug()` returns a stats summary with
+  *sample* items, not a page). Both log a WARNING when the local scan window is hit
+  rather than presenting a possibly-truncated result as complete.
+
+### Added
+
+- **`memory_list` accepts `metadata_key` / `metadata_value`** (GRAPH-API-1l), the
+  supported replacement for the deprecated `memory_search_by_metadata`. Nested keys
+  use dot syntax (`profile.tier`). Previously `RemoteBackend.list_memories` accepted
+  arbitrary `**kwargs` but forwarded only `limit`/`offset`, so filters passed by a
+  caller were silently dropped and the result was an unfiltered list — wrong answers,
+  no error. Both halves must be supplied together; a half-filter now raises locally
+  with a clear message instead of taking an HTTP 422 round trip.
+- Local metadata matching mirrors the service contract, including bool-is-not-int
+  (`flag=1` must not match `flag=true`) — the same divergence guarded service-side,
+  where Python's `True == 1` disagrees with type-aware FalkorDB.
+
 ## [1.4.57]
 
 Tracks product version 1.4.57 (single-source lockstep with `smart-memory-core/VERSION`);

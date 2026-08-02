@@ -577,10 +577,25 @@ def register_pro(mcp):
 
     @mcp.tool()
     @graceful
-    def memory_list(limit: int = 20, offset: int = 0) -> str:
-        """List memories with pagination."""
+    def memory_list(
+        limit: int = 20,
+        offset: int = 0,
+        metadata_key: str | None = None,
+        metadata_value: str | None = None,
+    ) -> str:
+        """List memories with pagination, optionally filtered by exact metadata match.
+
+        metadata_key/metadata_value must be given together. Nested keys use dot
+        syntax (e.g. `profile.tier`). This is the supported replacement for
+        memory_search_by_metadata, whose endpoint is deprecated (GRAPH-API-1l).
+        """
         backend = get_backend()
-        result = backend.list_memories(limit=limit, offset=offset)
+        result = backend.list_memories(
+            limit=limit,
+            offset=offset,
+            metadata_key=metadata_key,
+            metadata_value=metadata_value,
+        )
 
         # Handle both list and dict responses
         if isinstance(result, dict):

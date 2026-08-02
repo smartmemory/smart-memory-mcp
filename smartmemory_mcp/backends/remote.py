@@ -417,12 +417,33 @@ class RemoteBackend:
             return {"healthy": False, "error": str(e), "api_url": self._api_url}
 
     def list_memories(self, **kwargs: Any) -> list[MemoryResult]:
-        """GET /memory/list — list all memories."""
+        """GET /memory/list — list memories, optionally filtered by metadata.
+
+        GRAPH-API-1l added `metadata_key`/`metadata_value` to this route (the
+        supported replacement for the deprecated `/memory/by-metadata`). This
+        method previously forwarded ONLY limit/offset while accepting arbitrary
+        kwargs, so a caller passing filters got a silently UNFILTERED list —
+        wrong results, no error. Forward them explicitly.
+        """
         params: dict[str, str] = {}
         if "limit" in kwargs:
             params["limit"] = str(kwargs["limit"])
         if "offset" in kwargs:
             params["offset"] = str(kwargs["offset"])
+        if kwargs.get("order") is not None:
+            params["order"] = str(kwargs["order"])
+
+        # The service 422s unless both are supplied together (crud.py list_memories).
+        # Catch it here so the caller gets a clear message instead of an HTTP error
+        # surfaced through _fmt_error.
+        mkey, mval = kwargs.get("metadata_key"), kwargs.get("metadata_value")
+        if (mkey is None) != (mval is None):
+            missing = "metadata_value" if mkey is not None else "metadata_key"
+            raise ValueError(f"metadata_key and metadata_value must be supplied together; {missing} is missing.")
+        if mkey is not None:
+            params["metadata_key"] = str(mkey)
+            params["metadata_value"] = str(mval)
+
         result = self._request("GET", "/memory/list", params=params or None)
         if isinstance(result, dict):
             # Surface the error instead of masking a backend 500 as "no memories".
