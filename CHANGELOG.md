@@ -1,6 +1,9 @@
 # Changelog
 
-## [Unreleased]
+## [1.4.57]
+
+Tracks product version 1.4.57 (single-source lockstep with `smart-memory-core/VERSION`);
+1.4.54-1.4.56 were core-only trains with no MCP change.
 
 ### Fixed
 
