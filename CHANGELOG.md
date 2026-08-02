@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **`memory_search_by_metadata` returned one blank memory and discarded every real
+  hit (remote backend).** `RemoteBackend.search_by_metadata` wrapped the service's
+  `{"items": [...], "count": N}` envelope as if it were a single item
+  (`normalize_items([result])`). Because `normalize_item` reads every field with
+  `.get()` and a default, the envelope did not raise — it normalized into one
+  perfectly well-formed *empty* `MemoryResult`, so the tool reported exactly one
+  contentless memory no matter how many matched. Same failure class as the
+  CORE-RECALL-LINEAGE-1 envelope bug already guarded in `search()` directly above it.
+  Now reads `items`, with the pre-GRAPH-API-1l bare-array shape still handled.
+- **`top_k` was dropped on the same call**, silently pinning every remote
+  metadata search to the service default of 25 results. Now forwarded as `limit`,
+  clamped to the service's documented 1–200 range.
+
+### Notes
+
+- The bug survived because `test_search_by_metadata_returns_item_on_success` asserted
+  a bare-item shape that `GET /memory/by-metadata` has never returned — the test was
+  written against the code instead of the endpoint, so it stayed green while the path
+  was broken in production. Corrected and expanded to four cases (envelope, empty
+  envelope, `top_k`→`limit` forwarding incl. the 200 cap, legacy bare array).
+- `/memory/by-metadata` is deprecated in favour of `/memory/list`'s `metadata_key`/
+  `metadata_value` filters (GRAPH-API-1l), but migrating this caller is blocked on an
+  unresolved item-**shape** difference (`/by-metadata` rows carry `superseded` /
+  `superseded_by` plus synthesized content for code rows). Fixing the envelope here is
+  independent of that migration.
+
 ## [1.4.53]
 
 ### Fixed

@@ -48,16 +48,71 @@ def test_search_by_metadata_raises_on_error_dict(monkeypatch) -> None:
         backend.search_by_metadata("k", "v")
 
 
-def test_search_by_metadata_returns_item_on_success(monkeypatch) -> None:
+def test_search_by_metadata_returns_items_on_success(monkeypatch) -> None:
+    """The service returns the {items, count} envelope — NOT a bare item.
+
+    The previous version of this test fed a bare item dict, a shape
+    `GET /memory/by-metadata` has never returned (crud.py returns
+    `{"items": [...], "count": N}`). It therefore stayed green while the backend
+    wrapped the envelope itself via `normalize_items([result])`, which — because
+    `normalize_item` is all `.get()`-with-defaults — emitted one BLANK memory and
+    dropped every real hit without raising.
+    """
     backend = _backend()
     monkeypatch.setattr(
         backend,
         "_request",
-        lambda *a, **k: {"item_id": "m-2", "content": "meta hit", "memory_type": "semantic"},
+        lambda *a, **k: {
+            "items": [
+                {"item_id": "m-2", "content": "meta hit", "memory_type": "semantic"},
+                {"item_id": "m-3", "content": "second hit", "memory_type": "semantic"},
+            ],
+            "count": 2,
+        },
     )
 
     out = backend.search_by_metadata("k", "v")
-    assert [i["item_id"] for i in out] == ["m-2"]
+    assert [i["item_id"] for i in out] == ["m-2", "m-3"]
+    assert [i["content"] for i in out] == ["meta hit", "second hit"]
+
+
+def test_search_by_metadata_empty_envelope_is_no_results(monkeypatch) -> None:
+    """`{"items": [], "count": 0}` must be zero results, not one blank memory."""
+    backend = _backend()
+    monkeypatch.setattr(backend, "_request", lambda *a, **k: {"items": [], "count": 0})
+
+    assert backend.search_by_metadata("k", "v") == []
+
+
+def test_search_by_metadata_forwards_top_k_as_limit(monkeypatch) -> None:
+    """top_k was dropped, pinning every call to the service default of 25."""
+    seen: dict[str, str] = {}
+
+    backend = _backend()
+
+    def _capture(method, path, params=None, **k):
+        seen.update(params or {})
+        return {"items": [], "count": 0}
+
+    monkeypatch.setattr(backend, "_request", _capture)
+
+    backend.search_by_metadata("k", "v", top_k=50)
+    assert seen["limit"] == "50"
+
+    backend.search_by_metadata("k", "v", top_k=9999)
+    assert seen["limit"] == "200"  # service caps at 200
+
+
+def test_search_by_metadata_legacy_bare_array_still_works(monkeypatch) -> None:
+    """Pre-GRAPH-API-1l services returned a bare top-level array."""
+    backend = _backend()
+    monkeypatch.setattr(
+        backend,
+        "_request",
+        lambda *a, **k: [{"item_id": "m-9", "content": "legacy", "memory_type": "semantic"}],
+    )
+
+    assert [i["item_id"] for i in backend.search_by_metadata("k", "v")] == ["m-9"]
 
 
 def test_search_unwraps_lineage_response_envelope(monkeypatch) -> None:
@@ -76,9 +131,7 @@ def test_search_unwraps_lineage_response_envelope(monkeypatch) -> None:
     }
 
     def _ok(*a, **k):
-        return httpx.Response(
-            200, json=envelope, request=httpx.Request("POST", "https://api.test/memory/search")
-        )
+        return httpx.Response(200, json=envelope, request=httpx.Request("POST", "https://api.test/memory/search"))
 
     monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", _ok)
 

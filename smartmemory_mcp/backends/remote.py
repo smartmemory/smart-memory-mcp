@@ -302,14 +302,28 @@ class RemoteBackend:
         self, metadata_key: str, metadata_value: str, top_k: int = 10, **kwargs: Any
     ) -> list[MemoryResult]:
         """GET /memory/by-metadata — exact metadata match."""
-        params = {"metadata_key": metadata_key, "metadata_value": metadata_value}
+        # Service caps limit at 200 (crud.py get_memory_by_metadata); top_k was
+        # previously dropped entirely, silently pinning every call to the default 25.
+        params = {
+            "metadata_key": metadata_key,
+            "metadata_value": metadata_value,
+            "limit": str(max(1, min(top_k, 200))),
+        }
         result = self._request("GET", "/memory/by-metadata", params=params)
         if isinstance(result, dict):
             # Surface the error rather than returning [error_dict] as a fake item.
             if err := self._fmt_error(result):
                 raise RuntimeError(err)
-            return normalize_items([result])  # Single item returned by service
-        raw = result if isinstance(result, list) else []
+            # The service returns the {"items": [...], "count": N} envelope, never a
+            # bare item. Wrapping the envelope as one item made normalize_item's
+            # all-.get()-with-defaults path emit a single BLANK memory and discard
+            # every real hit — silent, unraisable, and indistinguishable from a
+            # genuine one-result match. Same class as the LINEAGE-1 bug in search().
+            rows = result.get("items")
+            raw = rows if isinstance(rows, list) else []
+        else:
+            # Pre-GRAPH-API-1l services returned a bare top-level array.
+            raw = result if isinstance(result, list) else []
         return normalize_items(raw)
 
     def recall(self, cwd: str | None = None, top_k: int = 10, **kwargs: Any) -> str:
