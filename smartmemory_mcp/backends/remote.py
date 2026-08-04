@@ -25,11 +25,17 @@ class RemoteBackend:
         api_key: str | None = None,
         team_id: str | None = None,
     ) -> None:
-        self._api_url = (api_url or os.environ.get("SMARTMEMORY_API_URL", "https://api.smartmemory.ai")).rstrip("/")
+        self._api_url = (
+            api_url
+            or os.environ.get("SMARTMEMORY_API_URL", "https://api.smartmemory.ai")
+        ).rstrip("/")
         self._session: dict[str, str | bool] = {
             "access_token": api_key or os.environ.get("SMARTMEMORY_API_KEY", ""),
             "refresh_token": "",
-            "team_id": team_id or os.environ.get("SMARTMEMORY_TEAM_ID", os.environ.get("SMARTMEMORY_WORKSPACE_ID", "")),
+            "team_id": team_id
+            or os.environ.get(
+                "SMARTMEMORY_TEAM_ID", os.environ.get("SMARTMEMORY_WORKSPACE_ID", "")
+            ),
             "user_email": "",
             "_bootstrapped": False,
         }
@@ -90,7 +96,9 @@ class RemoteBackend:
             r.raise_for_status()
             return r.json() if r.status_code != 204 else None
         except httpx.ConnectError:
-            return {"error": f"SmartMemory API unreachable at {self._api_url}. Check SMARTMEMORY_API_URL."}
+            return {
+                "error": f"SmartMemory API unreachable at {self._api_url}. Check SMARTMEMORY_API_URL."
+            }
         except httpx.HTTPStatusError as e:
             return {"error": f"API error {e.response.status_code}: {e.response.text}"}
         except Exception as e:
@@ -124,7 +132,9 @@ class RemoteBackend:
                         handle.write(chunk)
         except httpx.HTTPStatusError as exc:
             destination.unlink(missing_ok=True)
-            raise RuntimeError(f"API error {exc.response.status_code}: {exc.response.text}") from exc
+            raise RuntimeError(
+                f"API error {exc.response.status_code}: {exc.response.text}"
+            ) from exc
         except Exception:
             destination.unlink(missing_ok=True)
             raise
@@ -178,7 +188,9 @@ class RemoteBackend:
             r.raise_for_status()
             user = r.json()
             self._session["user_email"] = user.get("email", "")
-            self._session["team_id"] = team_id or user.get("default_team_id") or str(self._session["team_id"])
+            self._session["team_id"] = (
+                team_id or user.get("default_team_id") or str(self._session["team_id"])
+            )
             self._session["_bootstrapped"] = True
         except httpx.HTTPStatusError as e:
             return f"API key validation failed ({e.response.status_code}): {e.response.text}"
@@ -189,7 +201,9 @@ class RemoteBackend:
     def whoami(self) -> str:
         """Return current session info."""
         if not self._session["access_token"]:
-            return f"Not authenticated. API: {self._api_url}. Call login to authenticate."
+            return (
+                f"Not authenticated. API: {self._api_url}. Call login to authenticate."
+            )
         return (
             f"User: {self._session['user_email'] or '(API key auth)'}\n"
             f"Team: {self._session['team_id']}\n"
@@ -208,20 +222,54 @@ class RemoteBackend:
         """POST /memory/add. Returns item_id string."""
         body: dict[str, Any] = {"content": content, "memory_type": memory_type}
         if metadata := kwargs.get("metadata"):
-            body["metadata"] = metadata if isinstance(metadata, dict) else json.loads(metadata)
+            body["metadata"] = (
+                metadata if isinstance(metadata, dict) else json.loads(metadata)
+            )
         if kwargs.get("use_pipeline"):
             body["use_pipeline"] = True
         result = self._request("POST", "/memory/add", json=body) or {}
         if isinstance(result, dict):
-            return result.get("item_id", result.get("id", str(result)))
+            # Surface the failure. The `str(result)` fallback below used to swallow
+            # an {"error": ...} response and hand back "{'error': 'API error 500:
+            # ...'}" AS THE NEW ITEM ID — reporting a failed write as a successful
+            # one, with a fake id the caller could then store or look up.
+            if err := self._fmt_error(result):
+                raise RuntimeError(err)
+            item_id = result.get("item_id") or result.get("id")
+            if not item_id:
+                raise RuntimeError(f"/memory/add returned no item id: {result!r}")
+            return str(item_id)
         return str(result)
 
     def get(self, item_id: str, **kwargs: Any) -> MemoryResult | None:
-        """GET /memory/{item_id}."""
+        """GET /memory/{item_id}. Returns None only when the item genuinely is absent."""
         result = self._request("GET", f"/memory/{item_id}")
-        if result is None or self._fmt_error(result):
+        if result is None:
             return None
+        # A 404 IS genuine absence — keep returning None for it. But an API 403/500
+        # must NOT be reported as "Memory item not found." Collapsing an outage into
+        # absence is the silent degradation this repo's rules forbid: the caller
+        # concludes the memory does not exist and may re-create it.
+        if err := self._fmt_error(result):
+            if "404" in err:
+                return None
+            raise RuntimeError(err)
         return normalize_item(result)
+
+    def explain(self, memory_id: str, **kwargs: Any) -> dict[str, Any] | None:
+        """GET /memory/{memory_id}/explain (PLAT-AUDITABLE-MEMORY-1).
+
+        Same absence semantics as get(): 404 is genuine absence (None); any
+        other API error raises rather than masquerading as absence.
+        """
+        result = self._request("GET", f"/memory/{memory_id}/explain")
+        if result is None:
+            return None
+        if err := self._fmt_error(result):
+            if "404" in err:
+                return None
+            raise RuntimeError(err)
+        return result
 
     def update(self, item_id: str, **kwargs: Any) -> dict[str, Any]:
         """PUT /memory/{item_id}.
@@ -263,6 +311,12 @@ class RemoteBackend:
                 body["max_hops"] = kwargs["max_hops"]
             if "budget_ms" in kwargs:
                 body["budget_ms"] = kwargs["budget_ms"]
+        # PLAT-AUDITABLE-MEMORY-1: as-of recall params (3rd forwarding point —
+        # blueprint C3: a missed allowlist entry is a silent param drop).
+        if kwargs.get("as_of_date"):
+            body["as_of_date"] = kwargs["as_of_date"]
+        if kwargs.get("include_superseded"):
+            body["include_superseded"] = True
         # SELF-IMPROVE-6: capture X-Search-Session-Id header from response
         self._last_search_session_id: str | None = None
         try:
@@ -274,10 +328,14 @@ class RemoteBackend:
                 timeout=30,
             )
             r.raise_for_status()
-            self._last_search_session_id = r.headers.get("x-search-session-id") or r.headers.get("X-Search-Session-Id")
+            self._last_search_session_id = r.headers.get(
+                "x-search-session-id"
+            ) or r.headers.get("X-Search-Session-Id")
             result = r.json() if r.status_code != 204 else None
         except httpx.ConnectError:
-            result = {"error": f"SmartMemory API unreachable at {self._api_url}. Check SMARTMEMORY_API_URL."}
+            result = {
+                "error": f"SmartMemory API unreachable at {self._api_url}. Check SMARTMEMORY_API_URL."
+            }
         except httpx.HTTPStatusError as e:
             result = {"error": f"API error {e.response.status_code}: {e.response.text}"}
         except Exception as e:
@@ -332,7 +390,9 @@ class RemoteBackend:
         recent_k = max(1, (requested + 1) // 2)
         semantic_k = max(0, requested - recent_k)
         recent = self.search("", top_k=recent_k)
-        semantic = self.search(cwd or "", top_k=semantic_k) if cwd and semantic_k else []
+        semantic = (
+            self.search(cwd or "", top_k=semantic_k) if cwd and semantic_k else []
+        )
         seen: set[str] = set()
         items: list[MemoryResult] = []
         for r in recent + semantic:
@@ -341,7 +401,12 @@ class RemoteBackend:
                 seen.add(iid)
                 items.append(r)
         recall_floor = float(os.environ.get("SMARTMEMORY_RECALL_FLOOR", "0.3"))
-        items = [r for r in items if (r.get("confidence") if r.get("confidence") is not None else 1.0) >= recall_floor]
+        items = [
+            r
+            for r in items
+            if (r.get("confidence") if r.get("confidence") is not None else 1.0)
+            >= recall_floor
+        ]
         items = [r for r in items if not r.get("reference")]
         if not items:
             return ""
@@ -350,10 +415,14 @@ class RemoteBackend:
             conf = item.get("confidence", 1.0)
             conf_marker = "~" if isinstance(conf, (int, float)) and conf < 0.5 else ""
             stale_marker = "" if not item.get("stale") else "!"
-            lines.append(f"- {stale_marker}{conf_marker}[{item['memory_type']}] {item['content'][:200]}")
+            lines.append(
+                f"- {stale_marker}{conf_marker}[{item['memory_type']}] {item['content'][:200]}"
+            )
         return "\n".join(lines)
 
-    def ingest(self, content: str, memory_type: str = "semantic", **kwargs: Any) -> dict[str, Any] | str:
+    def ingest(
+        self, content: str, memory_type: str = "semantic", **kwargs: Any
+    ) -> dict[str, Any] | str:
         """POST /memory/ingest (full pipeline)."""
         context: dict[str, Any] = {"memory_type": memory_type}
         # Merge metadata as top-level context keys (service merges context into pipeline state)
@@ -391,7 +460,9 @@ class RemoteBackend:
             body["max_chunk_chars"] = max_chunk_chars
         if max_concurrent != 4:
             body["max_concurrent"] = max_concurrent
-        result = self._request("POST", "/memory/ingest/conversation", timeout=300, json=body)
+        result = self._request(
+            "POST", "/memory/ingest/conversation", timeout=300, json=body
+        )
         if err := self._fmt_error(result):
             return {"error": err}
         return result or {}
@@ -439,7 +510,9 @@ class RemoteBackend:
         mkey, mval = kwargs.get("metadata_key"), kwargs.get("metadata_value")
         if (mkey is None) != (mval is None):
             missing = "metadata_value" if mkey is not None else "metadata_key"
-            raise ValueError(f"metadata_key and metadata_value must be supplied together; {missing} is missing.")
+            raise ValueError(
+                f"metadata_key and metadata_value must be supplied together; {missing} is missing."
+            )
         if mkey is not None:
             params["metadata_key"] = str(mkey)
             params["metadata_value"] = str(mval)
@@ -449,15 +522,21 @@ class RemoteBackend:
             # Surface the error instead of masking a backend 500 as "no memories".
             if err := self._fmt_error(result):
                 raise RuntimeError(err)
-            # Service returns paginated dict with "items" and "total"
-            raw = result.get("items", [])
+            # Service returns paginated dict with "items" and "total".
+            # isinstance-guarded like search_by_metadata: a regressed
+            # {"items": {...}} would otherwise become one blank memory per dict
+            # key instead of surfacing a contract error.
+            rows = result.get("items")
+            raw = rows if isinstance(rows, list) else []
         else:
             raw = result if isinstance(result, list) else []
         return normalize_items(raw)
 
     # --- MemoryBackend protocol: NOT available in remote mode --------------------
 
-    def ingest_structured(self, items: list[dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
+    def ingest_structured(
+        self, items: list[dict[str, Any]], **kwargs: Any
+    ) -> dict[str, Any]:
         """Not available in remote mode."""
         raise NotImplementedError("Not available in remote mode. Use local backend.")
 
@@ -500,7 +579,9 @@ class RemoteBackend:
         """Not available in remote mode."""
         raise NotImplementedError("Not available in remote mode. Use local backend.")
 
-    def update_from_feedback(self, item_id: str, feedback: str, **kwargs: Any) -> dict[str, Any]:
+    def update_from_feedback(
+        self, item_id: str, feedback: str, **kwargs: Any
+    ) -> dict[str, Any]:
         """Not available in remote mode."""
         raise NotImplementedError("Not available in remote mode. Use local backend.")
 
@@ -512,7 +593,9 @@ class RemoteBackend:
         """Not available in remote mode."""
         raise NotImplementedError("Not available in remote mode. Use local backend.")
 
-    def add_edge(self, source_id: str, target_id: str, relation: str, **kwargs: Any) -> dict[str, Any]:
+    def add_edge(
+        self, source_id: str, target_id: str, relation: str, **kwargs: Any
+    ) -> dict[str, Any]:
         """Not available in remote mode."""
         raise NotImplementedError("Not available in remote mode. Use local backend.")
 
@@ -544,13 +627,17 @@ class RemoteBackend:
             body["cursor"] = cursor
         return self._request("POST", "/memory/read-around", json=body)
 
-    def find_shortest_path(self, source_id: str, target_id: str, **kwargs: Any) -> dict[str, Any]:
+    def find_shortest_path(
+        self, source_id: str, target_id: str, **kwargs: Any
+    ) -> dict[str, Any]:
         """Not available in remote mode."""
         raise NotImplementedError("Not available in remote mode. Use local backend.")
 
     # --- Retrieval feedback (SELF-IMPROVE-6) -------------------------------------
 
-    def submit_feedback(self, search_session_id: str, result_used: list[str], **kwargs: Any) -> dict[str, Any]:
+    def submit_feedback(
+        self, search_session_id: str, result_used: list[str], **kwargs: Any
+    ) -> dict[str, Any]:
         """POST /memory/result-feedback — submit result-selection feedback."""
         return self._request(
             "POST",

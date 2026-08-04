@@ -35,7 +35,6 @@ def register(mcp):
         tags: Optional[List[str]] = None,
     ) -> str:
         """Record an architectural or design decision as a decision memory."""
-        from smartmemory.models.memory_item import MemoryItem
 
         backend = get_backend()
 
@@ -148,7 +147,6 @@ def register(mcp):
         tags: Optional[List[str]] = None,
     ) -> str:
         """Save a development session summary as an episodic memory."""
-        from smartmemory.models.memory_item import MemoryItem
 
         backend = get_backend()
 
@@ -260,7 +258,6 @@ def register(mcp):
         tags: Optional[List[str]] = None,
     ) -> str:
         """Record a code pattern or convention as procedural memory."""
-        from smartmemory.models.memory_item import MemoryItem
 
         backend = get_backend()
 
@@ -297,7 +294,6 @@ def register(mcp):
         context: Optional[str] = None,
     ) -> str:
         """Log a friction event encountered during development."""
-        from smartmemory.models.memory_item import MemoryItem
 
         if category not in FRICTION_CATEGORIES:
             return f"Invalid category: {category}. Must be one of: {', '.join(FRICTION_CATEGORIES)}"

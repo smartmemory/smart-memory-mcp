@@ -1,7 +1,6 @@
 """Zettelkasten MCP tools (extracted from service graph_tools.py)."""
 
 import logging
-from typing import Optional
 
 from .common import get_backend, graceful
 

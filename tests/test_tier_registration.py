@@ -13,7 +13,6 @@ import os
 import subprocess
 import sys
 
-import pytest
 
 from smartmemory_mcp.tier import Tier, resolve_tier
 
@@ -98,6 +97,7 @@ FREE_TOOLS = sorted([
     "memory_search",
     "memory_recall",
     "memory_get",
+    "memory_explain",  # PLAT-AUDITABLE-MEMORY-1 — FREE by design (positioning wedge)
     "memory_export",
     "memory_import",
     "memory_migrate",
@@ -110,35 +110,35 @@ FREE_TOOLS = sorted([
 
 class TestToolRegistration:
     def test_free_tier_tool_count(self):
-        """FREE tier registers exactly 14 tools.
+        """FREE tier registers exactly 15 tools.
 
         NOTE: `_clean_env` only strips the two tier env vars — it cannot reach the
         keyring/file credential store that `tier.get_api_key()` also consults. On a
         developer machine that is logged in (smartmemory_app keyring), this resolves
-        to a paid tier and the count comes back 64 instead of 14. That is a local
+        to a paid tier and the count comes back 65 instead of 15. That is a local
         artifact, NOT a regression; CI and any clean container see FREE correctly.
         Verify locally with: docker run --rm -v "$PWD":/w -w /w python:3.11-slim \
         sh -c "pip install -q -e . pytest && pytest tests/ -q"
         """
         env = _clean_env()
         data = _run_snippet(env)
-        assert data["count"] == 14, f"Expected 14 FREE tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 15, f"Expected 15 FREE tools, got {data['count']}: {data['names']}"
         assert data["names"] == FREE_TOOLS
 
     def test_pro_tier_tool_count(self):
-        """PRO tier registers exactly 64 tools."""
+        """PRO tier registers exactly 65 tools."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
         data = _run_snippet(env)
-        assert data["count"] == 64, f"Expected 64 PRO tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 65, f"Expected 65 PRO tools, got {data['count']}: {data['names']}"
         # Verify FREE tools are a subset of PRO tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
 
     def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 95 tools."""
+        """PRO_PLUS tier registers exactly 96 tools."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true")
         data = _run_snippet(env)
-        assert data["count"] == 95, f"Expected 95 PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 96, f"Expected 96 PRO_PLUS tools, got {data['count']}: {data['names']}"
         # Verify FREE tools are a subset of PRO_PLUS tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO_PLUS tier"

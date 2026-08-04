@@ -30,6 +30,11 @@ class MemoryResult(TypedDict, total=False):
     score: Optional[float]
     confidence: Optional[float]
     stale: bool
+    # /memory/by-metadata returns these (crud.py get_memory_by_metadata); dropping
+    # them made a SUPERSEDED memory indistinguishable from an active one, so a
+    # caller could act on knowledge the system already knows is obsolete.
+    superseded: bool
+    superseded_by: Optional[str]
     derived_from: Optional[str]
     origin: Optional[str]
     reference: Optional[bool]
@@ -73,6 +78,8 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         score=d.get("score"),
         confidence=d.get("confidence"),
         stale=d.get("stale", False),
+        superseded=bool(d.get("superseded", False)),
+        superseded_by=d.get("superseded_by"),
         derived_from=d.get("derived_from"),
         origin=d.get("origin"),
         reference=d.get("reference"),

@@ -41,7 +41,9 @@ class LocalBackend:
             self._get_memory = get_memory
             self._mem = get_memory()
         except ImportError:
-            raise RuntimeError("Local backend requires the smartmemory package.\nInstall with: pip install smartmemory")
+            raise RuntimeError(
+                "Local backend requires the smartmemory package.\nInstall with: pip install smartmemory"
+            )
 
     # -- Core CRUD --
 
@@ -71,8 +73,12 @@ class LocalBackend:
         # origin='unknown' (tier 4, hidden from recall+search). An explicit origin in
         # metadata (e.g. an importer) wins; default to this producer.
         meta = dict(metadata or {})
-        origin = meta.pop("origin", None) or kwargs.pop("origin", None) or "mcp:memory_add"
-        item = MemoryItem(content=content, memory_type=memory_type, metadata=meta, origin=origin)
+        origin = (
+            meta.pop("origin", None) or kwargs.pop("origin", None) or "mcp:memory_add"
+        )
+        item = MemoryItem(
+            content=content, memory_type=memory_type, metadata=meta, origin=origin
+        )
         return self._mem.add(item)
 
     def get(self, item_id: str, **kwargs: Any) -> MemoryResult | None:
@@ -81,6 +87,10 @@ class LocalBackend:
         if result is None:
             return None
         return normalize_item(result)
+
+    def explain(self, memory_id: str, **kwargs: Any) -> dict[str, Any] | None:
+        """Full provenance answer via the core facade (PLAT-AUDITABLE-MEMORY-1)."""
+        return self._mem.explain(memory_id)
 
     def update(
         self,
@@ -134,7 +144,9 @@ class LocalBackend:
         results = normalize_items(search(query, top_k, **kwargs))
         # SELF-IMPROVE-6: track shown IDs for local-mode feedback
         self._last_search_session_id = f"local:{id(results)}:{top_k}"
-        self._last_shown_ids = [r.get("item_id", "") for r in results if r.get("item_id")]
+        self._last_shown_ids = [
+            r.get("item_id", "") for r in results if r.get("item_id")
+        ]
         return results
 
     def search_by_metadata(
@@ -154,7 +166,9 @@ class LocalBackend:
         out: list[MemoryResult] = []
         for raw in hits or []:
             item = normalize_item(raw)
-            if _metadata_matches(item.get("metadata") or {}, metadata_key, metadata_value):
+            if _metadata_matches(
+                item.get("metadata") or {}, metadata_key, metadata_value
+            ):
                 out.append(item)
             if len(out) >= top_k:
                 break
@@ -243,7 +257,9 @@ class LocalBackend:
             max_chunk_chars=max_chunk_chars,
             max_concurrent=max_concurrent,
         )
-        return asdict(response) if hasattr(response, "__dataclass_fields__") else response
+        return (
+            asdict(response) if hasattr(response, "__dataclass_fields__") else response
+        )
 
     def read_around(
         self,
@@ -271,7 +287,9 @@ class LocalBackend:
 
     # -- Listing & Stats --
 
-    def list_memories(self, limit: int = 100, offset: int = 0, **kwargs: Any) -> list[MemoryResult]:
+    def list_memories(
+        self, limit: int = 100, offset: int = 0, **kwargs: Any
+    ) -> list[MemoryResult]:
         """List memories with pagination, optionally filtered by metadata.
 
         `smartmemory.SmartMemory` has no `list_memories` — this delegation
@@ -284,13 +302,19 @@ class LocalBackend:
         mkey, mval = kwargs.get("metadata_key"), kwargs.get("metadata_value")
         if (mkey is None) != (mval is None):
             missing = "metadata_value" if mkey is not None else "metadata_key"
-            raise ValueError(f"metadata_key and metadata_value must be supplied together; {missing} is missing.")
+            raise ValueError(
+                f"metadata_key and metadata_value must be supplied together; {missing} is missing."
+            )
 
         window = max((limit + offset) * 10, 200)
         hits = self._mem.search("*", top_k=window)
         items = [normalize_item(raw) for raw in hits or []]
         if mkey is not None:
-            items = [i for i in items if _metadata_matches(i.get("metadata") or {}, mkey, mval)]
+            items = [
+                i
+                for i in items
+                if _metadata_matches(i.get("metadata") or {}, mkey, mval)
+            ]
         if len(hits or []) >= window:
             log.warning(
                 "list_memories scanned the local cap (%d items); results beyond that window "
@@ -370,9 +394,13 @@ class LocalBackend:
             **kwargs,
         )
 
-    def update_from_feedback(self, feedback: dict | None = None, memory_type: str = "semantic", **kwargs: Any) -> str:
+    def update_from_feedback(
+        self, feedback: dict | None = None, memory_type: str = "semantic", **kwargs: Any
+    ) -> str:
         """Update from user feedback."""
-        return self._mem.update_from_feedback(feedback=feedback or {}, memory_type=memory_type, **kwargs)
+        return self._mem.update_from_feedback(
+            feedback=feedback or {}, memory_type=memory_type, **kwargs
+        )
 
     def ground(self, item_id: str, **kwargs: Any) -> dict:
         """Ground a memory item."""
@@ -390,9 +418,13 @@ class LocalBackend:
         """Link two memories."""
         return self._mem.link(source_id, target_id, link_type=link_type)
 
-    def add_edge(self, source_id: str, target_id: str, relation_type: str, **kwargs: Any) -> str:
+    def add_edge(
+        self, source_id: str, target_id: str, relation_type: str, **kwargs: Any
+    ) -> str:
         """Add a graph edge."""
-        return self._mem.add_edge(source_id, target_id, relation_type=relation_type, **kwargs)
+        return self._mem.add_edge(
+            source_id, target_id, relation_type=relation_type, **kwargs
+        )
 
     def get_links(self, item_id: str, **kwargs: Any) -> list[MemoryResult]:
         """Get links for an item."""
@@ -422,7 +454,9 @@ class LocalBackend:
 
     # -- Retrieval feedback (SELF-IMPROVE-6) --
 
-    def submit_feedback(self, search_session_id: str, result_used: list[str], **kwargs: Any) -> dict:
+    def submit_feedback(
+        self, search_session_id: str, result_used: list[str], **kwargs: Any
+    ) -> dict:
         """Emit result-selection feedback via core retrieval_tracking (local mode).
 
         Uses the shown_ids captured from the most recent search() call to provide
@@ -436,7 +470,9 @@ class LocalBackend:
             # Use shown_ids from the search that produced these results
             shown_ids = getattr(self, "_last_shown_ids", None) or []
             if not shown_ids:
-                log.warning("submit_feedback: no prior search() call — shown_ids unknown, skipping")
+                log.warning(
+                    "submit_feedback: no prior search() call — shown_ids unknown, skipping"
+                )
                 return {"status": "skipped", "reason": "no prior search context"}
 
             emit_result_feedback(

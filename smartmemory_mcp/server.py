@@ -15,7 +15,7 @@ import sys
 
 from fastmcp import FastMCP
 
-from smartmemory_mcp.tier import Tier, resolve_tier, get_api_key, store_api_key
+from smartmemory_mcp.tier import Tier, resolve_tier, store_api_key
 from smartmemory_mcp.tools.common import graceful
 
 logger = logging.getLogger(__name__)

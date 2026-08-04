@@ -18,15 +18,23 @@ _LEGACY_RECALL_TYPE_SCOPE: set = {"pending"}
 # Module-level one-shot deprecation flag — logs exactly once per process.
 _RECALL_DEPRECATION_WARNED: bool = False
 
-_IDENTITY_METADATA_KEYS = frozenset({"tenant_id", "workspace_id", "team_id", "user_id", "run_id"})
+_IDENTITY_METADATA_KEYS = frozenset(
+    {"tenant_id", "workspace_id", "team_id", "user_id", "run_id"}
+)
 
 
 def _strip_identity_metadata(item: Dict[str, Any]) -> Dict[str, Any]:
     """Return an item copy without server-only tenant and execution identity."""
-    sanitized = {key: value for key, value in item.items() if key not in _IDENTITY_METADATA_KEYS}
+    sanitized = {
+        key: value for key, value in item.items() if key not in _IDENTITY_METADATA_KEYS
+    }
     metadata = item.get("metadata")
     if isinstance(metadata, dict):
-        sanitized["metadata"] = {key: value for key, value in metadata.items() if key not in _IDENTITY_METADATA_KEYS}
+        sanitized["metadata"] = {
+            key: value
+            for key, value in metadata.items()
+            if key not in _IDENTITY_METADATA_KEYS
+        }
     return sanitized
 
 
@@ -97,7 +105,9 @@ def _build_working_context(
 
     if max_tokens is not None and raw and not items:
         # Smallest mandatory item exceeds budget.
-        raise ValueError(f"budget_too_small: max_tokens={max_tokens} cannot fit the smallest item")
+        raise ValueError(
+            f"budget_too_small: max_tokens={max_tokens} cannot fit the smallest item"
+        )
 
     return {
         "decision_id": decision_id,
@@ -176,7 +186,9 @@ def _format_turn_content(user_turn: str, assistant_turn: str) -> str:
     return f"USER: {user_turn.strip()}\nASSISTANT: {assistant_turn.strip()}"
 
 
-def _format_recall(query: str, results: list, session_id: str = None, drift_warnings: list = None) -> str:
+def _format_recall(
+    query: str, results: list, session_id: str = None, drift_warnings: list = None
+) -> str:
     """Format recalled turns as a prompt-ready context string."""
     if not results:
         if session_id:
@@ -195,7 +207,11 @@ def _format_recall(query: str, results: list, session_id: str = None, drift_warn
     item_ids = ", ".join(str(item["item_id"]) for item in results if item["item_id"])
     lines.append(
         f"(Retrieved {len(results)} turns."
-        + (f" Use memory_get(item_id) for full content. IDs: {item_ids}" if item_ids else "")
+        + (
+            f" Use memory_get(item_id) for full content. IDs: {item_ids}"
+            if item_ids
+            else ""
+        )
         + ")"
     )
 
@@ -208,7 +224,9 @@ def _format_recall(query: str, results: list, session_id: str = None, drift_warn
             dscore = dw.get("drift_score", 0)
             missing = dw.get("missing_keywords", [])[:5]
             missing_str = ", ".join(missing) if missing else "none"
-            lines.append(f"  [{severity}] {acontent} (drift={dscore:.2f}, missing: {missing_str})")
+            lines.append(
+                f"  [{severity}] {acontent} (drift={dscore:.2f}, missing: {missing_str})"
+            )
 
     return "\n".join(lines)
 
@@ -249,8 +267,15 @@ def register_free(mcp):
         max_hops: int = 3,
         budget_ms: int = 1500,
         cite: bool = False,
+        as_of_date: Optional[str] = None,
+        include_superseded: bool = False,
     ):
-        """Search memories using semantic similarity with optional hybrid mode."""
+        """Search memories using semantic similarity with optional hybrid mode.
+
+        as_of_date (ISO-8601) travels transaction time: what the system
+        believed at that instant. include_superseded keeps replaced items
+        visible in results (PLAT-AUDITABLE-MEMORY-1).
+        """
         backend = get_backend()
         # SELF-IMPROVE-6 fix: pass actual top_k, not 3x over-fetch.
         # Over-fetch for origin filtering + reranking happens server-side.
@@ -265,6 +290,8 @@ def register_free(mcp):
             multi_hop=multi_hop,
             max_hops=max_hops,
             budget_ms=budget_ms,
+            as_of_date=as_of_date,
+            include_superseded=include_superseded,
         )
 
         # CORE-ORIGIN-1: apply search tier policy
@@ -306,7 +333,9 @@ def register_free(mcp):
 
         # SELF-IMPROVE-6: capture search_session_id from backend (RemoteBackend stores it
         # on _last_search_session_id after reading the X-Search-Session-Id response header).
-        session_id_from_search: str | None = getattr(backend, "_last_search_session_id", None)
+        session_id_from_search: str | None = getattr(
+            backend, "_last_search_session_id", None
+        )
 
         if catalog_mode:
             catalog = _format_catalog(query, results)
@@ -337,9 +366,15 @@ def register_free(mcp):
             lineage_str = f" [→{str(derived)[:8]}]" if derived else ""
 
             # CORE-PROPS-1: low-confidence tilde marker
-            id_display = f"~[{item_id}]" if confidence is not None and confidence < 0.5 else f"[{item_id}]"
+            id_display = (
+                f"~[{item_id}]"
+                if confidence is not None and confidence < 0.5
+                else f"[{item_id}]"
+            )
 
-            output.append(f"{i}. {stale_prefix}{id_display} ({mtype}){score_str}{conf_str}{lineage_str}{stale_suffix}")
+            output.append(
+                f"{i}. {stale_prefix}{id_display} ({mtype}){score_str}{conf_str}{lineage_str}{stale_suffix}"
+            )
             output.append(f"   {preview}\n")
 
         if session_id_from_search:
@@ -348,7 +383,9 @@ def register_free(mcp):
 
     @mcp.tool()
     @graceful
-    def memory_recall(query: str, session_id: Optional[str] = None, top_k: int = 5, cite: bool = False):
+    def memory_recall(
+        query: str, session_id: Optional[str] = None, top_k: int = 5, cite: bool = False
+    ):
         """**Deprecated:** Use ``get_working_context``.
 
         Legacy surface kept for backward compatibility.  Internally
@@ -390,7 +427,9 @@ def register_free(mcp):
         filtered: List[dict] = []
         for item in response["items"]:
             mtype = item.get("memory_type")
-            anchor_forced = bool((item.get("score_breakdown") or {}).get("anchor_forced"))
+            anchor_forced = bool(
+                (item.get("score_breakdown") or {}).get("anchor_forced")
+            )
             if anchor_forced or mtype in _LEGACY_RECALL_TYPE_SCOPE:
                 filtered.append(item)
 
@@ -506,6 +545,24 @@ def register_free(mcp):
         if meta:
             parts.append(f"Metadata: {meta}")
         return "\n".join(parts)
+
+    @mcp.tool()
+    @graceful
+    def memory_explain(memory_id: str):
+        """Explain a memory's full provenance: origin, every belief the system
+        held for it over time, what replaced it, what it derives from, and
+        whether its history is cryptographically intact.
+
+        The single-call audit answer (PLAT-AUDITABLE-MEMORY-1). FREE tier by
+        design: agents should always be able to answer "how do you know
+        that?". chain_verified null means nothing to verify (legacy or
+        unversioned) — it is NOT a tamper warning.
+        """
+        backend = get_backend()
+        result = backend.explain(memory_id)
+        if result is None:
+            return f"Memory item not found: {memory_id}"
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -644,7 +701,9 @@ def register_pro(mcp):
 
     @mcp.tool()
     @graceful
-    def memory_distill(user_turn: str, assistant_turn: str, session_id: Optional[str] = None) -> str:
+    def memory_distill(
+        user_turn: str, assistant_turn: str, session_id: Optional[str] = None
+    ) -> str:
         """Ingest a conversation turn pair into pending memory for later recall."""
         backend = get_backend()
         content = _format_turn_content(user_turn, assistant_turn)
@@ -691,7 +750,9 @@ def register_pro(mcp):
             ingested = response.get("chunks_ingested", 0)
             failed = response.get("chunks_failed", 0)
             conv_id = response.get("conversation_id", "")
-            return f"Conversation {conv_id}: {ingested} chunks ingested, {failed} failed."
+            return (
+                f"Conversation {conv_id}: {ingested} chunks ingested, {failed} failed."
+            )
         from dataclasses import asdict
 
         r = asdict(response) if hasattr(response, "__dataclass_fields__") else response
@@ -699,7 +760,9 @@ def register_pro(mcp):
 
     @mcp.tool()
     @graceful
-    def memory_search_advanced(query: str, algorithm: str = "query_traversal", max_results: int = 15) -> str:
+    def memory_search_advanced(
+        query: str, algorithm: str = "query_traversal", max_results: int = 15
+    ) -> str:
         """Advanced search using Similarity Graph Traversal (SSG) algorithms."""
         try:
             from smartmemory.retrieval.ssg_traversal import SimilarityGraphTraversal
@@ -735,7 +798,9 @@ def register_pro(mcp):
 
     @mcp.tool()
     @graceful
-    def memory_search_by_metadata(metadata_key: str, metadata_value: str, top_k: int = 10) -> str:
+    def memory_search_by_metadata(
+        metadata_key: str, metadata_value: str, top_k: int = 10
+    ) -> str:
         """Search memories by exact metadata key-value match."""
         backend = get_backend()
         results = backend.search_by_metadata(metadata_key, metadata_value, top_k=top_k)
@@ -743,13 +808,22 @@ def register_pro(mcp):
         if not results:
             return f"No memories found with {metadata_key}={metadata_value}"
 
-        output = [f"Found {len(results)} memories with {metadata_key}={metadata_value}:\n"]
+        output = [
+            f"Found {len(results)} memories with {metadata_key}={metadata_value}:\n"
+        ]
         for item in results:
             content = str(item["content"])
             preview = content[:150] + "..." if len(content) > 150 else content
             item_id = item["item_id"]
             mtype = item["memory_type"]
-            output.append(f"- [{item_id}] ({mtype}): {preview}")
+            # A superseded memory rendered identically to an active one invites the
+            # caller to act on knowledge the system already knows is obsolete.
+            if item.get("superseded"):
+                replaced_by = item.get("superseded_by")
+                marker = f" [SUPERSEDED{f' by {replaced_by}' if replaced_by else ''}]"
+            else:
+                marker = ""
+            output.append(f"- [{item_id}] ({mtype}){marker}: {preview}")
 
         return "\n".join(output)
 
@@ -778,7 +852,9 @@ def register_feedback(mcp):
                 Pass an empty list if none of the results were useful.
         """
         backend = get_backend()
-        result = backend.submit_feedback(search_session_id=search_session_id, result_used=result_used)
+        result = backend.submit_feedback(
+            search_session_id=search_session_id, result_used=result_used
+        )
         if isinstance(result, dict):
             if "error" in result:
                 return f"Feedback failed: {result['error']}"

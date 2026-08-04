@@ -8,7 +8,7 @@ Parser adapted from smart-memory-core/smartmemory/code/parser.py
 
 import ast
 import os
-from typing import Any, Optional
+from typing import Any
 from dataclasses import dataclass, field
 
 

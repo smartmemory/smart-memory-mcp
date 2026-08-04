@@ -171,3 +171,81 @@ def test_search_raises_on_error_dict(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="API error 500"):
         backend.search("anything")
+
+
+# --- Codex review 2026-08-02: error paths, not just envelope shapes ----------
+# The original sweep verified envelope UNPACKING across all call sites and
+# declared the file clean. It never audited the ERROR paths, where add() and
+# get() were both reporting failures as success.
+
+
+def test_add_raises_instead_of_returning_the_error_dict_as_an_item_id(monkeypatch) -> None:
+    """add() used to hand back "{'error': 'API error 500: ...'}" AS THE NEW ITEM ID."""
+    backend = _backend()
+    monkeypatch.setattr(backend, "_request", lambda *a, **k: {"error": "API error 500: boom"})
+
+    with pytest.raises(RuntimeError, match="boom"):
+        backend.add("some content")
+
+
+def test_add_raises_when_no_item_id_comes_back(monkeypatch) -> None:
+    backend = _backend()
+    monkeypatch.setattr(backend, "_request", lambda *a, **k: {"status": "created"})
+
+    with pytest.raises(RuntimeError, match="no item id"):
+        backend.add("some content")
+
+
+def test_add_returns_id_from_the_id_key(monkeypatch) -> None:
+    """The service returns {"id": ...}, not {"item_id": ...} (crud.py add_memory)."""
+    backend = _backend()
+    monkeypatch.setattr(backend, "_request", lambda *a, **k: {"id": "m-77", "status": "created"})
+
+    assert backend.add("some content") == "m-77"
+
+
+def test_get_raises_on_outage_instead_of_reporting_absence(monkeypatch) -> None:
+    """A 403/500 rendered as "Memory item not found." is silent degradation."""
+    backend = _backend()
+    monkeypatch.setattr(backend, "_request", lambda *a, **k: {"error": "API error 500: boom"})
+
+    with pytest.raises(RuntimeError, match="boom"):
+        backend.get("m-1")
+
+
+def test_get_still_returns_none_for_genuine_absence(monkeypatch) -> None:
+    backend = _backend()
+    monkeypatch.setattr(backend, "_request", lambda *a, **k: {"error": "API error 404: not found"})
+    assert backend.get("m-1") is None
+
+    monkeypatch.setattr(backend, "_request", lambda *a, **k: None)
+    assert backend.get("m-1") is None
+
+
+def test_list_memories_guards_a_non_list_items_value(monkeypatch) -> None:
+    """A regressed {"items": {...}} must not become one blank memory per dict key."""
+    backend = _backend()
+    monkeypatch.setattr(backend, "_request", lambda *a, **k: {"items": {"a": 1, "b": 2}, "total": 2})
+
+    assert backend.list_memories() == []
+
+
+def test_superseded_fields_survive_normalization(monkeypatch) -> None:
+    """crud.py returns superseded/superseded_by; dropping them hid obsolete memories."""
+    backend = _backend()
+    monkeypatch.setattr(
+        backend,
+        "_request",
+        lambda *a, **k: {
+            "items": [
+                {"item_id": "old", "content": "stale fact", "superseded": True, "superseded_by": "new"},
+                {"item_id": "cur", "content": "current fact"},
+            ],
+            "count": 2,
+        },
+    )
+
+    out = backend.search_by_metadata("k", "v")
+    assert out[0]["superseded"] is True
+    assert out[0]["superseded_by"] == "new"
+    assert out[1]["superseded"] is False

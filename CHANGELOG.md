@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added (2026-08-04) — as-of recall + memory_explain (PLAT-AUDITABLE-MEMORY-1 T10)
+
+- `memory_search` gains `as_of_date` (ISO-8601 transaction-time travel) and
+  `include_superseded`; forwarded through both backends (local kwargs →
+  core; remote → POST body — the third forwarding point, a missed one is a
+  silent param drop).
+- New `memory_explain(memory_id)` tool, FREE tier by design: the single-call
+  provenance answer (origin tier, version audit with chain hashes,
+  supersession, lineage, decision provenance, chain verification).
+  `chain_verified: null` is "nothing to verify", not a tamper warning.
+  Backends: local → core `SmartMemory.explain`; remote →
+  `GET /memory/{id}/explain` (404 = absence; other errors raise).
+- No `audit_verify` MCP tool — the verify surface is enterprise-gated REST
+  only (decision 10).
+
 ### Fixed
 
 - **Three local-mode tools raised `AttributeError` on every call.**

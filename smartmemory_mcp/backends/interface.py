@@ -1,4 +1,5 @@
 """MemoryBackend protocol — structural interface for local and remote backends."""
+
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
@@ -17,7 +18,9 @@ class MemoryBackend(Protocol):
 
     # --- Core CRUD ---------------------------------------------------------------
 
-    def add(self, content: str, memory_type: str = "semantic", **kwargs: Any) -> dict[str, Any]:
+    def add(
+        self, content: str, memory_type: str = "semantic", **kwargs: Any
+    ) -> dict[str, Any]:
         """Store a memory item."""
         ...
 
@@ -39,8 +42,14 @@ class MemoryBackend(Protocol):
         """Semantic similarity search."""
         ...
 
-    def search_by_metadata(self, metadata_key: str, metadata_value: str, top_k: int = 10, **kwargs: Any) -> list[MemoryResult]:
+    def search_by_metadata(
+        self, metadata_key: str, metadata_value: str, top_k: int = 10, **kwargs: Any
+    ) -> list[MemoryResult]:
         """Search by metadata key-value match."""
+        ...
+
+    def explain(self, memory_id: str, **kwargs: Any) -> dict[str, Any] | None:
+        """Full provenance answer for one memory (PLAT-AUDITABLE-MEMORY-1 explain contract)."""
         ...
 
     def recall(self, cwd: str | None = None, top_k: int = 10, **kwargs: Any) -> str:
@@ -49,11 +58,15 @@ class MemoryBackend(Protocol):
 
     # --- Pipeline ----------------------------------------------------------------
 
-    def ingest(self, content: str, memory_type: str = "semantic", **kwargs: Any) -> dict[str, Any] | str:
+    def ingest(
+        self, content: str, memory_type: str = "semantic", **kwargs: Any
+    ) -> dict[str, Any] | str:
         """Ingest content through the full extraction pipeline."""
         ...
 
-    def ingest_structured(self, data: dict[str, Any], schema: str | None = None, **kwargs: Any) -> str:
+    def ingest_structured(
+        self, data: dict[str, Any], schema: str | None = None, **kwargs: Any
+    ) -> str:
         """Ingest structured data with an optional schema."""
         ...
 
@@ -133,7 +146,9 @@ class MemoryBackend(Protocol):
         """Personalize a response using stored memory context."""
         ...
 
-    def update_from_feedback(self, item_id: str, feedback: str, **kwargs: Any) -> dict[str, Any]:
+    def update_from_feedback(
+        self, item_id: str, feedback: str, **kwargs: Any
+    ) -> dict[str, Any]:
         """Update a memory item based on user feedback."""
         ...
 
@@ -147,7 +162,9 @@ class MemoryBackend(Protocol):
         """Create a link between two memory items."""
         ...
 
-    def add_edge(self, source_id: str, target_id: str, relation: str, **kwargs: Any) -> dict[str, Any]:
+    def add_edge(
+        self, source_id: str, target_id: str, relation: str, **kwargs: Any
+    ) -> dict[str, Any]:
         """Add a typed edge between two items in the knowledge graph."""
         ...
 
@@ -159,12 +176,16 @@ class MemoryBackend(Protocol):
         """Get neighboring nodes in the knowledge graph."""
         ...
 
-    def find_shortest_path(self, source_id: str, target_id: str, **kwargs: Any) -> dict[str, Any]:
+    def find_shortest_path(
+        self, source_id: str, target_id: str, **kwargs: Any
+    ) -> dict[str, Any]:
         """Find the shortest path between two nodes in the graph."""
         ...
 
     # --- Retrieval feedback (SELF-IMPROVE-6) -------------------------------------
 
-    def submit_feedback(self, search_session_id: str, result_used: list[str], **kwargs: Any) -> dict[str, Any]:
+    def submit_feedback(
+        self, search_session_id: str, result_used: list[str], **kwargs: Any
+    ) -> dict[str, Any]:
         """Submit result-selection feedback for a completed search session."""
         ...

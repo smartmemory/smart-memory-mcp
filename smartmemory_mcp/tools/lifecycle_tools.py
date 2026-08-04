@@ -11,7 +11,7 @@ import logging
 import os
 from pathlib import Path
 
-from smartmemory_mcp.tools.common import get_backend, graceful
+from smartmemory_mcp.tools.common import graceful
 
 log = logging.getLogger(__name__)
 
