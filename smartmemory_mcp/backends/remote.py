@@ -315,6 +315,8 @@ class RemoteBackend:
         # blueprint C3: a missed allowlist entry is a silent param drop).
         if kwargs.get("as_of_date"):
             body["as_of_date"] = kwargs["as_of_date"]
+        if kwargs.get("as_of_strict"):
+            body["as_of_strict"] = True
         if kwargs.get("include_superseded"):
             body["include_superseded"] = True
         # SELF-IMPROVE-6: capture X-Search-Session-Id header from response
@@ -351,6 +353,10 @@ class RemoteBackend:
             # treating the envelope as "not a list" silently emptied every search.
             rows = result.get("results")
             raw = rows if isinstance(rows, list) else []
+            # gap #2: keep the temporal verdict. Unwrapping the envelope and
+            # dropping this discards the only query-level signal that an as-of
+            # answer contains present-day content.
+            self._last_as_of_diagnostics = result.get("as_of_diagnostics")
         else:
             # Pre-LINEAGE-1 services returned a bare top-level array.
             raw = result if isinstance(result, list) else []
