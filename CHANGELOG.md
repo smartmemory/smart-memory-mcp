@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.4.59] - 2026-08-04
+
 ### Added (2026-08-04) — as-of recall + memory_explain (PLAT-AUDITABLE-MEMORY-1 T10)
 
 - `memory_search` gains `as_of_date` (ISO-8601 transaction-time travel) and
