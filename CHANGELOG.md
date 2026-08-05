@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [Unreleased]
+
+### Added (2026-08-05) — `include_retracted` on `memory_search` (CORE-RETRACTED-RECALL-1)
+
+- `memory_search` gains `include_retracted`, forwarded through both backends (local
+  kwargs → core; remote → POST body — the same third forwarding point that made
+  `include_superseded` a silent-drop risk).
+- **Agents no longer see withdrawn decisions by default.** This is the point of the
+  change: a retracted decision has no replacement to redirect to, so an agent quoting
+  one has no signal that it was killed. Pass `include_retracted=true` for audit views.
+
 ## [1.4.59] - 2026-08-04
 
 ### Added (2026-08-04) — as-of recall + memory_explain (PLAT-AUDITABLE-MEMORY-1 T10)

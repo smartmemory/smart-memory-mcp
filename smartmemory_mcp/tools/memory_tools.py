@@ -270,12 +270,17 @@ def register_free(mcp):
         as_of_date: Optional[str] = None,
         as_of_strict: bool = False,
         include_superseded: bool = False,
+        include_retracted: bool = False,
     ):
         """Search memories using semantic similarity with optional hybrid mode.
 
         as_of_date (ISO-8601) travels transaction time: what the system
         believed at that instant. include_superseded keeps replaced items
-        visible in results (PLAT-AUDITABLE-MEMORY-1).
+        visible in results (PLAT-AUDITABLE-MEMORY-1). include_retracted keeps
+        WITHDRAWN beliefs visible (CORE-RETRACTED-RECALL-1) — a separate
+        lifecycle state with no replacement, not covered by include_superseded.
+        Both default to false, so by default you will not be shown a decision
+        the system already knows was replaced or withdrawn.
 
         Results from an as_of_date search carry as_of_resolution. A value of
         "unresolved" means that result is PRESENT-DAY content the system could
@@ -300,6 +305,7 @@ def register_free(mcp):
             as_of_date=as_of_date,
             as_of_strict=as_of_strict,
             include_superseded=include_superseded,
+            include_retracted=include_retracted,
         )
 
         # CORE-ORIGIN-1: apply search tier policy

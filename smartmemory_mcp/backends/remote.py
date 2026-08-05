@@ -319,6 +319,8 @@ class RemoteBackend:
             body["as_of_strict"] = True
         if kwargs.get("include_superseded"):
             body["include_superseded"] = True
+        if kwargs.get("include_retracted"):
+            body["include_retracted"] = True  # CORE-RETRACTED-RECALL-1
         # SELF-IMPROVE-6: capture X-Search-Session-Id header from response
         self._last_search_session_id: str | None = None
         try:
