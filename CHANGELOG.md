@@ -9,6 +9,14 @@
 - `memory_search` gains `include_retracted`, forwarded through both backends (local
   kwargs → core; remote → POST body — the same third forwarding point that made
   `include_superseded` a silent-drop risk).
+- **The local hop was not actually working, for any of these params.** Tracing this one
+  end to end found that `smartmemory_app.storage.search()` — the local backend's only
+  path to core — forwards kwargs through an allowlist that drops unknown keys silently,
+  and `include_superseded`, `as_of_date` and `as_of_strict` were all missing from it.
+  So the PLAT-AUDITABLE-MEMORY-1 entry below claiming they were "forwarded through both
+  backends" was true only of the remote half; in local mode an as-of audit request
+  returned plain present-day results with no error. Fixed in `smartmemory` (wrapper)
+  `40e6764` with a regression test covering all four params.
 - **Agents no longer see withdrawn decisions by default.** This is the point of the
   change: a retracted decision has no replacement to redirect to, so an agent quoting
   one has no signal that it was killed. Pass `include_retracted=true` for audit views.
