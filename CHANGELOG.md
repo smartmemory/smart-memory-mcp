@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-## [Unreleased]
+## [1.4.60] - 2026-08-06
 
 ### Added (2026-08-05) — `include_retracted` on `memory_search` (CORE-RETRACTED-RECALL-1)
 
