@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added — `memory_recall_pack` tool (CORE-RECALL-BUDGET-1)
+
+- `memory_recall_pack(budget_tokens, query=None, sections=None)` returns a token-budgeted,
+  priority-ordered context block plus its accounting manifest. **FREE tier** (the
+  `get_working_context` precedent): a budgeted context block is what an agent needs most
+  when it has least, so it does not sit behind a tier.
+- Wired through BOTH backends — `LocalBackend.recall_pack` delegates to the in-process
+  facade, `RemoteBackend.recall_pack` POSTs `/memory/recall/pack`.
+- Budget and section names are validated in the tool, so a typo fails fast with a usable
+  message instead of travelling to core or over HTTP.
+- FREE/PRO/PRO_PLUS tool counts move 15→16 / 66→67 / 97→98.
+
+
 ### Added — `peer_chat` tool (CORE-ZERO-SCHEMA-1 Phase 1)
 
 - `peer_chat(peer_id, query, reasoning_level="medium", session_id=None, top_k=10)` — the

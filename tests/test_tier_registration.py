@@ -29,7 +29,11 @@ print(json.dumps({"count": len(tools), "names": sorted(tools.keys())}))
 
 def _clean_env(**overrides) -> dict[str, str]:
     """Return a copy of os.environ with tier-related vars removed, then overrides applied."""
-    env = {k: v for k, v in os.environ.items() if k not in ("SMARTMEMORY_API_KEY", "SMARTMEMORY_MCP_FULL_TOOLS")}
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in ("SMARTMEMORY_API_KEY", "SMARTMEMORY_MCP_FULL_TOOLS")
+    }
     env.update(overrides)
     return env
 
@@ -43,7 +47,9 @@ def _run_snippet(env: dict[str, str]) -> dict:
         env=env,
         cwd=MCP_ROOT,
     )
-    assert result.returncode == 0, f"Subprocess failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    assert result.returncode == 0, (
+        f"Subprocess failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
     # Parse the last line (skip any warnings on stderr)
     output = result.stdout.strip().splitlines()[-1]
     return json.loads(output)
@@ -89,56 +95,69 @@ class TestResolveTier:
 # Tool count tests (subprocess — clean Python process per tier)
 # ---------------------------------------------------------------------------
 
-FREE_TOOLS = sorted([
-    "login",
-    "whoami",
-    "switch_team",
-    "memory_ingest",
-    "memory_search",
-    "memory_recall",
-    "memory_get",
-    "memory_explain",  # PLAT-AUDITABLE-MEMORY-1 — FREE by design (positioning wedge)
-    "memory_export",
-    "memory_import",
-    "memory_migrate",
-    "memory_auto",  # DIST-AGENT-HOOKS-1
-    "memory_feedback",  # SELF-IMPROVE-* feedback surface
-    "get_working_context",  # CORE-MEMORY-DYNAMICS-1 M1a
-    "read_around",  # CORE-RECALL-CENTERED-1 Phase 2
-])
+FREE_TOOLS = sorted(
+    [
+        "login",
+        "whoami",
+        "switch_team",
+        "memory_ingest",
+        "memory_search",
+        "memory_recall",
+        "memory_get",
+        "memory_explain",  # PLAT-AUDITABLE-MEMORY-1 — FREE by design (positioning wedge)
+        "memory_export",
+        "memory_import",
+        "memory_migrate",
+        "memory_auto",  # DIST-AGENT-HOOKS-1
+        "memory_feedback",  # SELF-IMPROVE-* feedback surface
+        "get_working_context",  # CORE-MEMORY-DYNAMICS-1 M1a
+        "read_around",  # CORE-RECALL-CENTERED-1 Phase 2
+        "memory_recall_pack",  # CORE-RECALL-BUDGET-1 — budgeted context assembly, FREE by design
+    ]
+)
 
 
 class TestToolRegistration:
     def test_free_tier_tool_count(self):
-        """FREE tier registers exactly 15 tools.
+        """FREE tier registers exactly 16 tools.
 
         NOTE: `_clean_env` only strips the two tier env vars — it cannot reach the
         keyring/file credential store that `tier.get_api_key()` also consults. On a
         developer machine that is logged in (smartmemory_app keyring), this resolves
-        to a paid tier and the count comes back 65 instead of 15. That is a local
+        to a paid tier and the count comes back 67 instead of 16. That is a local
         artifact, NOT a regression; CI and any clean container see FREE correctly.
         Verify locally with: docker run --rm -v "$PWD":/w -w /w python:3.11-slim \
         sh -c "pip install -q -e . pytest && pytest tests/ -q"
         """
         env = _clean_env()
         data = _run_snippet(env)
-        assert data["count"] == 15, f"Expected 15 FREE tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 16, (
+            f"Expected 16 FREE tools, got {data['count']}: {data['names']}"
+        )
         assert data["names"] == FREE_TOOLS
 
     def test_pro_tier_tool_count(self):
-        """PRO tier registers exactly 66 tools (peer_chat added by CORE-ZERO-SCHEMA-1 Phase 1)."""
+        """PRO tier registers exactly 67 tools (+memory_recall_pack, CORE-RECALL-BUDGET-1)."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
         data = _run_snippet(env)
-        assert data["count"] == 66, f"Expected 66 PRO tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 67, (
+            f"Expected 67 PRO tools, got {data['count']}: {data['names']}"
+        )
         # Verify FREE tools are a subset of PRO tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
 
     def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 97 tools (peer_chat added by CORE-ZERO-SCHEMA-1 Phase 1)."""
-        env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true")
+        """PRO_PLUS tier registers exactly 98 tools (+memory_recall_pack, CORE-RECALL-BUDGET-1)."""
+        env = _clean_env(
+            SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true"
+        )
         data = _run_snippet(env)
-        assert data["count"] == 97, f"Expected 97 PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 98, (
+            f"Expected 98 PRO_PLUS tools, got {data['count']}: {data['names']}"
+        )
         # Verify FREE tools are a subset of PRO_PLUS tools
         for tool in FREE_TOOLS:
-            assert tool in data["names"], f"FREE tool {tool!r} missing from PRO_PLUS tier"
+            assert tool in data["names"], (
+                f"FREE tool {tool!r} missing from PRO_PLUS tier"
+            )

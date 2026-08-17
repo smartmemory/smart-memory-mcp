@@ -578,6 +578,50 @@ def register_free(mcp):
             return f"Memory item not found: {memory_id}"
         return result
 
+    # CORE-RECALL-BUDGET-1: known section names, mirrored from
+    # smartmemory.recall_pack.KNOWN_SECTIONS. Validated here so a typo fails fast with a
+    # usable message instead of travelling to core (local) or over HTTP (remote).
+    _RECALL_SECTIONS = (
+        "active_plan",
+        "anchors",
+        "snapshot",
+        "tier1_user",
+        "tier2_graduated",
+        "notes",
+    )
+
+    @mcp.tool()
+    @graceful
+    def memory_recall_pack(
+        budget_tokens: int,
+        query: Optional[str] = None,
+        sections: Optional[list] = None,
+    ) -> dict:
+        """Assemble the most useful context that fits in a token budget.
+
+        Returns one priority-ordered block (active plan, anchors, latest snapshot,
+        tier-1 user content, tier-2 graduated content, notes) packed to fit
+        ``budget_tokens``, plus a manifest accounting every token spent and every item
+        truncated or dropped (CORE-RECALL-BUDGET-1).
+
+        ``query`` ranks each section by relevance; omit it to rank by recency.
+        ``sections`` overrides the default list/order/caps as ``{name, cap_tokens}``
+        entries. Returns ``{block, manifest}``.
+        """
+        if not isinstance(budget_tokens, int) or budget_tokens < 1:
+            return {"error": "`budget_tokens` must be an integer >= 1."}
+        for entry in sections or []:
+            name = (entry or {}).get("name")
+            if name not in _RECALL_SECTIONS:
+                return {
+                    "error": f"unknown section {name!r}; known sections: {', '.join(_RECALL_SECTIONS)}"
+                }
+
+        backend = get_backend()
+        return backend.recall_pack(
+            budget_tokens=budget_tokens, query=query, sections=sections
+        )
+
 
 # ---------------------------------------------------------------------------
 # PRO tier tools (9)

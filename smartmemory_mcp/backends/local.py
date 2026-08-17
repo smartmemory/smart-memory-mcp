@@ -193,6 +193,14 @@ class LocalBackend:
         """
         return self._mem.blame_code(**kwargs)
 
+    def recall_pack(self, **kwargs: Any) -> dict[str, Any]:
+        """Budgeted context assembly passthrough (CORE-RECALL-BUDGET-1).
+
+        Delegates to the in-process SmartMemory facade, which owns the section gathering
+        and the packing policy. Returns the RecallPack dict unchanged.
+        """
+        return self._mem.recall_pack(**kwargs)
+
     def peer_chat(self, **kwargs: Any) -> dict[str, Any]:
         """Zero-schema peer synthesis passthrough (CORE-ZERO-SCHEMA-1 Phase 1).
 

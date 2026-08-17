@@ -292,6 +292,19 @@ class RemoteBackend:
             return False
         return True
 
+    def recall_pack(self, budget_tokens: int, **kwargs: Any) -> dict[str, Any]:
+        """POST /memory/recall/pack (CORE-RECALL-BUDGET-1).
+
+        Optional params are added only when set — the service treats an explicit null
+        `sections` as "use the defaults", but omitting keys keeps the wire body identical
+        to what the SDKs send, so one route body shape serves every caller.
+        """
+        body: dict[str, Any] = {"budget_tokens": budget_tokens}
+        for key in ("query", "sections"):
+            if kwargs.get(key) is not None:
+                body[key] = kwargs[key]
+        return self._request("POST", "/memory/recall/pack", json=body)
+
     def search(self, query: str, top_k: int = 5, **kwargs: Any) -> list[MemoryResult]:
         """POST /memory/search."""
         body: dict[str, Any] = {"query": query, "top_k": top_k}
