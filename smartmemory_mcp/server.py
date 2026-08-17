@@ -116,6 +116,7 @@ def _register_tools():
             agent_tools,
             structured_tools,
             pattern_tools,
+            peer_tools,
         )
 
         decision_tools.register(mcp)
@@ -126,6 +127,7 @@ def _register_tools():
         agent_tools.register(mcp)
         structured_tools.register(mcp)
         pattern_tools.register(mcp)
+        peer_tools.register(mcp)
 
     # PRO+ tier
     if tier >= Tier.PRO_PLUS:

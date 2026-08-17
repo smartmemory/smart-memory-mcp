@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added — `peer_chat` tool (CORE-ZERO-SCHEMA-1 Phase 1)
+
+- `peer_chat(peer_id, query, reasoning_level="medium", session_id=None, top_k=10)` — the
+  zero-schema front door: ask a question about a peer, get an answer synthesized from
+  their stored memory. Registered at the PRO tier. Returns the `PeerChatResult` dict
+  (`answer`, `peer_id`, `reasoning_level`, `model`, `sources`) per `peer-chat-contract.json`.
+- **Local-backend only.** No `/memory/peer/*` service route exists yet, so a remote
+  backend gets a parked-capability message rather than a broken proxy call — the same
+  deferral shape the provenance tools use. The hosted surface lands with Phase 4.
+- `LocalBackend.peer_chat` passthrough delegates to core's `smartmemory.peer.synthesis`.
+
 ## [1.4.60] - 2026-08-06
 
 ### Added (2026-08-05) — `include_retracted` on `memory_search` (CORE-RETRACTED-RECALL-1)

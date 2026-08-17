@@ -193,6 +193,16 @@ class LocalBackend:
         """
         return self._mem.blame_code(**kwargs)
 
+    def peer_chat(self, **kwargs: Any) -> dict[str, Any]:
+        """Zero-schema peer synthesis passthrough (CORE-ZERO-SCHEMA-1 Phase 1).
+
+        Delegates to the in-process lite SmartMemory, which owns the gather + single
+        synthesis call. Local-only — no hosted REST route exists yet.
+        """
+        from smartmemory.peer.synthesis import peer_chat
+
+        return peer_chat(self._mem, **kwargs)
+
     def read_transcript_centered(self, **kwargs: Any) -> dict[str, Any]:
         """Centered transcript-reader passthrough (CORE-CODE-PROVENANCE-1 Phase 2c).
 
