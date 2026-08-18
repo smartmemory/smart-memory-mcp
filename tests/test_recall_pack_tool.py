@@ -79,8 +79,56 @@ def test_memory_recall_pack_returns_the_pack_verbatim():
 
     assert out == _pack()
     assert backend.calls == [
-        {"budget_tokens": 500, "query": "budgets", "sections": None}
+        {"budget_tokens": 500, "query": "budgets", "sections": None, "preset": None}
     ]
+
+
+def test_memory_recall_pack_forwards_the_wakeup_preset():
+    """Phase 5: the L1 session-start card rides the same tool, not a second one."""
+    backend = _Backend(_pack())
+    with patch.object(memory_tools, "get_backend", return_value=backend):
+        _registered()["memory_recall_pack"](budget_tokens=200, preset="wakeup")
+
+    assert backend.calls[0]["preset"] == "wakeup"
+    assert backend.calls[0]["sections"] is None
+
+
+def test_memory_recall_pack_rejects_an_unknown_preset():
+    backend = _Backend(_pack())
+    with patch.object(memory_tools, "get_backend", return_value=backend):
+        out = _registered()["memory_recall_pack"](budget_tokens=200, preset="nope")
+
+    assert "error" in out
+    assert "unknown preset" in out["error"]
+    assert backend.calls == []
+
+
+def test_memory_recall_pack_rejects_preset_and_sections_together():
+    """Ambiguous intent — resolving it silently would hand back a pack nobody asked for."""
+    backend = _Backend(_pack())
+    with patch.object(memory_tools, "get_backend", return_value=backend):
+        out = _registered()["memory_recall_pack"](
+            budget_tokens=200,
+            preset="wakeup",
+            sections=[{"name": "anchors", "cap_tokens": 50}],
+        )
+
+    assert "error" in out
+    assert backend.calls == []
+
+
+def test_memory_recall_pack_accepts_the_phase_5_section_names():
+    """`hot_topics` / `last_session` are addressable by name, not preset-only."""
+    backend = _Backend(_pack())
+    sections = [
+        {"name": "hot_topics", "cap_tokens": 60},
+        {"name": "last_session", "cap_tokens": 40},
+    ]
+    with patch.object(memory_tools, "get_backend", return_value=backend):
+        out = _registered()["memory_recall_pack"](budget_tokens=200, sections=sections)
+
+    assert "error" not in out
+    assert backend.calls[0]["sections"] == sections
 
 
 def test_memory_recall_pack_forwards_sections():

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added — `memory_recall_pack` gains `preset` (CORE-RECALL-BUDGET-1 Phase 5)
+
+- `preset="wakeup"` returns the L1 session-start card at a small budget (~200 tokens).
+  Rides the existing tool rather than a second one — it is the same assembler with a
+  different choice of sections.
+- `hot_topics` and `last_session` added to the validated section names.
+- Rejects an unknown preset, and rejects `preset` and `sections` together rather than
+  silently resolving an ambiguous request.
+- Forwarded through both backends (`LocalBackend` via `**kwargs`, `RemoteBackend` on the
+  wire body).
+
 ### Added — `memory_recall_pack` tool (CORE-RECALL-BUDGET-1)
 
 - `memory_recall_pack(budget_tokens, query=None, sections=None)` returns a token-budgeted,

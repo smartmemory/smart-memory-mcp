@@ -300,7 +300,7 @@ class RemoteBackend:
         to what the SDKs send, so one route body shape serves every caller.
         """
         body: dict[str, Any] = {"budget_tokens": budget_tokens}
-        for key in ("query", "sections"):
+        for key in ("query", "sections", "preset"):
             if kwargs.get(key) is not None:
                 body[key] = kwargs[key]
         return self._request("POST", "/memory/recall/pack", json=body)

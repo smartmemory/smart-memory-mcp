@@ -588,7 +588,12 @@ def register_free(mcp):
         "tier1_user",
         "tier2_graduated",
         "notes",
+        "hot_topics",
+        "last_session",
     )
+
+    # Mirrored from smartmemory.recall_pack.PRESETS.
+    _RECALL_PRESETS = ("wakeup",)
 
     @mcp.tool()
     @graceful
@@ -596,6 +601,7 @@ def register_free(mcp):
         budget_tokens: int,
         query: Optional[str] = None,
         sections: Optional[list] = None,
+        preset: Optional[str] = None,
     ) -> dict:
         """Assemble the most useful context that fits in a token budget.
 
@@ -606,10 +612,21 @@ def register_free(mcp):
 
         ``query`` ranks each section by relevance; omit it to rank by recency.
         ``sections`` overrides the default list/order/caps as ``{name, cap_tokens}``
-        entries. Returns ``{block, manifest}``.
+        entries. ``preset`` selects a named section set instead: pass ``"wakeup"`` with a
+        small budget (~200 tokens) at session start for an L1 orientation card (active
+        plan, anchors, workspace topics, last-session headline) — the default sections go
+        degenerate at that size. Use ``get_working_context`` for the L2 drill-in.
+        Returns ``{block, manifest}``.
         """
         if not isinstance(budget_tokens, int) or budget_tokens < 1:
             return {"error": "`budget_tokens` must be an integer >= 1."}
+        if preset is not None:
+            if sections is not None:
+                return {"error": "pass either `preset` or `sections`, not both."}
+            if preset not in _RECALL_PRESETS:
+                return {
+                    "error": f"unknown preset {preset!r}; known presets: {', '.join(_RECALL_PRESETS)}"
+                }
         for entry in sections or []:
             name = (entry or {}).get("name")
             if name not in _RECALL_SECTIONS:
@@ -619,7 +636,7 @@ def register_free(mcp):
 
         backend = get_backend()
         return backend.recall_pack(
-            budget_tokens=budget_tokens, query=query, sections=sections
+            budget_tokens=budget_tokens, query=query, sections=sections, preset=preset
         )
 
 
