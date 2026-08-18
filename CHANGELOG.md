@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed — recommended wake-up budget ~200 -> ~300 (CORE-TOKEN-ESTIMATOR-UNDERCOUNT-1)
+
+- `memory_recall_pack(preset="wakeup")` guidance updated. The corrected core token
+  estimator is conservative, and a verbose workspace lost orientation slots at 200.
+  Typical workspaces are unaffected — the card is content-bounded at ~70 real tokens.
+
 ### Added — `memory_recall_pack` gains `preset` (CORE-RECALL-BUDGET-1 Phase 5)
 
 - `preset="wakeup"` returns the L1 session-start card at a small budget (~200 tokens).

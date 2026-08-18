@@ -613,7 +613,7 @@ def register_free(mcp):
         ``query`` ranks each section by relevance; omit it to rank by recency.
         ``sections`` overrides the default list/order/caps as ``{name, cap_tokens}``
         entries. ``preset`` selects a named section set instead: pass ``"wakeup"`` with a
-        small budget (~200 tokens) at session start for an L1 orientation card (active
+        small budget (~300 tokens) at session start for an L1 orientation card (active
         plan, anchors, workspace topics, last-session headline) — the default sections go
         degenerate at that size. Use ``get_working_context`` for the L2 drill-in.
         Returns ``{block, manifest}``.
