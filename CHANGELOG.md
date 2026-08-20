@@ -22,6 +22,13 @@ directory, transcript file, git branch and agent version at import time.
   dropped, so an empty result never masquerades as "no such session".
 - Provenance lines are omitted, not rendered empty, when a session has none — the
   absence stays visible.
+- Hits show the canonical repository over the local path when both are known (two
+  checkouts of one repo have different paths), the short commit, and the model(s) that
+  produced the session.
+- **Sessions launched by SmartMemory's own pipeline (`entrypoint` starting `sdk`) are
+  flagged, not hidden**: `⚠ not a human session`. Excluding them is an import-time
+  decision, not a display-time one, so the tool reports what is in the store rather than
+  quietly editing it.
 
 ### Added — `transcript_search` / `transcript_status` (DIST-CC-INGEST-1 Phase 4)
 

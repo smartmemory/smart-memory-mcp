@@ -42,6 +42,10 @@ class _Item:
         cwd=None,
         git_branch=None,
         transcript_path=None,
+        git_commit=None,
+        repo_url=None,
+        entrypoint=None,
+        models=None,
     ):
         self.content = content
         self.origin = origin
@@ -52,6 +56,14 @@ class _Item:
             self.metadata["git_branch"] = git_branch
         if transcript_path:
             self.metadata["transcript_path"] = transcript_path
+        if git_commit:
+            self.metadata["git_commit"] = git_commit
+        if repo_url:
+            self.metadata["repo_url"] = repo_url
+        if entrypoint:
+            self.metadata["entrypoint"] = entrypoint
+        if models:
+            self.metadata["models"] = models
         self.item_id = item_id
         self.reference_time = when
 
@@ -367,3 +379,44 @@ def test_no_project_means_no_overfetch(store, monkeypatch):
     monkeypatch.setattr(tt, "_get_memory", lambda: mem)
     _registered()["transcript_search"]("q", top_k=5)
     assert mem.calls[0]["top_k"] == 5
+
+
+def test_hit_prefers_repo_url_over_local_path(store, monkeypatch):
+    """Two checkouts of one repo have different paths; the remote identifies it."""
+    mem = _Memory(
+        [
+            _Item(
+                "c",
+                "import:codex",
+                "t",
+                cwd="/Users/me/checkout-b",
+                repo_url="git@github.com:acme/api.git",
+                git_commit="fedb0fc2edbc37293069a70c2d3f45baed9d1d56",
+                models=["gpt-5.6-sol"],
+            )
+        ]
+    )
+    monkeypatch.setattr(tt, "_get_memory", lambda: mem)
+    out = _registered()["transcript_search"]("q")
+    assert "git@github.com:acme/api.git" in out
+    assert "@fedb0fc2" in out  # short commit, not the full 40 chars
+    assert "fedb0fc2edbc37293069a70c2d3f45baed9d1d56" not in out
+    assert "gpt-5.6-sol" in out
+
+
+def test_sdk_driven_sessions_are_flagged_not_hidden(store, monkeypatch):
+    """sdk-py is SmartMemory's own pipeline, not a conversation the user had."""
+    mem = _Memory(
+        [_Item("extract entities", "import:claude_code", "t", entrypoint="sdk-py")]
+    )
+    monkeypatch.setattr(tt, "_get_memory", lambda: mem)
+    out = _registered()["transcript_search"]("q")
+    assert "not a human session" in out
+    assert "sdk-py" in out
+    assert "1 session(s)" in out  # reported, never silently dropped
+
+
+def test_human_sessions_are_not_flagged(store, monkeypatch):
+    mem = _Memory([_Item("real talk", "import:claude_code", "t", entrypoint="cli")])
+    monkeypatch.setattr(tt, "_get_memory", lambda: mem)
+    assert "not a human session" not in _registered()["transcript_search"]("q")

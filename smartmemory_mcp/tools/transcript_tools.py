@@ -215,11 +215,28 @@ def _hit_lines(idx: int, item: Any) -> list[str]:
     # Provenance, when the import recorded it. Sessions imported before
     # DIST-CC-INGEST-1 provenance carry none — the line is omitted rather than
     # printed empty, so its absence is visible.
-    where = meta.get("cwd")
+    where = meta.get("repo_url") or meta.get("cwd")
     branch = meta.get("git_branch")
-    if where or branch:
-        bits = [b for b in (where, f"branch {branch}" if branch else None) if b]
+    commit = meta.get("git_commit")
+    models = meta.get("models")
+    if isinstance(models, str):
+        models = [models]
+    bits = [
+        where,
+        f"branch {branch}" if branch else None,
+        f"@{commit[:8]}" if commit else None,
+        ", ".join(models) if models else None,
+    ]
+    bits = [b for b in bits if b]
+    if bits:
         lines.append(f"   ran in: {'  ·  '.join(bits)}")
+
+    # `sdk-py` is SmartMemory's own pipeline calling Claude, not a conversation the
+    # user had. Flagged rather than hidden: the tool reports what it found, and
+    # excluding it is an import-time decision, not a display-time one.
+    entry = meta.get("entrypoint")
+    if entry and str(entry).startswith("sdk"):
+        lines.append(f"   ⚠ not a human session — launched via {entry}")
     if meta.get("transcript_path"):
         lines.append(f"   transcript: {meta['transcript_path']}")
     lines.append(f"   item_id: {getattr(item, 'item_id', '?')}")
