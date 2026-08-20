@@ -35,6 +35,12 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TRANSCRIPT_DIR = "~/.smartmemory-transcripts"
 
+# `project` filters after retrieval (search has no cwd predicate), so ask for more
+# candidates than requested and narrow. Bounded so a filter that matches nothing
+# cannot walk the whole corpus.
+_PROJECT_OVERFETCH = 8
+_PROJECT_OVERFETCH_MAX = 200
+
 # origin prefixes written by `iter_transcript_ingest_kwargs` (core importers).
 # `import:` is already tier 1 in origin_policy — visible to both recall and search —
 # so no origin-policy change was needed to make these findable.
@@ -163,11 +169,39 @@ def reset_memory() -> None:
     _memory_dir = None
 
 
+def _item_meta(item: Any) -> dict:
+    """Provenance for an item, whichever shape the backend hands back.
+
+    Written into `context` at import time, these land as top-level properties on the
+    stored chunk — but `normalize_item` and the raw facade disagree on whether they
+    surface as attributes or inside `metadata`, so check both rather than assume.
+    """
+    meta = dict(getattr(item, "metadata", None) or {})
+    for key in (
+        "origin",
+        "cwd",
+        "transcript_path",
+        "git_branch",
+        "agent",
+        "agent_version",
+        "title",
+    ):
+        if not meta.get(key):
+            value = getattr(item, key, None)
+            if value:
+                meta[key] = value
+    return meta
+
+
+def _item_cwd(item: Any) -> str | None:
+    return _item_meta(item).get("cwd")
+
+
 def _hit_lines(idx: int, item: Any) -> list[str]:
     """Render one search hit. Items arrive as MemoryItem, not dict."""
-    meta = getattr(item, "metadata", None) or {}
-    origin = getattr(item, "origin", None) or meta.get("origin") or "?"
-    source = origin.split(":", 1)[1] if ":" in origin else origin
+    meta = _item_meta(item)
+    origin = meta.get("origin") or "?"
+    source = meta.get("agent") or (origin.split(":", 1)[1] if ":" in origin else origin)
     title = meta.get("title") or "(untitled session)"
     when = getattr(item, "reference_time", None) or meta.get("session_date") or ""
     content = (getattr(item, "content", None) or "").strip().replace("\n", " ")
@@ -176,7 +210,20 @@ def _hit_lines(idx: int, item: Any) -> list[str]:
     head = f"{idx}. [{source}] {title}"
     if when:
         head += f"  ({when})"
-    return [head, f"   {content}", f"   item_id: {getattr(item, 'item_id', '?')}"]
+    lines = [head, f"   {content}"]
+
+    # Provenance, when the import recorded it. Sessions imported before
+    # DIST-CC-INGEST-1 provenance carry none — the line is omitted rather than
+    # printed empty, so its absence is visible.
+    where = meta.get("cwd")
+    branch = meta.get("git_branch")
+    if where or branch:
+        bits = [b for b in (where, f"branch {branch}" if branch else None) if b]
+        lines.append(f"   ran in: {'  ·  '.join(bits)}")
+    if meta.get("transcript_path"):
+        lines.append(f"   transcript: {meta['transcript_path']}")
+    lines.append(f"   item_id: {getattr(item, 'item_id', '?')}")
+    return lines
 
 
 def register(mcp):
@@ -184,7 +231,9 @@ def register(mcp):
 
     @mcp.tool()
     @graceful
-    def transcript_search(query: str, top_k: int = 5, source: str = "all") -> str:
+    def transcript_search(
+        query: str, top_k: int = 5, source: str = "all", project: str = ""
+    ) -> str:
         """Search your own past Claude Code and Codex sessions by meaning
         (DIST-CC-INGEST-1 Phase 4). Use it to recover prior context — "have I hit this
         error before?", "why did we choose X?", "what did I try last time?" — instead of
@@ -197,10 +246,11 @@ def register(mcp):
             query: What to look for, in natural language.
             top_k: Number of sessions to return (default 5).
             source: "claude-code", "codex", or "all" (default).
-
-        Note there is no project filter: the session's working directory is used at
-        import time to select files and is not stored on the items, so it cannot be
-        filtered on afterwards. Put the project name in the query instead.
+            project: Optional repo path — keeps only sessions whose working directory
+                is that path or below it. Matches the recorded `cwd`, not the
+                transcript's own location. Only sessions imported WITH provenance can
+                be filtered; ones imported before it are reported, never dropped
+                silently.
         """
         if not query.strip():
             return "Error: `query` is required."
@@ -220,20 +270,62 @@ def register(mcp):
             return mismatch
 
         memory = _get_memory()
-        results = memory.search(query, top_k=top_k, origin=origin) or []
+
+        # `project` is applied AFTER retrieval, not pushed into the query: search ranks
+        # semantically and has no cwd predicate. So over-fetch and then filter, or a
+        # top_k of 5 would be 5 candidates that mostly belong to other repos. The
+        # over-fetch is bounded, and the bound is reported rather than hidden.
+        want = top_k
+        fetch = (
+            min(top_k * _PROJECT_OVERFETCH, _PROJECT_OVERFETCH_MAX)
+            if project
+            else top_k
+        )
+        results = memory.search(query, top_k=fetch, origin=origin) or []
+
+        note = ""
+        if project:
+            root = str(Path(project).expanduser().resolve())
+            kept, unknown = [], 0
+            for item in results:
+                cwd = _item_cwd(item)
+                if not cwd:
+                    unknown += 1
+                    continue
+                cwd = str(Path(cwd).expanduser())
+                if cwd == root or cwd.startswith(root + os.sep):
+                    kept.append(item)
+            truncated = len(kept) > want
+            results = kept[:want]
+            if unknown:
+                # These predate provenance. Saying so keeps "no results" from reading
+                # as "no such session" when it means "imported before we recorded cwd".
+                note += (
+                    f"\n{unknown} candidate(s) carried no recorded working directory "
+                    f"(imported before provenance) and could not be matched — re-import "
+                    f"to make them filterable."
+                )
+            if truncated or len(results) == want:
+                note += (
+                    f"\nFiltered from the top {fetch} semantic matches; a session ranked "
+                    f"below that is not shown. Raise top_k to widen the window."
+                )
+
         if not results:
             return (
-                f"No matching sessions for {query!r} (source={source}).\n"
+                f"No matching sessions for {query!r} (source={source}"
+                f"{', project=' + project if project else ''}).\n"
                 f"Store: {data_dir}. Run `transcript_status()` to see how much of the "
                 f"corpus has actually been imported — a partial import is the usual "
-                f"reason a real memory is missing."
+                f"reason a real memory is missing.{note}"
             )
 
-        lines = [f"{len(results)} session(s) matching {query!r} (source={source}):", ""]
+        scope = f"source={source}" + (f", project={project}" if project else "")
+        lines = [f"{len(results)} session(s) matching {query!r} ({scope}):", ""]
         for i, item in enumerate(results, 1):
             lines.extend(_hit_lines(i, item))
             lines.append("")
-        return "\n".join(lines).rstrip()
+        return "\n".join(lines).rstrip() + note
 
     @mcp.tool()
     @graceful

@@ -33,11 +33,25 @@ def _registered() -> dict:
 
 class _Item:
     def __init__(
-        self, content, origin, title, item_id="i1", when="2026-08-13T07:10:51Z"
+        self,
+        content,
+        origin,
+        title,
+        item_id="i1",
+        when="2026-08-13T07:10:51Z",
+        cwd=None,
+        git_branch=None,
+        transcript_path=None,
     ):
         self.content = content
         self.origin = origin
         self.metadata = {"title": title}
+        if cwd:
+            self.metadata["cwd"] = cwd
+        if git_branch:
+            self.metadata["git_branch"] = git_branch
+        if transcript_path:
+            self.metadata["transcript_path"] = transcript_path
         self.item_id = item_id
         self.reference_time = when
 
@@ -243,3 +257,113 @@ def test_status_reports_mismatch_alongside_progress(store, monkeypatch):
     out = _registered()["transcript_status"]()
     assert "Embedding mismatch" in out
     assert "Turns ingested" in out
+
+
+# -- provenance rendering + project filter (DIST-CC-INGEST-1 provenance) -----------
+
+
+def test_hit_renders_provenance_when_present(store, monkeypatch):
+    mem = _Memory(
+        [
+            _Item(
+                "we chose SQLite",
+                "import:claude_code",
+                "widget: storage",
+                cwd="/repo/widget",
+                git_branch="main",
+                transcript_path="/home/u/.claude/projects/x/s.jsonl",
+            )
+        ]
+    )
+    monkeypatch.setattr(tt, "_get_memory", lambda: mem)
+    out = _registered()["transcript_search"]("storage")
+    assert "/repo/widget" in out
+    assert "branch main" in out
+    assert "s.jsonl" in out
+
+
+def test_hit_omits_provenance_line_when_absent(store, monkeypatch):
+    # Pre-provenance imports must not render an empty "ran in:" line.
+    mem = _Memory([_Item("c", "import:codex", "t")])
+    monkeypatch.setattr(tt, "_get_memory", lambda: mem)
+    out = _registered()["transcript_search"]("q")
+    assert "ran in:" not in out
+    assert "transcript:" not in out
+
+
+def test_project_filter_keeps_only_matching_cwd(store, monkeypatch, tmp_path):
+    root = tmp_path / "widget"
+    root.mkdir()
+    mem = _Memory(
+        [
+            _Item("a", "import:claude_code", "in", item_id="in", cwd=str(root)),
+            _Item(
+                "b", "import:claude_code", "out", item_id="out", cwd="/somewhere/else"
+            ),
+        ]
+    )
+    monkeypatch.setattr(tt, "_get_memory", lambda: mem)
+    out = _registered()["transcript_search"]("q", project=str(root))
+    assert "1 session(s)" in out
+    assert "item_id: in" in out
+    assert "item_id: out" not in out
+
+
+def test_project_filter_matches_subdirectories(store, monkeypatch, tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    mem = _Memory(
+        [_Item("a", "import:claude_code", "sub", cwd=str(root / "packages" / "api"))]
+    )
+    monkeypatch.setattr(tt, "_get_memory", lambda: mem)
+    assert "1 session(s)" in _registered()["transcript_search"]("q", project=str(root))
+
+
+def test_project_filter_does_not_match_sibling_prefix(store, monkeypatch, tmp_path):
+    # /repo must not match /repo-old — a plain startswith would.
+    root = tmp_path / "repo"
+    root.mkdir()
+    (tmp_path / "repo-old").mkdir()
+    mem = _Memory(
+        [_Item("a", "import:claude_code", "sib", cwd=str(tmp_path / "repo-old"))]
+    )
+    monkeypatch.setattr(tt, "_get_memory", lambda: mem)
+    assert "No matching sessions" in _registered()["transcript_search"](
+        "q", project=str(root)
+    )
+
+
+def test_project_filter_reports_items_without_provenance(store, monkeypatch, tmp_path):
+    root = tmp_path / "widget"
+    root.mkdir()
+    mem = _Memory([_Item("a", "import:claude_code", "old")])  # no cwd
+    monkeypatch.setattr(tt, "_get_memory", lambda: mem)
+    out = _registered()["transcript_search"]("q", project=str(root))
+    assert "no recorded working directory" in out
+    assert "re-import" in out
+
+
+def test_project_filter_overfetches(store, monkeypatch, tmp_path):
+    root = tmp_path / "w"
+    root.mkdir()
+    mem = _Memory([])
+    monkeypatch.setattr(tt, "_get_memory", lambda: mem)
+    _registered()["transcript_search"]("q", top_k=5, project=str(root))
+    # Filtering happens after retrieval, so the query must ask for more than top_k.
+    assert mem.calls[0]["top_k"] > 5
+
+
+def test_overfetch_is_bounded(store, monkeypatch, tmp_path):
+    root = tmp_path / "w"
+    root.mkdir()
+    mem = _Memory([])
+    monkeypatch.setattr(tt, "_get_memory", lambda: mem)
+    _registered()["transcript_search"]("q", top_k=1000, project=str(root))
+    assert mem.calls[0]["top_k"] <= tt._PROJECT_OVERFETCH_MAX
+
+
+def test_no_project_means_no_overfetch(store, monkeypatch):
+    mem = _Memory([])
+    monkeypatch.setattr(tt, "_get_memory", lambda: mem)
+    _registered()["transcript_search"]("q", top_k=5)
+    assert mem.calls[0]["top_k"] == 5

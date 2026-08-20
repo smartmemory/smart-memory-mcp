@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added — `transcript_search` gains a `project` filter, and hits show provenance
+
+Follows core's DIST-CC-INGEST-1 provenance change, which records each session's working
+directory, transcript file, git branch and agent version at import time.
+
+- `transcript_search(..., project="/path/to/repo")` keeps only sessions whose recorded
+  working directory is that path or below it. **This was documented as impossible last
+  change** — it became possible only because the importer now stores `cwd`.
+- Hits render provenance: where the session ran, its branch, and the transcript file, so
+  a result can be traced back to the conversation on disk.
+- Matching is path-aware, not a string prefix: `/repo` does not match `/repo-old`.
+- The filter runs AFTER retrieval, because search ranks semantically and has no `cwd`
+  predicate. The tool over-fetches (bounded at 200 candidates) and narrows, and **says
+  when the window bounded the answer** rather than presenting a truncated list as
+  complete.
+- Sessions imported before provenance carry no `cwd`. They are counted and reported
+  ("could not be matched — re-import to make them filterable") rather than silently
+  dropped, so an empty result never masquerades as "no such session".
+- Provenance lines are omitted, not rendered empty, when a session has none — the
+  absence stays visible.
+
 ### Added — `transcript_search` / `transcript_status` (DIST-CC-INGEST-1 Phase 4)
 
 - `transcript_search(query, top_k, source)` searches your own already-imported Claude Code
