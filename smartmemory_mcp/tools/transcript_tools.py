@@ -243,6 +243,48 @@ def _hit_lines(idx: int, item: Any) -> list[str]:
     return lines
 
 
+def schedule_warm_start() -> bool:
+    """Warm the search models at server boot so the FIRST search is ranked.
+
+    `CrossEncoderReranker.rerank()` asks for its model non-blocking and returns
+    fusion order UNRANKED when it is not warm (DIST-LITE-WARMSTART-1), and the load
+    is only ever triggered by the first search. So without this, the first
+    `transcript_search` of every session — the impression-forming one — is unranked:
+    measured on the 386-chunk corpus, `/unflush` boilerplate took ranks 1-2 and the
+    correct session fell out of the top 6, while the same query warm ranked it 1st.
+
+    This is the same hook `service.py` runs in its lifespan (CORE-SEARCH-WARMSTART-1);
+    `warmup.py` deliberately leaves the *when* to each process. Boot, not
+    `_get_memory()`: `_get_memory()` runs inside the first search, which would turn a
+    certain miss into a race against a ~1.2s background load.
+
+    Two gates, so a session that will never search pays nothing:
+
+    - no store on disk -> nothing to search, skip (the common case: transcripts are
+      opt-in, and this module is imported for every Claude Code session);
+    - `SMARTMEMORY_WARM_RERANKER=false` -> skip the ~1.2GB cross-encoder, matching the
+      service flag exactly. The embedding model still warms.
+
+    Never raises: a failed warm must degrade to the existing lazy path.
+    """
+    try:
+        if not _store_exists(transcript_data_dir()):
+            return False
+        from smartmemory.warmup import warm_search_models_async
+
+        warm_reranker = os.getenv("SMARTMEMORY_WARM_RERANKER", "true").strip().lower() != "false"
+        started = warm_search_models_async(warm_reranker=warm_reranker)
+        if started:
+            logger.info(
+                "Transcript search: warming search models in background (reranker=%s)",
+                warm_reranker,
+            )
+        return started
+    except Exception:
+        logger.warning("Transcript search: could not schedule model warm-up", exc_info=True)
+        return False
+
+
 def register(mcp):
     """Register transcript tools (PRO tier, local backend only)."""
 

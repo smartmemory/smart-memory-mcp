@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Fixed — the first `transcript_search` of a session was unranked
+
+The cross-encoder reranker loads lazily and its first-query fallback returns fusion order
+**unranked** (core `DIST-LITE-WARMSTART-1`). Nothing triggered that load except a search, so
+the first `transcript_search` of every session — the impression-forming one — came back
+unranked. Measured on the 386-chunk corpus, same process, same query
+(`cloudflare flagging our proxy IP`): the first call put `/unflush` slash-command boilerplate
+at ranks 1 and 2 and pushed the correct session out of the top 6 entirely, while the second
+call returned it at rank 1.
+
+`server.main()` now schedules core's existing warm-up hook (`warm_search_models_async`,
+`CORE-SEARCH-WARMSTART-1` — the same one the API service runs in its lifespan) before serving.
+Verified end to end: the first search after boot returns the correct session at rank 1, with
+boot still returning in 0.02s.
+
+Two gates keep it free for everyone else:
+
+- **no transcript store on disk, no warm-up.** This module is imported for every Claude Code
+  session and transcripts are opt-in, so the common case loads nothing.
+- **`SMARTMEMORY_WARM_RERANKER=false` skips the ~1.2GB cross-encoder**, the same flag,
+  spelling and default as the service. The embedding model still warms.
+
+It runs from `main()`, not `register()`: registration is what the test suite drives, and
+warming there would load a real model whenever the developer running the tests happened to
+have a transcript store. It also does not run from `_get_memory()`, which executes inside the
+first search and would turn a certain miss into a race. A failed warm-up degrades to the old
+lazy path and never breaks boot.
+
+
 ### Added — `transcript_search` gains a `project` filter, and hits show provenance
 
 Follows core's DIST-CC-INGEST-1 provenance change, which records each session's working

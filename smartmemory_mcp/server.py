@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("smartmemory")
 
+# Set when the PRO-tier transcript tools register, so `main()` knows whether the
+# search-model warm-up is worth scheduling (FREE tier has no transcript_search).
+_TRANSCRIPT_TOOLS_REGISTERED = False
+
 
 # ---------------------------------------------------------------------------
 # Auth tools — always registered (part of FREE tier)
@@ -130,6 +134,8 @@ def _register_tools():
         pattern_tools.register(mcp)
         peer_tools.register(mcp)
         transcript_tools.register(mcp)
+        global _TRANSCRIPT_TOOLS_REGISTERED
+        _TRANSCRIPT_TOOLS_REGISTERED = True
 
     # PRO+ tier
     if tier >= Tier.PRO_PLUS:
@@ -158,6 +164,15 @@ _register_tools()
 
 
 def main():
+    # Warm the search models before serving. `transcript_search` reranks, and a cold
+    # cross-encoder returns UNRANKED results for the first query of the process — which
+    # for an MCP server is the first search of the session. Non-blocking, gated on a
+    # transcript store actually existing; see transcript_tools.schedule_warm_start.
+    if _TRANSCRIPT_TOOLS_REGISTERED:
+        from smartmemory_mcp.tools import transcript_tools
+
+        transcript_tools.schedule_warm_start()
+
     if "--http" in sys.argv:
         port = 8011
         for i, arg in enumerate(sys.argv):

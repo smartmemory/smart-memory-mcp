@@ -420,3 +420,76 @@ def test_human_sessions_are_not_flagged(store, monkeypatch):
     mem = _Memory([_Item("real talk", "import:claude_code", "t", entrypoint="cli")])
     monkeypatch.setattr(tt, "_get_memory", lambda: mem)
     assert "not a human session" not in _registered()["transcript_search"]("q")
+
+
+# ---------------------------------------------------------------------------
+# Boot warm-up (search models) — the first search of a session must be RANKED
+# ---------------------------------------------------------------------------
+
+
+def test_warm_start_skipped_when_no_store(monkeypatch, tmp_path):
+    """No store -> nothing to search -> do not load a ~1.2GB cross-encoder.
+
+    This module is imported for every Claude Code session; transcripts are opt-in.
+    """
+    monkeypatch.setenv("SMARTMEMORY_TRANSCRIPTS_DIR", str(tmp_path / "absent"))
+    called = []
+    monkeypatch.setattr(
+        "smartmemory.warmup.warm_search_models_async",
+        lambda **kw: called.append(kw) or True,
+    )
+    assert tt.schedule_warm_start() is False
+    assert called == []
+
+
+def test_warm_start_scheduled_when_store_exists(monkeypatch, tmp_path):
+    """A real store warms the models in the background, reranker included by default."""
+    (tmp_path / "memory.db").write_text("")
+    monkeypatch.setenv("SMARTMEMORY_TRANSCRIPTS_DIR", str(tmp_path))
+    monkeypatch.delenv("SMARTMEMORY_WARM_RERANKER", raising=False)
+    called = []
+    from smartmemory import warmup
+
+    monkeypatch.setattr(warmup, "warm_search_models_async", lambda **kw: called.append(kw) or True)
+    assert tt.schedule_warm_start() is True
+    assert called == [{"warm_reranker": True}]
+
+
+def test_warm_start_honours_reranker_flag(monkeypatch, tmp_path):
+    """SMARTMEMORY_WARM_RERANKER=false skips the cross-encoder only — same flag,
+    same spelling, same default as the service (service.py lifespan)."""
+    (tmp_path / "memory.db").write_text("")
+    monkeypatch.setenv("SMARTMEMORY_TRANSCRIPTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SMARTMEMORY_WARM_RERANKER", "false")
+    called = []
+    from smartmemory import warmup
+
+    monkeypatch.setattr(warmup, "warm_search_models_async", lambda **kw: called.append(kw) or True)
+    assert tt.schedule_warm_start() is True
+    assert called == [{"warm_reranker": False}]
+
+
+def test_warm_start_never_raises(monkeypatch, tmp_path):
+    """A failed warm must degrade to the lazy path, never take down server boot."""
+    (tmp_path / "memory.db").write_text("")
+    monkeypatch.setenv("SMARTMEMORY_TRANSCRIPTS_DIR", str(tmp_path))
+    from smartmemory import warmup
+
+    def _boom(**kw):
+        raise RuntimeError("no model here")
+
+    monkeypatch.setattr(warmup, "warm_search_models_async", _boom)
+    assert tt.schedule_warm_start() is False
+
+
+def test_register_does_not_warm(monkeypatch, tmp_path):
+    """Registration is not boot. `register()` runs in the test suite; warming there
+    would load a real model whenever the developer running it has a store on disk."""
+    (tmp_path / "memory.db").write_text("")
+    monkeypatch.setenv("SMARTMEMORY_TRANSCRIPTS_DIR", str(tmp_path))
+    called = []
+    from smartmemory import warmup
+
+    monkeypatch.setattr(warmup, "warm_search_models_async", lambda **kw: called.append(kw) or True)
+    _registered()
+    assert called == []
