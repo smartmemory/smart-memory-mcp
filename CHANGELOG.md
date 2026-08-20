@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### Added — `transcript_search` / `transcript_status` (DIST-CC-INGEST-1 Phase 4)
+
+- `transcript_search(query, top_k, source)` searches your own already-imported Claude Code
+  and Codex sessions by meaning — the read half of `transcripts index`. PRO tier,
+  local-backend only: the transcripts live on the developer's machine and are never
+  uploaded.
+- `transcript_status()` reports how much of the corpus is actually searchable, whether an
+  import is running, and whether any files failed or were interrupted mid-ingest.
+- **These are the only tools that bypass `resolve_backend()`.** The ingested corpus lives
+  in its own store (`~/.smartmemory-transcripts`, override with
+  `SMARTMEMORY_TRANSCRIPTS_DIR`), deliberately apart from the curated store — 79k
+  conversation turns would swamp every `memory_search` result. The shared backend
+  singleton is pinned to the main data dir and structurally cannot see it, so these tools
+  open a second, read-only instance against the transcript dir. A per-directory instance,
+  NOT a process-wide `SMARTMEMORY_DATA_DIR` override, which would repoint every other
+  tool's backend too.
+- Distinct from `code_read_transcript` (CORE-CODE-PROVENANCE-1), which reads raw JSONL
+  anchored on a code span. This is the unanchored direction — semantic search over the
+  whole corpus, which needs the embeddings only ingestion produces.
+- **No project filter, deliberately.** The session's `cwd` is used at import time to
+  select files and is never stored on the items, so it cannot be filtered on afterwards.
+  Offering one would have matched nothing.
+- Reports rather than degrades, per `no-silent-degradation.md`: a store that was never
+  created returns the import instructions instead of an empty result set, and an
+  embedding-dimension mismatch between the index and the currently configured embedder is
+  named explicitly. That mismatch is the failure this feature is most exposed to and the
+  one that looks least like a failure — `create_lite_memory` does not pin the embedding
+  provider, so a provider key appearing in the environment after ingest silently changes
+  the query width and semantic search returns nothing without raising.
+- PRO tool count 67 -> 69, PRO_PLUS 98 -> 100 (`test_tier_registration.py` updated).
+
 ### Changed — recommended wake-up budget ~200 -> ~300 (CORE-TOKEN-ESTIMATOR-UNDERCOUNT-1)
 
 - `memory_recall_pack(preset="wakeup")` guidance updated. The corrected core token

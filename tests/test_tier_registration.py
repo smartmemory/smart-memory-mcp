@@ -124,7 +124,7 @@ class TestToolRegistration:
         NOTE: `_clean_env` only strips the two tier env vars — it cannot reach the
         keyring/file credential store that `tier.get_api_key()` also consults. On a
         developer machine that is logged in (smartmemory_app keyring), this resolves
-        to a paid tier and the count comes back 67 instead of 16. That is a local
+        to a paid tier and the count comes back 69 instead of 16. That is a local
         artifact, NOT a regression; CI and any clean container see FREE correctly.
         Verify locally with: docker run --rm -v "$PWD":/w -w /w python:3.11-slim \
         sh -c "pip install -q -e . pytest && pytest tests/ -q"
@@ -137,24 +137,24 @@ class TestToolRegistration:
         assert data["names"] == FREE_TOOLS
 
     def test_pro_tier_tool_count(self):
-        """PRO tier registers exactly 67 tools (+memory_recall_pack, CORE-RECALL-BUDGET-1)."""
+        """PRO tier registers exactly 69 tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
         data = _run_snippet(env)
-        assert data["count"] == 67, (
-            f"Expected 67 PRO tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 69, (
+            f"Expected 69 PRO tools, got {data['count']}: {data['names']}"
         )
         # Verify FREE tools are a subset of PRO tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
 
     def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 98 tools (+memory_recall_pack, CORE-RECALL-BUDGET-1)."""
+        """PRO_PLUS tier registers exactly 100 tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
         env = _clean_env(
             SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true"
         )
         data = _run_snippet(env)
-        assert data["count"] == 98, (
-            f"Expected 98 PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 100, (
+            f"Expected 100 PRO_PLUS tools, got {data['count']}: {data['names']}"
         )
         # Verify FREE tools are a subset of PRO_PLUS tools
         for tool in FREE_TOOLS:
