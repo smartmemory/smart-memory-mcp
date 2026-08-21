@@ -201,6 +201,15 @@ class LocalBackend:
         """
         return self._mem.recall_pack(**kwargs)
 
+    def policy_bundle(
+        self,
+        workflow: str | None = None,
+        domain: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Compile the in-process workspace's policy bundle unchanged."""
+        return self._mem.compile_policy_bundle(workflow=workflow, domain=domain)
+
     def peer_chat(self, **kwargs: Any) -> dict[str, Any]:
         """Zero-schema peer synthesis passthrough (CORE-ZERO-SCHEMA-1 Phase 1).
 

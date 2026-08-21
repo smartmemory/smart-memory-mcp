@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added — `memory_policy_bundle` (GOV-STRATUM-SEAM-1 P1)
+
+The FREE-tier tool compiles active workspace decisions into the policy bundle a
+Stratum runner needs before planning. It dispatches through both MCP backends:
+the local backend calls the core facade and the hosted backend calls
+`GET /memory/policy/bundle`. Optional `workflow` and `domain` selectors are
+forwarded unchanged; the returned bundle is contract JSON.
+
 ### Fixed — the first `transcript_search` of a session was unranked
 
 The cross-encoder reranker loads lazily and its first-query fallback returns fusion order

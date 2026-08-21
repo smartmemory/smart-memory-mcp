@@ -56,6 +56,15 @@ class MemoryBackend(Protocol):
         """Recall recent and relevant memories, formatted as markdown."""
         ...
 
+    def policy_bundle(
+        self,
+        workflow: str | None = None,
+        domain: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Compile the active workspace's policy bundle for an enforcement runner."""
+        ...
+
     # --- Pipeline ----------------------------------------------------------------
 
     def ingest(

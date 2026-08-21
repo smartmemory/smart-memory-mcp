@@ -639,6 +639,20 @@ def register_free(mcp):
             budget_tokens=budget_tokens, query=query, sections=sections, preset=preset
         )
 
+    @mcp.tool()
+    @graceful
+    def memory_policy_bundle(
+        workflow: Optional[str] = None,
+        domain: Optional[str] = None,
+    ) -> dict:
+        """Compile active workspace decisions into a Stratum policy bundle.
+
+        ``workflow`` is echoed in the selector for the runner. ``domain`` narrows
+        the source decisions. The returned JSON is the policy-exchange contract
+        bundle and is identical for local and hosted backends.
+        """
+        return get_backend().policy_bundle(workflow=workflow, domain=domain)
+
 
 # ---------------------------------------------------------------------------
 # PRO tier tools (9)

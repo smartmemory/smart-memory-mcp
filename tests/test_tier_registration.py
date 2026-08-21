@@ -113,13 +113,14 @@ FREE_TOOLS = sorted(
         "get_working_context",  # CORE-MEMORY-DYNAMICS-1 M1a
         "read_around",  # CORE-RECALL-CENTERED-1 Phase 2
         "memory_recall_pack",  # CORE-RECALL-BUDGET-1 — budgeted context assembly, FREE by design
+        "memory_policy_bundle",  # GOV-STRATUM-SEAM-1 P1 — required before a runner plans
     ]
 )
 
 
 class TestToolRegistration:
     def test_free_tier_tool_count(self):
-        """FREE tier registers exactly 16 tools.
+        """FREE tier registers exactly 17 tools.
 
         NOTE: `_clean_env` only strips the two tier env vars — it cannot reach the
         keyring/file credential store that `tier.get_api_key()` also consults. On a
@@ -131,30 +132,30 @@ class TestToolRegistration:
         """
         env = _clean_env()
         data = _run_snippet(env)
-        assert data["count"] == 16, (
-            f"Expected 16 FREE tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 17, (
+            f"Expected 17 FREE tools, got {data['count']}: {data['names']}"
         )
         assert data["names"] == FREE_TOOLS
 
     def test_pro_tier_tool_count(self):
-        """PRO tier registers exactly 69 tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
+        """PRO tier registers exactly 70 tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
         data = _run_snippet(env)
-        assert data["count"] == 69, (
-            f"Expected 69 PRO tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 70, (
+            f"Expected 70 PRO tools, got {data['count']}: {data['names']}"
         )
         # Verify FREE tools are a subset of PRO tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
 
     def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 100 tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
+        """PRO_PLUS tier registers exactly 101 tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
         env = _clean_env(
             SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true"
         )
         data = _run_snippet(env)
-        assert data["count"] == 100, (
-            f"Expected 100 PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 101, (
+            f"Expected 101 PRO_PLUS tools, got {data['count']}: {data['names']}"
         )
         # Verify FREE tools are a subset of PRO_PLUS tools
         for tool in FREE_TOOLS:

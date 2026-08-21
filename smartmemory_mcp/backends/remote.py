@@ -305,6 +305,20 @@ class RemoteBackend:
                 body[key] = kwargs[key]
         return self._request("POST", "/memory/recall/pack", json=body)
 
+    def policy_bundle(
+        self,
+        workflow: str | None = None,
+        domain: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """GET /memory/policy/bundle (GOV-STRATUM-SEAM-1 P1)."""
+        params = {
+            key: value
+            for key, value in {"workflow": workflow, "domain": domain}.items()
+            if value is not None
+        }
+        return self._request("GET", "/memory/policy/bundle", params=params)
+
     def search(self, query: str, top_k: int = 5, **kwargs: Any) -> list[MemoryResult]:
         """POST /memory/search."""
         body: dict[str, Any] = {"query": query, "top_k": top_k}
