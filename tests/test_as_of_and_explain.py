@@ -38,6 +38,8 @@ class TestSearchAsOfParams:
         kwargs = self._call(query="x")
         assert kwargs["as_of_date"] is None
         assert kwargs["include_superseded"] is False
+        assert kwargs["include_retracted"] is False
+        assert kwargs["include_archived"] is False  # CORE-ARCHIVED-RECALL-1
 
     def test_forwarded_when_set(self):
         kwargs = self._call(
@@ -45,6 +47,19 @@ class TestSearchAsOfParams:
         )
         assert kwargs["as_of_date"] == "2026-01-01T00:00:00+00:00"
         assert kwargs["include_superseded"] is True
+
+    def test_lifecycle_flags_forwarded_when_set(self):
+        """CORE-ARCHIVED-RECALL-1 — third forwarding point for the third flag.
+
+        The tool signature, the backend call, and the remote body allowlist are
+        three separate places a flag has to be named; blueprint correction C3
+        called a missed one a silent param drop, and this one is silent in the
+        worse direction: the default now HIDES, so dropping the flag returns a
+        filtered view to a caller who explicitly asked for everything.
+        """
+        kwargs = self._call(query="x", include_retracted=True, include_archived=True)
+        assert kwargs["include_retracted"] is True
+        assert kwargs["include_archived"] is True
 
 
 class TestMemoryExplainTool:
@@ -92,10 +107,16 @@ class TestRemoteBackendForwarding:
         assert body["as_of_date"] == "2026-01-01T00:00:00+00:00"
         assert body["include_superseded"] is True
 
+    def test_remote_body_forwards_include_archived(self):
+        body = self._search_body(include_archived=True)
+        assert body["include_archived"] is True
+
     def test_remote_body_omits_when_unset(self):
         body = self._search_body()
         assert "as_of_date" not in body
         assert "include_superseded" not in body
+        assert "include_retracted" not in body
+        assert "include_archived" not in body
 
     def test_remote_explain_hits_explain_route(self):
         from smartmemory_mcp.backends.remote import RemoteBackend

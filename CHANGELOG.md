@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added (2026-08-22) — `include_archived` on `memory_search` (CORE-ARCHIVED-RECALL-1)
+
+- `memory_search` gains `include_archived`, forwarded through both backends
+  (local passes `**kwargs` straight to the core facade; remote needed a new
+  allowlist entry, the same third-forwarding-point silent-drop risk that
+  `include_superseded` and `include_retracted` had).
+- Third lifecycle-visibility flag. An archived memory is one the decay/prune
+  evolvers retired, or the source an episodic-to-semantic promotion replaced —
+  no replacement and no version chain, so it is not covered by the other two.
+- **Behaviour change for agents:** archived memories used to be returned ranked
+  exactly like live ones, because core read `archived` on no search path at all.
+  They are hidden by default now. Pass `include_archived=true` for audit or
+  maintenance views. The tool docstring says so, which is what an agent reads.
+
+
 ### Added — `memory_policy_bundle` (GOV-STRATUM-SEAM-1 P1)
 
 The FREE-tier tool compiles active workspace decisions into the policy bundle a

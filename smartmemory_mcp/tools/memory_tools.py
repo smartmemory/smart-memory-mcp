@@ -271,6 +271,7 @@ def register_free(mcp):
         as_of_strict: bool = False,
         include_superseded: bool = False,
         include_retracted: bool = False,
+        include_archived: bool = False,
     ):
         """Search memories using semantic similarity with optional hybrid mode.
 
@@ -279,8 +280,12 @@ def register_free(mcp):
         visible in results (PLAT-AUDITABLE-MEMORY-1). include_retracted keeps
         WITHDRAWN beliefs visible (CORE-RETRACTED-RECALL-1) — a separate
         lifecycle state with no replacement, not covered by include_superseded.
-        Both default to false, so by default you will not be shown a decision
-        the system already knows was replaced or withdrawn.
+        include_archived keeps ARCHIVED items visible (CORE-ARCHIVED-RECALL-1) —
+        memories the decay/prune evolvers retired, or the source an
+        episodic-to-semantic promotion replaced; a third lifecycle state, again
+        with no replacement and no version chain. All three default to false, so
+        by default you will not be shown a memory the system already knows was
+        replaced, withdrawn, or retired.
 
         Results from an as_of_date search carry as_of_resolution. A value of
         "unresolved" means that result is PRESENT-DAY content the system could
@@ -306,6 +311,7 @@ def register_free(mcp):
             as_of_strict=as_of_strict,
             include_superseded=include_superseded,
             include_retracted=include_retracted,
+            include_archived=include_archived,
         )
 
         # CORE-ORIGIN-1: apply search tier policy
