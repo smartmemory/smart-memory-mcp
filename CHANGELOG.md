@@ -1,12 +1,12 @@
 # Changelog
 
-## 1.4.68
+## [Unreleased]
+
+## 1.4.86 — 2026-09-04
 
 - Upgraded to FastMCP 4, migrated test tool lookup helpers to its public API,
   and fixed `RemoteBackend.update` to use `PATCH /memory/{id}`
   (PLAT-MCP-HOSTED-1 T1).
-
-## [Unreleased]
 
 ### Added — hosted OAuth-protected MCP endpoint (PLAT-MCP-HOSTED-1 T2-T6)
 
