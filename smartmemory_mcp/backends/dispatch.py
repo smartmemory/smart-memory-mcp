@@ -4,10 +4,13 @@ Local-first: if smartmemory package is installed and mode != "remote", use Local
 Remote: if mode == "remote" or only env vars available, use RemoteBackend.
 Result cached in module-level _backend after first resolution.
 """
+
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
+
+from smartmemory_mcp.hosted.identity import resolve_hosted_backend
 
 if TYPE_CHECKING:
     from smartmemory_mcp.backends.interface import MemoryBackend
@@ -27,6 +30,14 @@ def resolve_backend() -> "MemoryBackend":
     2. If smartmemory not installed, check SMARTMEMORY_API_KEY env var -> RemoteBackend.
     3. No backend resolvable -> raise RuntimeError.
     """
+    # Path 0: hosted mode — the middleware already built a per-call, per-tenant
+    # backend and bound it to the contextvar. Return THAT object; never rebuild
+    # one (a rebuild loses the session-selected team) and never fall through to
+    # the process singleton (it would act as the wrong tenant).
+    hosted = resolve_hosted_backend()
+    if hosted is not None:
+        return hosted
+
     global _backend
     if _backend is not None:
         return _backend

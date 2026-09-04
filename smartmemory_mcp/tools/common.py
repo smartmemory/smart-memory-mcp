@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from smartmemory_mcp.backends.dispatch import resolve_backend
+from smartmemory_mcp.hosted.identity import resolve_hosted_backend
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,16 @@ _backend = None
 
 
 def get_backend() -> Any:
-    """Return the cached backend instance."""
+    """Return the backend for this call.
+
+    Hosted mode short-circuits the module singleton: the middleware bound a
+    per-call, per-tenant backend to the contextvar and that instance is what
+    every tool must use. Local/stdio behaviour below is unchanged.
+    """
+    hosted = resolve_hosted_backend()
+    if hosted is not None:
+        return hosted
+
     global _backend
     if _backend is None:
         _backend = resolve_backend()
@@ -32,7 +42,12 @@ def _is_connection_error(exc: Exception) -> bool:
     msg = str(exc).lower()
     return any(
         s in msg
-        for s in ("connection refused", "no route to host", "timed out", "connect error")
+        for s in (
+            "connection refused",
+            "no route to host",
+            "timed out",
+            "connect error",
+        )
     )
 
 

@@ -61,6 +61,40 @@ current_identity: ContextVar[HostedIdentity | None] = ContextVar(
     "smartmemory_mcp_current_identity", default=None
 )
 
+# Process-wide: True only while the hosted server is running. It is what turns an
+# unbound contextvar from "local/stdio, use the singleton" into a hard failure —
+# without it a hosted tool call that somehow bypassed the middleware would fall
+# through to whatever SMARTMEMORY_API_KEY the container happens to carry and act
+# as the wrong tenant.
+_hosted_mode = False
+
+
+def set_hosted_mode(enabled: bool) -> None:
+    """Enable/disable hosted mode. Called once by the hosted server builder."""
+    global _hosted_mode
+    _hosted_mode = enabled
+
+
+def hosted_mode_enabled() -> bool:
+    """True when this process is serving the hosted, multi-tenant endpoint."""
+    return _hosted_mode
+
+
+def resolve_hosted_backend() -> HostedRemoteBackend | None:
+    """The per-call hosted backend, or None when this is not a hosted call.
+
+    Returns the exact instance the middleware built for this tool call — never a
+    rebuild, which would lose the session-selected team (round 2 finding 4).
+    Raises HostedAuthError in hosted mode with nothing bound: there is no safe
+    fallback for an unidentified caller on a multi-tenant server.
+    """
+    identity = current_identity.get()
+    if identity is not None:
+        return identity.backend
+    if _hosted_mode:
+        raise HostedAuthError("no identity bound to this call")
+    return None
+
 
 def build_hosted_backend(
     verified: VerifiedIdentity,
