@@ -32,6 +32,19 @@ ME_PAYLOAD: dict[str, Any] = {
 }
 
 
+# The environment a hosted process requires, as `main()` would read it.
+REQUIRED_HOSTED_ENV: dict[str, str] = {
+    "SMARTMEMORY_API_URL": API_URL,
+    "MCP_PUBLIC_BASE_URL": PUBLIC_BASE_URL,
+    "CLERK_DOMAIN": CLERK_DOMAIN,
+    "CLERK_OAUTH_CLIENT_ID": CLIENT_ID,
+    "CLERK_OAUTH_CLIENT_SECRET": "clerk-client-secret",
+    "MCP_JWT_SIGNING_KEY": SIGNING_KEY,
+    "MCP_STATE_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+    "MCP_REDIS_URL": "redis://localhost:6379/0",
+}
+
+
 def hosted_config(**overrides: Any) -> HostedConfig:
     values: dict[str, Any] = {
         "api_url": API_URL,

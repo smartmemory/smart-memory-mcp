@@ -11,6 +11,7 @@ Backend is independent of tier:
 """
 
 import logging
+import os
 import sys
 
 from fastmcp import FastMCP
@@ -154,8 +155,68 @@ def _register_tools():
         zettel_tools.register(mcp)
 
 
-# Register tools at module load
-_register_tools()
+# ---------------------------------------------------------------------------
+# Mode selection
+# ---------------------------------------------------------------------------
+
+HOSTED_LOOPBACK_HOST = "127.0.0.1"
+DEFAULT_HTTP_HOST = "0.0.0.0"
+DEFAULT_HTTP_PORT = 8011
+ALLOW_UNAUTH_HTTP_ENV = "SMARTMEMORY_MCP_ALLOW_UNAUTH_HTTP"
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def hosted_mode_requested(argv: list[str] | None = None) -> bool:
+    """True when this process should serve the hosted, multi-tenant endpoint."""
+    args = sys.argv if argv is None else argv
+    if "--hosted" in args:
+        return True
+    return os.environ.get("SMARTMEMORY_MCP_MODE", "").strip().lower() == "hosted"
+
+
+def _flag_value(name: str, default: str, argv: list[str]) -> str:
+    for index, arg in enumerate(argv):
+        if arg == name and index + 1 < len(argv):
+            return argv[index + 1]
+    return default
+
+
+def resolve_http_bind(argv: list[str] | None = None) -> tuple[str, int]:
+    """Host and port for `--http`, refusing to expose an unauthenticated server.
+
+    `--http` is the single-identity mode used by the Maya sidecar and local
+    experiments: it has NO per-request authentication, so every caller acts as
+    whoever the process's API key belongs to. Binding that to 0.0.0.0 publishes
+    one tenant's memory to the network. Hosted mode (`--hosted`) is the
+    authenticated multi-tenant server; this flag is not it.
+    """
+    args = sys.argv if argv is None else argv
+    requested_host = _flag_value("--host", DEFAULT_HTTP_HOST, args)
+    port = int(_flag_value("--port", str(DEFAULT_HTTP_PORT), args))
+
+    allowed = os.environ.get(ALLOW_UNAUTH_HTTP_ENV, "").strip().lower() in _TRUE_VALUES
+    is_loopback = requested_host in {HOSTED_LOOPBACK_HOST, "localhost", "::1"}
+    if allowed or is_loopback:
+        return requested_host, port
+
+    logger.warning(
+        "unauthenticated single-identity HTTP mode bound to loopback only; "
+        "set %s=true to expose. Requested host %s was replaced with %s: every "
+        "caller of --http acts as this process's single API key, with no "
+        "per-request authentication. Use --hosted for the authenticated "
+        "multi-tenant server.",
+        ALLOW_UNAUTH_HTTP_ENV,
+        requested_host,
+        HOSTED_LOOPBACK_HOST,
+    )
+    return HOSTED_LOOPBACK_HOST, port
+
+
+# Register tools at module load — but NOT in hosted mode, where the tool surface
+# is an explicit allowlist built by `hosted.server.build_hosted_server` and tier
+# resolution (which reads a stored API key) must never run.
+if not hosted_mode_requested():
+    _register_tools()
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +225,13 @@ _register_tools()
 
 
 def main():
+    if hosted_mode_requested():
+        from smartmemory_mcp.hosted.config import HostedConfig
+        from smartmemory_mcp.hosted.server import run_hosted
+
+        run_hosted(HostedConfig.from_env())
+        return
+
     # Warm the search models before serving. `transcript_search` reranks, and a cold
     # cross-encoder returns UNRANKED results for the first query of the process — which
     # for an MCP server is the first search of the session. Non-blocking, gated on a
@@ -174,11 +242,8 @@ def main():
         transcript_tools.schedule_warm_start()
 
     if "--http" in sys.argv:
-        port = 8011
-        for i, arg in enumerate(sys.argv):
-            if arg == "--port" and i + 1 < len(sys.argv):
-                port = int(sys.argv[i + 1])
-        mcp.run(transport="http", host="0.0.0.0", port=port, show_banner=False)
+        host, port = resolve_http_bind()
+        mcp.run(transport="http", host=host, port=port, show_banner=False)
     else:
         mcp.run(show_banner=False)
 

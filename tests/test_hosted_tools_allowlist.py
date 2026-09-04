@@ -541,3 +541,33 @@ def test_health_is_served_without_authentication() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "mode": "hosted"}
+
+
+# --- the core-less degradation is audible -----------------------------------------
+
+
+def test_a_missing_core_origin_filter_is_logged_not_swallowed(
+    monkeypatch, caplog
+) -> None:
+    """The hosted wheel ships no `smartmemory` core, so the CORE-ORIGIN-1 tier
+    filter cannot run. It is the only thing hiding tier-3 speculative items from
+    a search (the service's SearchRequest carries no origin field), so skipping
+    it must be audible — `except Exception: pass` is the exact shape this repo's
+    no-silent-degradation rule forbids."""
+    import logging
+
+    from smartmemory_mcp.tools import memory_tools
+
+    monkeypatch.setattr(memory_tools, "_ORIGIN_FILTER_WARNED", False)
+
+    with caplog.at_level(logging.WARNING):
+        memory_tools._warn_origin_filter_unavailable(
+            ImportError("No module named 'smartmemory'")
+        )
+        memory_tools._warn_origin_filter_unavailable(ImportError("again"))
+
+    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert len(warnings) == 1, "the warning must fire once per process, not per search"
+    message = warnings[0].getMessage()
+    assert "NOT" in message and "origin tier" in message
+    assert "speculative" in message

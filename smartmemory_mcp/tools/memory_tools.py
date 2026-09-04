@@ -18,6 +18,31 @@ _LEGACY_RECALL_TYPE_SCOPE: set = {"pending"}
 # Module-level one-shot deprecation flag — logs exactly once per process.
 _RECALL_DEPRECATION_WARNED: bool = False
 
+# Same idea for the origin-tier filter, which is skipped when `smartmemory` core
+# is absent (the hosted wheel does not ship it).
+_ORIGIN_FILTER_WARNED: bool = False
+
+
+def _warn_origin_filter_unavailable(exc: Exception) -> None:
+    """Say what was lost when the CORE-ORIGIN-1 tier filter cannot run.
+
+    This filter is the ONLY thing that hides tier-3 speculative-derived items
+    from a search: `SearchRequest` carries no origin field, so the service does
+    not filter by tier for us. Skipping it silently means the caller sees
+    speculative content believing it is user content. Logged once per process.
+    """
+    global _ORIGIN_FILTER_WARNED
+    if _ORIGIN_FILTER_WARNED:
+        return
+    _ORIGIN_FILTER_WARNED = True
+    logger.warning(
+        "CORE-ORIGIN-1 search tier filter unavailable (%s); results are NOT "
+        "filtered by origin tier, so speculative derived items may be shown "
+        "alongside user content. Logged once per process.",
+        exc,
+    )
+
+
 _IDENTITY_METADATA_KEYS = frozenset(
     {"tenant_id", "workspace_id", "team_id", "user_id", "run_id"}
 )
@@ -319,8 +344,8 @@ def register_free(mcp):
             from smartmemory.origin_policy import filter_by_tiers, get_default_tiers
 
             results = filter_by_tiers(results, get_default_tiers("search"))
-        except Exception:
-            pass
+        except Exception as exc:
+            _warn_origin_filter_unavailable(exc)
 
         results = results[:top_k]
 

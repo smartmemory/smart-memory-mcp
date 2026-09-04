@@ -8,6 +8,50 @@
 
 ## [Unreleased]
 
+### Added — hosted OAuth-protected MCP endpoint (PLAT-MCP-HOSTED-1 T2-T6)
+
+`--hosted` (or `SMARTMEMORY_MCP_MODE=hosted`) serves a multi-tenant server where
+every request carries its own credential. Two are accepted: a Clerk OAuth token,
+exchanged once server-side for a SmartMemory JWT and cached until shortly before
+it expires, or a SmartMemory API key (including legacy `sk_` keys), verified
+against `/auth/me` and cached for a minute. A middleware resolves the caller
+before every tool call and binds a backend built for that caller alone, so tools
+stay synchronous and never see another tenant's credentials. Requires the
+`hosted` extra. See the README for the environment and client setup.
+
+Notable details:
+
+- The tool surface is an explicit 25-name allowlist, not a tier. Anything taking
+  a filesystem path, needing a local SmartMemory instance, or destructive in bulk
+  is excluded, and hidden is the default for anything new.
+- `memory_search(cite=True)` and `memory_recall(session_id=...)` / `(cite=True)`
+  are refused with an explicit message rather than silently downgraded. Both
+  need the `smartmemory` core package, which the hosted wheel does not ship.
+- `switch_team` is per MCP session and validates membership against the API.
+- OAuth state is encrypted at rest with Fernet, size-capped, and given a 30-day
+  default TTL for the records that arrive without one. Explicit TTLs are never
+  shortened, in either direction.
+- The public surface is rate limited per client address: registration 10/min
+  plus a 200/hour global ceiling, `/authorize` and `/token` 30/min each,
+  unauthenticated `/mcp` 60/min.
+
+### Changed
+
+- `RemoteBackend` gains an `_on_unauthorized` hook, called from both `_request`
+  and `search` on a 401. Base behaviour is unchanged; the hosted subclass uses it
+  to drop its cached identity so the next call re-exchanges.
+- `RemoteBackend.search` now forwards `channel_weights`, which it had been
+  dropping (CORE-SEARCH-2a).
+- `--http` refuses to bind a non-loopback host unless
+  `SMARTMEMORY_MCP_ALLOW_UNAUTH_HTTP=true`, and logs what was narrowed and why.
+  That mode has no per-request authentication, so binding it to `0.0.0.0`
+  published one tenant's memory to the network.
+- `memory_search` now logs once per process when the CORE-ORIGIN-1 tier filter
+  is unavailable. It used to be swallowed, and it is the only thing hiding
+  speculative derived items from a search, since the service's search request
+  carries no origin field.
+
+
 ### Added (2026-08-22) — `include_archived` on `memory_search` (CORE-ARCHIVED-RECALL-1)
 
 - `memory_search` gains `include_archived`, forwarded through both backends
