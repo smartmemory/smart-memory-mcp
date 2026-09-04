@@ -100,9 +100,22 @@ class RemoteBackend:
                 "error": f"SmartMemory API unreachable at {self._api_url}. Check SMARTMEMORY_API_URL."
             }
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                self._on_unauthorized(e.response)
             return {"error": f"API error {e.response.status_code}: {e.response.text}"}
         except Exception as e:
             return {"error": f"Request failed: {e}"}
+
+    def _on_unauthorized(self, response: httpx.Response) -> None:
+        """Hook fired on a svc-api 401, from BOTH _request and search.
+
+        Base behaviour is deliberately nothing: `_request` goes on to return its
+        error dict and `search` goes on to raise RuntimeError, exactly as before.
+        The hosted subclass overrides this to invalidate its cached identity
+        exchange and raise, which is the only way either path can be intercepted
+        (design.md §4, round 3 must-fix 6).
+        """
+        return None
 
     def request(self, method: str, path: str, **kwargs: Any) -> Any:
         """Public request method for tools that need REST calls not in the protocol."""
@@ -350,6 +363,11 @@ class RemoteBackend:
             body["include_retracted"] = True  # CORE-RETRACTED-RECALL-1
         if kwargs.get("include_archived"):
             body["include_archived"] = True  # CORE-ARCHIVED-RECALL-1
+        # CORE-SEARCH-2a: per-query channel weighting (SearchRequest.channel_weights,
+        # request_models.py:70). Dropping it silently reverted every hosted search to
+        # the profile default.
+        if kwargs.get("channel_weights"):
+            body["channel_weights"] = kwargs["channel_weights"]
         # SELF-IMPROVE-6: capture X-Search-Session-Id header from response
         self._last_search_session_id: str | None = None
         try:
@@ -370,6 +388,8 @@ class RemoteBackend:
                 "error": f"SmartMemory API unreachable at {self._api_url}. Check SMARTMEMORY_API_URL."
             }
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                self._on_unauthorized(e.response)
             result = {"error": f"API error {e.response.status_code}: {e.response.text}"}
         except Exception as e:
             result = {"error": f"Request failed: {e}"}

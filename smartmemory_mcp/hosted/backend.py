@@ -1,0 +1,50 @@
+"""HostedRemoteBackend — RemoteBackend with 401 re-exchange semantics (S1).
+
+`RemoteBackend._request` turns a svc-api 401 into an error dict and `search`
+turns it into a RuntimeError, so neither could implement the contract's
+"one re-exchange on 401". Both now call `_on_unauthorized`; this subclass
+overrides that single hook (round 2 #10, round 3 M6).
+"""
+
+from __future__ import annotations
+
+import logging
+
+import httpx
+
+from ..backends.remote import RemoteBackend
+from .exchange import ExchangeCache
+from .identity import HostedAuthError
+
+logger = logging.getLogger(__name__)
+
+
+class HostedRemoteBackend(RemoteBackend):
+    """Per-call backend for one hosted user in one workspace."""
+
+    def __init__(
+        self,
+        api_url: str,
+        api_key: str,
+        team_id: str,
+        *,
+        fingerprint: str,
+        cache: ExchangeCache,
+    ) -> None:
+        super().__init__(api_url=api_url, api_key=api_key, team_id=team_id)
+        self._fingerprint = fingerprint
+        self._cache = cache
+
+    def _on_unauthorized(self, response: httpx.Response) -> None:
+        """Drop the cached exchange for this token, then fail loudly.
+
+        The client's NEXT call performs a fresh exchange — the one retry the
+        contract promises, executed by the client, not by a hidden loop here.
+        """
+        logger.warning(
+            "svc-api rejected the hosted session (401); invalidating the cached "
+            "exchange for fingerprint %s.",
+            self._fingerprint[:12],
+        )
+        self._cache.invalidate(self._fingerprint)
+        raise HostedAuthError("session expired, retry")
