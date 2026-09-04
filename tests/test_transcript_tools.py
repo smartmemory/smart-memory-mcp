@@ -450,7 +450,9 @@ def test_warm_start_scheduled_when_store_exists(monkeypatch, tmp_path):
     called = []
     from smartmemory import warmup
 
-    monkeypatch.setattr(warmup, "warm_search_models_async", lambda **kw: called.append(kw) or True)
+    monkeypatch.setattr(
+        warmup, "warm_search_models_async", lambda **kw: called.append(kw) or True
+    )
     assert tt.schedule_warm_start() is True
     assert called == [{"warm_reranker": True}]
 
@@ -464,7 +466,9 @@ def test_warm_start_honours_reranker_flag(monkeypatch, tmp_path):
     called = []
     from smartmemory import warmup
 
-    monkeypatch.setattr(warmup, "warm_search_models_async", lambda **kw: called.append(kw) or True)
+    monkeypatch.setattr(
+        warmup, "warm_search_models_async", lambda **kw: called.append(kw) or True
+    )
     assert tt.schedule_warm_start() is True
     assert called == [{"warm_reranker": False}]
 
@@ -490,6 +494,8 @@ def test_register_does_not_warm(monkeypatch, tmp_path):
     called = []
     from smartmemory import warmup
 
-    monkeypatch.setattr(warmup, "warm_search_models_async", lambda **kw: called.append(kw) or True)
+    monkeypatch.setattr(
+        warmup, "warm_search_models_async", lambda **kw: called.append(kw) or True
+    )
     _registered()
     assert called == []

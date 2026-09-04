@@ -10,11 +10,11 @@ Fake backends are explicit classes (not MagicMock) so ``hasattr(backend,
 "request")`` is controlled — a MagicMock auto-creates ``request`` and would always
 take the remote branch.
 """
+
 from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
 
 from smartmemory_mcp.tools import code_tools
 
@@ -56,17 +56,34 @@ class _RemoteBackend:
 
 def _result(**ov):
     base = {
-        "query": {"mode": "commit", "commit": "abc1234567", "repo": "/r", "ref": "HEAD"},
+        "query": {
+            "mode": "commit",
+            "commit": "abc1234567",
+            "repo": "/r",
+            "ref": "HEAD",
+        },
         "status": "ok",
         "matches": [
             {
-                "source": "cc", "session_id": "sess-A", "source_path": "/t/sess-A.jsonl",
-                "line_no": None, "handle": {}, "method": "exact", "score": 1.0, "jaccard": None,
-                "target_coverage": 1.0, "authored_spans": [], "survival": {"overall": 1.0, "by_file": []},
-                "evidence": [], "repo_unconfirmed": False,
+                "source": "cc",
+                "session_id": "sess-A",
+                "source_path": "/t/sess-A.jsonl",
+                "line_no": None,
+                "handle": {},
+                "method": "exact",
+                "score": 1.0,
+                "jaccard": None,
+                "target_coverage": 1.0,
+                "authored_spans": [],
+                "survival": {"overall": 1.0, "by_file": []},
+                "evidence": [],
+                "repo_unconfirmed": False,
                 "read_handle": {
-                    "source": "cc", "source_path": "/t/sess-A.jsonl", "session_id": "sess-A",
-                    "line_no": None, "locate": {"file": "auth.py", "norm_hash": "abc123"},
+                    "source": "cc",
+                    "source_path": "/t/sess-A.jsonl",
+                    "session_id": "sess-A",
+                    "line_no": None,
+                    "locate": {"file": "auth.py", "norm_hash": "abc123"},
                 },
             }
         ],
@@ -93,7 +110,9 @@ def test_local_path_renders_matches():
 
 def test_remote_path_is_parked():
     tool = _registered()["code_blame"]
-    with patch("smartmemory_mcp.tools.code_tools.get_backend", return_value=_RemoteBackend()):
+    with patch(
+        "smartmemory_mcp.tools.code_tools.get_backend", return_value=_RemoteBackend()
+    ):
         out = tool(commit="abc1234567", repo="/r")
     low = out.lower()
     # Phase 2c parks the hosted REST surface — the message says local-only/parked,
@@ -116,7 +135,10 @@ def test_real_line_read_handle_has_no_locate():
     tool = _registered()["code_blame"]
     m = _result()
     m["matches"][0]["read_handle"] = {
-        "source": "codex", "source_path": "/t/r.jsonl", "session_id": "cs1", "line_no": 3,
+        "source": "codex",
+        "source_path": "/t/r.jsonl",
+        "session_id": "cs1",
+        "line_no": 3,
     }
     backend = _LocalBackend(result=m)
     with patch("smartmemory_mcp.tools.code_tools.get_backend", return_value=backend):

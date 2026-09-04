@@ -64,7 +64,9 @@ def register(mcp) -> None:
 
         # Write overrides to session state file so hook-driven CLI calls see them.
         if not session_id:
-            log.warning("memory_auto called without session_id — overrides will not persist")
+            log.warning(
+                "memory_auto called without session_id — overrides will not persist"
+            )
         else:
             _write_session_overrides(session_id, overrides)
 

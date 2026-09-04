@@ -58,7 +58,9 @@ def test_remote_list_forwards_metadata_filters(monkeypatch) -> None:
 
     monkeypatch.setattr(backend, "_request", _capture)
 
-    backend.list_memories(limit=5, offset=2, metadata_key="profile.tier", metadata_value="pro")
+    backend.list_memories(
+        limit=5, offset=2, metadata_key="profile.tier", metadata_value="pro"
+    )
 
     assert seen["metadata_key"] == "profile.tier"
     assert seen["metadata_value"] == "pro"
@@ -106,7 +108,12 @@ def test_remote_list_rejects_half_a_filter(monkeypatch, kwargs, missing) -> None
         ({"tier": "pro"}, "tier", "free", False),
         ({"profile": {"tier": "pro"}}, "profile.tier", "pro", True),
         ({"profile": {"tier": "pro"}}, "profile.tier", "free", False),
-        ({"profile": {"tier": "pro"}}, "profile", "pro", False),  # dict value never matches a scalar
+        (
+            {"profile": {"tier": "pro"}},
+            "profile",
+            "pro",
+            False,
+        ),  # dict value never matches a scalar
         ({"tier": "pro"}, "missing", "pro", False),
         ({"tier": "pro"}, "tier.deeper", "pro", False),  # descending into a non-dict
         ({"flag": True}, "flag", "true", True),
@@ -149,7 +156,12 @@ def test_local_search_by_metadata_uses_star_not_empty_query() -> None:
 
 def test_local_list_memories_paginates_and_filters() -> None:
     hits = [
-        {"item_id": str(n), "content": "c", "metadata": {"tier": "pro" if n % 2 == 0 else "free"}} for n in range(10)
+        {
+            "item_id": str(n),
+            "content": "c",
+            "metadata": {"tier": "pro" if n % 2 == 0 else "free"},
+        }
+        for n in range(10)
     ]
     backend = _local(hits)
 
@@ -159,7 +171,9 @@ def test_local_list_memories_paginates_and_filters() -> None:
     offset_page = backend.list_memories(limit=2, offset=3)
     assert [i["item_id"] for i in offset_page] == ["3", "4"]
 
-    filtered = backend.list_memories(limit=10, offset=0, metadata_key="tier", metadata_value="pro")
+    filtered = backend.list_memories(
+        limit=10, offset=0, metadata_key="tier", metadata_value="pro"
+    )
     assert [i["item_id"] for i in filtered] == ["0", "2", "4", "6", "8"]
 
 

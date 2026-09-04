@@ -77,7 +77,16 @@ class ParseResult:
 # ---------------------------------------------------------------------------
 
 ROUTER_METHODS = {"get", "post", "put", "delete", "patch", "head", "options"}
-DEFAULT_EXCLUDE_DIRS = {"__pycache__", ".git", ".venv", "venv", "node_modules", ".tox", ".mypy_cache", ".pytest_cache"}
+DEFAULT_EXCLUDE_DIRS = {
+    "__pycache__",
+    ".git",
+    ".venv",
+    "venv",
+    "node_modules",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+}
 
 
 class CodeParser:
@@ -102,8 +111,12 @@ class CodeParser:
         module_name = rel_path.replace("/", ".").replace("\\", ".").removesuffix(".py")
         module_name = module_name.removesuffix(".__init__")
         module_entity = CodeEntity(
-            name=module_name, entity_type="module", file_path=rel_path,
-            line_number=1, repo=self.repo, docstring=self._get_docstring(tree),
+            name=module_name,
+            entity_type="module",
+            file_path=rel_path,
+            line_number=1,
+            repo=self.repo,
+            docstring=self._get_docstring(tree),
         )
         result.entities.append(module_entity)
         for node in ast.iter_child_nodes(tree):
@@ -122,20 +135,36 @@ class CodeParser:
         entity = CodeEntity(
             name=node.name,
             entity_type="test" if is_test_class else "class",
-            file_path=rel_path, line_number=node.lineno, repo=self.repo,
+            file_path=rel_path,
+            line_number=node.lineno,
+            repo=self.repo,
             docstring=self._get_docstring(node),
             decorators=[self._get_decorator_name(d) for d in node.decorator_list],
             bases=bases,
         )
         result.entities.append(entity)
-        result.relations.append(CodeRelation(source_id=module.item_id, target_id=entity.item_id, relation_type="DEFINES"))
+        result.relations.append(
+            CodeRelation(
+                source_id=module.item_id,
+                target_id=entity.item_id,
+                relation_type="DEFINES",
+            )
+        )
         for base_name in bases:
             base_id = self._resolve_entity_id(base_name, rel_path)
             if base_id:
-                result.relations.append(CodeRelation(source_id=entity.item_id, target_id=base_id, relation_type="INHERITS"))
+                result.relations.append(
+                    CodeRelation(
+                        source_id=entity.item_id,
+                        target_id=base_id,
+                        relation_type="INHERITS",
+                    )
+                )
         for child in ast.iter_child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                self._extract_function(child, entity, rel_path, result, class_name=node.name)
+                self._extract_function(
+                    child, entity, rel_path, result, class_name=node.name
+                )
 
     def _extract_function(self, node, parent, rel_path, result, class_name=None):
         full_name = f"{class_name}.{node.name}" if class_name else node.name
@@ -149,14 +178,24 @@ class CodeParser:
         else:
             entity_type = "function"
         entity = CodeEntity(
-            name=full_name, entity_type=entity_type, file_path=rel_path,
-            line_number=node.lineno, repo=self.repo, docstring=self._get_docstring(node),
+            name=full_name,
+            entity_type=entity_type,
+            file_path=rel_path,
+            line_number=node.lineno,
+            repo=self.repo,
+            docstring=self._get_docstring(node),
             decorators=decorators,
             http_method=route_info[0] if route_info else "",
             http_path=route_info[1] if route_info else "",
         )
         result.entities.append(entity)
-        result.relations.append(CodeRelation(source_id=parent.item_id, target_id=entity.item_id, relation_type="DEFINES"))
+        result.relations.append(
+            CodeRelation(
+                source_id=parent.item_id,
+                target_id=entity.item_id,
+                relation_type="DEFINES",
+            )
+        )
         self._extract_calls(node, entity, rel_path, result)
 
     def _extract_import(self, node, module, rel_path, result):
@@ -164,18 +203,26 @@ class CodeParser:
             for alias in node.names:
                 target_module = alias.name
                 target_id = f"code::{self.repo}::{self._module_to_path(target_module)}::{target_module}"
-                result.relations.append(CodeRelation(
-                    source_id=module.item_id, target_id=target_id,
-                    relation_type="IMPORTS", properties={"names": alias.asname or alias.name},
-                ))
+                result.relations.append(
+                    CodeRelation(
+                        source_id=module.item_id,
+                        target_id=target_id,
+                        relation_type="IMPORTS",
+                        properties={"names": alias.asname or alias.name},
+                    )
+                )
         elif isinstance(node, ast.ImportFrom) and node.module:
             names = [a.name for a in node.names]
             target_module = node.module
             target_id = f"code::{self.repo}::{self._module_to_path(target_module)}::{target_module}"
-            result.relations.append(CodeRelation(
-                source_id=module.item_id, target_id=target_id,
-                relation_type="IMPORTS", properties={"names": ",".join(names)},
-            ))
+            result.relations.append(
+                CodeRelation(
+                    source_id=module.item_id,
+                    target_id=target_id,
+                    relation_type="IMPORTS",
+                    properties={"names": ",".join(names)},
+                )
+            )
 
     def _extract_calls(self, func_node, caller, rel_path, result):
         for node in ast.walk(func_node):
@@ -185,14 +232,24 @@ class CodeParser:
             if not callee_name or callee_name.startswith("_"):
                 continue
             target_id = f"code::{self.repo}::{rel_path}::{callee_name}"
-            result.relations.append(CodeRelation(
-                source_id=caller.item_id, target_id=target_id,
-                relation_type="CALLS", properties={"line": getattr(node, "lineno", 0)},
-            ))
+            result.relations.append(
+                CodeRelation(
+                    source_id=caller.item_id,
+                    target_id=target_id,
+                    relation_type="CALLS",
+                    properties={"line": getattr(node, "lineno", 0)},
+                )
+            )
 
     def _link_tests(self, result):
-        test_entities = [e for e in result.entities if e.entity_type == "test" and "test_" in e.name]
-        non_test_names = {e.name: e for e in result.entities if e.entity_type not in ("test", "module")}
+        test_entities = [
+            e for e in result.entities if e.entity_type == "test" and "test_" in e.name
+        ]
+        non_test_names = {
+            e.name: e
+            for e in result.entities
+            if e.entity_type not in ("test", "module")
+        }
         for test in test_entities:
             base_name = test.name
             if "." in base_name:
@@ -202,26 +259,38 @@ class CodeParser:
             tested_name = base_name.removeprefix("test_")
             if tested_name in non_test_names:
                 target = non_test_names[tested_name]
-                result.relations.append(CodeRelation(
-                    source_id=test.item_id, target_id=target.item_id,
-                    relation_type="TESTS", properties={"convention": "name_match"},
-                ))
+                result.relations.append(
+                    CodeRelation(
+                        source_id=test.item_id,
+                        target_id=target.item_id,
+                        relation_type="TESTS",
+                        properties={"convention": "name_match"},
+                    )
+                )
                 continue
             for fname, entity in non_test_names.items():
                 if "." in fname and fname.rsplit(".", 1)[1] == tested_name:
-                    result.relations.append(CodeRelation(
-                        source_id=test.item_id, target_id=entity.item_id,
-                        relation_type="TESTS", properties={"convention": "name_match"},
-                    ))
+                    result.relations.append(
+                        CodeRelation(
+                            source_id=test.item_id,
+                            target_id=entity.item_id,
+                            relation_type="TESTS",
+                            properties={"convention": "name_match"},
+                        )
+                    )
                     break
 
     def _detect_route(self, node):
         for decorator in node.decorator_list:
-            if isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute):
+            if isinstance(decorator, ast.Call) and isinstance(
+                decorator.func, ast.Attribute
+            ):
                 method = decorator.func.attr
                 if method in ROUTER_METHODS and decorator.args:
                     path_arg = decorator.args[0]
-                    if isinstance(path_arg, ast.Constant) and isinstance(path_arg.value, str):
+                    if isinstance(path_arg, ast.Constant) and isinstance(
+                        path_arg.value, str
+                    ):
                         return (method.upper(), path_arg.value)
         return None
 
@@ -269,9 +338,10 @@ def collect_python_files(directory, exclude_dirs=None):
         exclude_dirs = DEFAULT_EXCLUDE_DIRS
     py_files = []
     for root, dirs, files in os.walk(directory):
-        dirs[:] = [d for d in dirs if d not in exclude_dirs and not d.endswith(".egg-info")]
+        dirs[:] = [
+            d for d in dirs if d not in exclude_dirs and not d.endswith(".egg-info")
+        ]
         for f in files:
             if f.endswith(".py"):
                 py_files.append(os.path.join(root, f))
     return sorted(py_files)
-

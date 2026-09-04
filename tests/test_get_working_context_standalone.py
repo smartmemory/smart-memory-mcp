@@ -120,7 +120,9 @@ def test_get_working_context_tool_happy_path():
     fake_backend = MagicMock()
     fake_backend.search.return_value = [_mk_row("w1", "hello", "pending")]
 
-    with patch("smartmemory_mcp.tools.memory_tools.get_backend", return_value=fake_backend):
+    with patch(
+        "smartmemory_mcp.tools.memory_tools.get_backend", return_value=fake_backend
+    ):
         resp = gwc(session_id="s1", query="hello")
 
     assert resp["strategy_used"] == "fast:recency"
@@ -190,12 +192,16 @@ def test_memory_recall_deprecation_logged_once(caplog):
     fake_backend = MagicMock(spec=["search"])  # force non-native path
     fake_backend.search.return_value = [_mk_row("w1", "hi", "pending")]
 
-    with patch("smartmemory_mcp.tools.memory_tools.get_backend", return_value=fake_backend):
+    with patch(
+        "smartmemory_mcp.tools.memory_tools.get_backend", return_value=fake_backend
+    ):
         with caplog.at_level(logging.WARNING, logger=memory_tools.logger.name):
             recall("q", top_k=3)
             recall("q2", top_k=3)
 
-    deprecation_logs = [r for r in caplog.records if "deprecated" in r.getMessage().lower()]
+    deprecation_logs = [
+        r for r in caplog.records if "deprecated" in r.getMessage().lower()
+    ]
     assert len(deprecation_logs) == 1
 
 
@@ -209,7 +215,9 @@ def test_memory_recall_filters_to_working():
         _mk_row("s1", "semantic fact", "semantic"),
         _mk_row("e1", "episodic event", "episodic"),
     ]
-    with patch("smartmemory_mcp.tools.memory_tools.get_backend", return_value=fake_backend):
+    with patch(
+        "smartmemory_mcp.tools.memory_tools.get_backend", return_value=fake_backend
+    ):
         out = recall("q", top_k=5)
 
     assert "working turn" in out

@@ -352,11 +352,20 @@ def register(mcp):
 
             residuation = ResiduationManager(sm)
             decision = residuation.create_pending(
-                content=content, requirements=requirements, domain=domain, tags=tags or []
+                content=content,
+                requirements=requirements,
+                domain=domain,
+                tags=tags or [],
             )
-            lines = [f"Pending decision created: {decision.decision_id}", f"Status: {decision.status}", "Requirements:"]
+            lines = [
+                f"Pending decision created: {decision.decision_id}",
+                f"Status: {decision.status}",
+                "Requirements:",
+            ]
             for r in decision.pending_requirements:
-                lines.append(f"  - {r.requirement_id}: {r.description} [{r.requirement_type}] resolved={r.resolved}")
+                lines.append(
+                    f"  - {r.requirement_id}: {r.description} [{r.requirement_type}] resolved={r.resolved}"
+                )
             return "\n".join(lines)
         except Exception as e:
             logger.error(f"Failed to create pending decision: {e}", exc_info=True)
@@ -364,7 +373,9 @@ def register(mcp):
 
     @mcp.tool()
     @graceful
-    def decision_resolve_requirement(decision_id: str, requirement_id: str, memory_id: str) -> str:
+    def decision_resolve_requirement(
+        decision_id: str, requirement_id: str, memory_id: str
+    ) -> str:
         """Mark a requirement on a pending decision resolved by a memory item."""
         try:
             sm = _local_sm()

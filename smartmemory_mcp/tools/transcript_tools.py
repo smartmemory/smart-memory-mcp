@@ -272,7 +272,9 @@ def schedule_warm_start() -> bool:
             return False
         from smartmemory.warmup import warm_search_models_async
 
-        warm_reranker = os.getenv("SMARTMEMORY_WARM_RERANKER", "true").strip().lower() != "false"
+        warm_reranker = (
+            os.getenv("SMARTMEMORY_WARM_RERANKER", "true").strip().lower() != "false"
+        )
         started = warm_search_models_async(warm_reranker=warm_reranker)
         if started:
             logger.info(
@@ -281,7 +283,9 @@ def schedule_warm_start() -> bool:
             )
         return started
     except Exception:
-        logger.warning("Transcript search: could not schedule model warm-up", exc_info=True)
+        logger.warning(
+            "Transcript search: could not schedule model warm-up", exc_info=True
+        )
         return False
 
 

@@ -57,7 +57,9 @@ def register(mcp):
 
     @mcp.tool()
     @graceful
-    def memory_resolve_aliases(dry_run: bool = False, disambiguate: bool = False) -> str:
+    def memory_resolve_aliases(
+        dry_run: bool = False, disambiguate: bool = False
+    ) -> str:
         """Consolidate fragmented entity aliases over the workspace graph.
 
         Merges each unambiguous single-token alias node (e.g. "Hudson") into its

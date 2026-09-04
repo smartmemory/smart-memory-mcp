@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from smartmemory_mcp.tools import memory_tools
 
@@ -38,9 +37,24 @@ def _window(**overrides) -> dict:
     """A canonical centered-window response (the shape core.build_centered_window returns)."""
     base = {
         "window_items": [
-            {"item_id": "c1", "content": "earlier chunk", "memory_type": "semantic", "metadata": {}},
-            {"item_id": "c2", "content": "matched chunk", "memory_type": "semantic", "metadata": {}},
-            {"item_id": "c3", "content": "later chunk", "memory_type": "semantic", "metadata": {}},
+            {
+                "item_id": "c1",
+                "content": "earlier chunk",
+                "memory_type": "semantic",
+                "metadata": {},
+            },
+            {
+                "item_id": "c2",
+                "content": "matched chunk",
+                "memory_type": "semantic",
+                "metadata": {},
+            },
+            {
+                "item_id": "c3",
+                "content": "later chunk",
+                "memory_type": "semantic",
+                "metadata": {},
+            },
         ],
         "window_text": "earlier chunk\nmatched chunk\nlater chunk",
         "handle": {"item_id": "c2", "conversation_id": "conv-1"},
@@ -66,10 +80,19 @@ def test_read_around_tool_returns_centered_window_shape():
     fake_backend = MagicMock()
     fake_backend.read_around.return_value = _window()
 
-    with patch("smartmemory_mcp.tools.memory_tools.get_backend", return_value=fake_backend):
+    with patch(
+        "smartmemory_mcp.tools.memory_tools.get_backend", return_value=fake_backend
+    ):
         resp = read_around(item_id="c2")
 
-    for key in ("window_items", "window_text", "handle", "continue_cursor", "chars_used", "char_budget"):
+    for key in (
+        "window_items",
+        "window_text",
+        "handle",
+        "continue_cursor",
+        "chars_used",
+        "char_budget",
+    ):
         assert key in resp, f"missing contract key {key!r}"
     assert isinstance(resp["continue_cursor"], dict)
     assert {"prev_pos", "next_pos"} <= set(resp["continue_cursor"])
@@ -87,7 +110,9 @@ def test_read_around_tool_forwards_args_to_backend():
     fake_backend.read_around.return_value = _window()
     cursor = {"prev_pos": None, "next_pos": 30}
 
-    with patch("smartmemory_mcp.tools.memory_tools.get_backend", return_value=fake_backend):
+    with patch(
+        "smartmemory_mcp.tools.memory_tools.get_backend", return_value=fake_backend
+    ):
         read_around(
             item_id="c2",
             char_budget=5000,
@@ -113,7 +138,9 @@ def test_read_around_tool_defaults():
     fake_backend = MagicMock()
     fake_backend.read_around.return_value = _window()
 
-    with patch("smartmemory_mcp.tools.memory_tools.get_backend", return_value=fake_backend):
+    with patch(
+        "smartmemory_mcp.tools.memory_tools.get_backend", return_value=fake_backend
+    ):
         read_around(item_id="c2")
 
     _, kwargs = fake_backend.read_around.call_args

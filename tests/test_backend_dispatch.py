@@ -7,12 +7,10 @@ Tests Task 27 from PLAT-MCP-UNIFY-1 plan:
 - Backend caching and reset
 """
 
-import types
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from smartmemory_mcp.backends import dispatch
 from smartmemory_mcp.backends.dispatch import reset_backend, resolve_backend
 
 
@@ -31,12 +29,23 @@ class TestLocalBackend:
         fake_cfg.mode = "local"
 
         with (
-            patch("smartmemory_mcp.backends.dispatch.resolve_backend.__module__", create=True),
-            patch.dict("sys.modules", {
-                "smartmemory_app": MagicMock(),
-                "smartmemory_app.config": MagicMock(load_config=MagicMock(return_value=fake_cfg)),
-            }),
-            patch("smartmemory_mcp.backends.local.LocalBackend.__init__", return_value=None) as mock_init,
+            patch(
+                "smartmemory_mcp.backends.dispatch.resolve_backend.__module__",
+                create=True,
+            ),
+            patch.dict(
+                "sys.modules",
+                {
+                    "smartmemory_app": MagicMock(),
+                    "smartmemory_app.config": MagicMock(
+                        load_config=MagicMock(return_value=fake_cfg)
+                    ),
+                },
+            ),
+            patch(
+                "smartmemory_mcp.backends.local.LocalBackend.__init__",
+                return_value=None,
+            ),
         ):
             # Re-import to pick up mocked modules
             from smartmemory_mcp.backends.local import LocalBackend
@@ -49,7 +58,11 @@ class TestRemoteBackend:
     def test_remote_backend_from_env(self):
         """No smartmemory package (ImportError), SMARTMEMORY_API_KEY set -> RemoteBackend."""
         # Make smartmemory_app.config import raise ImportError
-        real_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
+        real_import = (
+            __builtins__.__import__
+            if hasattr(__builtins__, "__import__")
+            else __import__
+        )
 
         def fake_import(name, *args, **kwargs):
             if name == "smartmemory_app.config":
@@ -58,7 +71,9 @@ class TestRemoteBackend:
 
         with (
             patch("builtins.__import__", side_effect=fake_import),
-            patch("smartmemory_mcp.tier.get_api_key", return_value="sk_test_key_remote"),
+            patch(
+                "smartmemory_mcp.tier.get_api_key", return_value="sk_test_key_remote"
+            ),
         ):
             backend = resolve_backend()
             from smartmemory_mcp.backends.remote import RemoteBackend
@@ -72,10 +87,15 @@ class TestRemoteBackend:
         fake_cfg.api_url = "https://api.test.smartmemory.ai"
         fake_cfg.team_id = "team_123"
 
-        with patch.dict("sys.modules", {
-            "smartmemory_app": MagicMock(),
-            "smartmemory_app.config": MagicMock(load_config=MagicMock(return_value=fake_cfg)),
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "smartmemory_app": MagicMock(),
+                "smartmemory_app.config": MagicMock(
+                    load_config=MagicMock(return_value=fake_cfg)
+                ),
+            },
+        ):
             backend = resolve_backend()
             from smartmemory_mcp.backends.remote import RemoteBackend
 
@@ -85,7 +105,11 @@ class TestRemoteBackend:
 class TestErrorPaths:
     def test_error_when_no_backend(self):
         """No smartmemory package, no env var -> RuntimeError."""
-        real_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
+        real_import = (
+            __builtins__.__import__
+            if hasattr(__builtins__, "__import__")
+            else __import__
+        )
 
         def fake_import(name, *args, **kwargs):
             if name == "smartmemory_app.config":
@@ -107,11 +131,19 @@ class TestCaching:
         fake_cfg.mode = "local"
 
         with (
-            patch.dict("sys.modules", {
-                "smartmemory_app": MagicMock(),
-                "smartmemory_app.config": MagicMock(load_config=MagicMock(return_value=fake_cfg)),
-            }),
-            patch("smartmemory_mcp.backends.local.LocalBackend.__init__", return_value=None),
+            patch.dict(
+                "sys.modules",
+                {
+                    "smartmemory_app": MagicMock(),
+                    "smartmemory_app.config": MagicMock(
+                        load_config=MagicMock(return_value=fake_cfg)
+                    ),
+                },
+            ),
+            patch(
+                "smartmemory_mcp.backends.local.LocalBackend.__init__",
+                return_value=None,
+            ),
         ):
             first = resolve_backend()
             second = resolve_backend()
@@ -123,11 +155,19 @@ class TestCaching:
         fake_cfg.mode = "local"
 
         with (
-            patch.dict("sys.modules", {
-                "smartmemory_app": MagicMock(),
-                "smartmemory_app.config": MagicMock(load_config=MagicMock(return_value=fake_cfg)),
-            }),
-            patch("smartmemory_mcp.backends.local.LocalBackend.__init__", return_value=None),
+            patch.dict(
+                "sys.modules",
+                {
+                    "smartmemory_app": MagicMock(),
+                    "smartmemory_app.config": MagicMock(
+                        load_config=MagicMock(return_value=fake_cfg)
+                    ),
+                },
+            ),
+            patch(
+                "smartmemory_mcp.backends.local.LocalBackend.__init__",
+                return_value=None,
+            ),
         ):
             first = resolve_backend()
             reset_backend()

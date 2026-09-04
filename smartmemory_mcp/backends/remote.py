@@ -100,6 +100,7 @@ class RemoteBackend:
                 "error": f"SmartMemory API unreachable at {self._api_url}. Check SMARTMEMORY_API_URL."
             }
         except httpx.HTTPStatusError as e:
+            self._on_http_error(e.response)
             if e.response.status_code == 401:
                 self._on_unauthorized(e.response)
             return {"error": f"API error {e.response.status_code}: {e.response.text}"}
@@ -114,6 +115,15 @@ class RemoteBackend:
         The hosted subclass overrides this to invalidate its cached identity
         exchange and raise, which is the only way either path can be intercepted
         (design.md §4, round 3 must-fix 6).
+        """
+        return None
+
+    def _on_http_error(self, response: httpx.Response) -> None:
+        """Hook fired on every non-successful HTTP response.
+
+        The base remote backend keeps its established error-dict behaviour.
+        Hosted mode overrides this for service errors that require an MCP-level
+        response rather than a per-tool interpretation of that error dict.
         """
         return None
 
@@ -388,6 +398,7 @@ class RemoteBackend:
                 "error": f"SmartMemory API unreachable at {self._api_url}. Check SMARTMEMORY_API_URL."
             }
         except httpx.HTTPStatusError as e:
+            self._on_http_error(e.response)
             if e.response.status_code == 401:
                 self._on_unauthorized(e.response)
             result = {"error": f"API error {e.response.status_code}: {e.response.text}"}

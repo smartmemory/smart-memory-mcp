@@ -48,7 +48,9 @@ def _tool():
 class _Report:
     """Stands in for smartmemory.graph.alias_resolution.AliasResolveReport — same to_dict()."""
 
-    def __init__(self, resolved, abstained, redirected_edges, ambiguous, dry_run, disambiguated=0):
+    def __init__(
+        self, resolved, abstained, redirected_edges, ambiguous, dry_run, disambiguated=0
+    ):
         self._d = {
             "resolved": resolved,
             "abstained": abstained,
@@ -72,7 +74,13 @@ class _SmartMemory:
     def resolve_aliases(self, workspace_id=None, dry_run=False, disambiguate=False):
         # Forcing function: the tool must NOT pass workspace_id (scope from auth). Signature MIRRORS the
         # real SmartMemory.resolve_aliases (CORE-GRAPH-ALIAS-DISAMBIG-1 added the disambiguate kwarg).
-        self.calls.append({"workspace_id": workspace_id, "dry_run": dry_run, "disambiguate": disambiguate})
+        self.calls.append(
+            {
+                "workspace_id": workspace_id,
+                "dry_run": dry_run,
+                "disambiguate": disambiguate,
+            }
+        )
         return self._report
 
 
@@ -102,14 +110,20 @@ def test_local_calls_resolve_aliases_on_smart_memory_not_wrapper(monkeypatch):
     """LOCAL: the tool calls backend._mem.resolve_aliases(dry_run=...) — the real
     SmartMemory — and renders its report. Never passes workspace_id."""
     fn = _tool()
-    report = _Report(resolved=3, abstained=1, redirected_edges=7, ambiguous=["Hudson"], dry_run=False)
+    report = _Report(
+        resolved=3, abstained=1, redirected_edges=7, ambiguous=["Hudson"], dry_run=False
+    )
     backend = _LocalBackend(report)
 
-    monkeypatch.setattr("smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend)
+    monkeypatch.setattr(
+        "smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend
+    )
     out = fn(dry_run=False)
 
     # Dispatched to the real SmartMemory with the right args, no workspace_id.
-    assert backend._mem.calls == [{"workspace_id": None, "dry_run": False, "disambiguate": False}], (
+    assert backend._mem.calls == [
+        {"workspace_id": None, "dry_run": False, "disambiguate": False}
+    ], (
         f"must call _mem.resolve_aliases(dry_run=False, disambiguate=False) with no workspace_id; "
         f"got {backend._mem.calls!r}"
     )
@@ -122,13 +136,24 @@ def test_local_threads_disambiguate_flag(monkeypatch):
     """LOCAL: the opt-in disambiguate flag reaches the real SmartMemory and the recovered count is surfaced
     (CORE-GRAPH-ALIAS-DISAMBIG-1) — the forcing function that the flag is actually threaded, not dropped."""
     fn = _tool()
-    report = _Report(resolved=2, abstained=3, redirected_edges=4, ambiguous=["Hudson"], dry_run=False, disambiguated=1)
+    report = _Report(
+        resolved=2,
+        abstained=3,
+        redirected_edges=4,
+        ambiguous=["Hudson"],
+        dry_run=False,
+        disambiguated=1,
+    )
     backend = _LocalBackend(report)
 
-    monkeypatch.setattr("smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend)
+    monkeypatch.setattr(
+        "smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend
+    )
     out = fn(disambiguate=True)
 
-    assert backend._mem.calls == [{"workspace_id": None, "dry_run": False, "disambiguate": True}], backend._mem.calls
+    assert backend._mem.calls == [
+        {"workspace_id": None, "dry_run": False, "disambiguate": True}
+    ], backend._mem.calls
     assert "recovered by disambiguation" in out, out
     assert "Hudson" in out, f"abstained surface must be listed: {out!r}"
     assert "preview" not in out.lower() and "dry run" not in out.lower(), (
@@ -139,13 +164,19 @@ def test_local_threads_disambiguate_flag(monkeypatch):
 def test_local_dry_run_is_a_preview_with_no_changes(monkeypatch):
     """LOCAL dry run: clearly flagged as a preview, dry_run forwarded to core."""
     fn = _tool()
-    report = _Report(resolved=2, abstained=0, redirected_edges=0, ambiguous=[], dry_run=True)
+    report = _Report(
+        resolved=2, abstained=0, redirected_edges=0, ambiguous=[], dry_run=True
+    )
     backend = _LocalBackend(report)
 
-    monkeypatch.setattr("smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend)
+    monkeypatch.setattr(
+        "smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend
+    )
     out = fn(dry_run=True)
 
-    assert backend._mem.calls == [{"workspace_id": None, "dry_run": True, "disambiguate": False}]
+    assert backend._mem.calls == [
+        {"workspace_id": None, "dry_run": True, "disambiguate": False}
+    ]
     assert isinstance(out, str)
     low = out.lower()
     assert "preview" in low or "dry run" in low, f"dry run must be flagged: {out!r}"
@@ -155,7 +186,9 @@ def test_local_dry_run_is_a_preview_with_no_changes(monkeypatch):
 def test_local_refuses_without_mem(monkeypatch):
     """A backend with neither `request` nor `_mem` -> clear refusal, not a crash."""
     fn = _tool()
-    monkeypatch.setattr("smartmemory_mcp.tools.graph_tools.get_backend", lambda: object())
+    monkeypatch.setattr(
+        "smartmemory_mcp.tools.graph_tools.get_backend", lambda: object()
+    )
     out = fn()
     assert isinstance(out, str)
     assert "local backend" in out.lower() or "remote" in out.lower(), out
@@ -178,7 +211,9 @@ def test_remote_posts_with_dry_run_query_param(monkeypatch):
     }
     backend = _RemoteBackend(response)
 
-    monkeypatch.setattr("smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend)
+    monkeypatch.setattr(
+        "smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend
+    )
     out = fn(dry_run=False)
 
     assert len(backend.calls) == 1
@@ -206,7 +241,9 @@ def test_remote_dry_run_sends_query_param_true(monkeypatch):
     }
     backend = _RemoteBackend(response)
 
-    monkeypatch.setattr("smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend)
+    monkeypatch.setattr(
+        "smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend
+    )
     out = fn(dry_run=True)
 
     call = backend.calls[0]
@@ -237,7 +274,9 @@ def test_summary_follows_payload_dry_run_not_request_arg(monkeypatch):
     }
     backend = _RemoteBackend(response)
 
-    monkeypatch.setattr("smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend)
+    monkeypatch.setattr(
+        "smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend
+    )
     out = fn(dry_run=True)
 
     # The request still sent the dry_run query param (caller's intent is honest)...
@@ -260,14 +299,20 @@ def test_local_summary_follows_payload_dry_run_not_request_arg(monkeypatch):
     """[Codex] Local mirror: caller asks dry_run=True but the report says it ran
     for real (dry_run=False) — the summary follows the payload, not the arg."""
     fn = _tool()
-    report = _Report(resolved=2, abstained=0, redirected_edges=4, ambiguous=[], dry_run=False)
+    report = _Report(
+        resolved=2, abstained=0, redirected_edges=4, ambiguous=[], dry_run=False
+    )
     backend = _LocalBackend(report)
 
-    monkeypatch.setattr("smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend)
+    monkeypatch.setattr(
+        "smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend
+    )
     out = fn(dry_run=True)
 
     # The request flag is still forwarded to core (caller intent preserved)...
-    assert backend._mem.calls == [{"workspace_id": None, "dry_run": True, "disambiguate": False}]
+    assert backend._mem.calls == [
+        {"workspace_id": None, "dry_run": True, "disambiguate": False}
+    ]
     # ...but the summary trusts the payload: real run, no "no changes" claim.
     low = out.lower()
     assert "no change" not in low and "preview" not in low and "dry run" not in low, out
@@ -278,7 +323,9 @@ def test_remote_error_dict_is_surfaced(monkeypatch):
     """REMOTE error dict -> readable error string, not a crash."""
     fn = _tool()
     backend = _RemoteBackend({"error": "API error 500: boom"})
-    monkeypatch.setattr("smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend)
+    monkeypatch.setattr(
+        "smartmemory_mcp.tools.graph_tools.get_backend", lambda: backend
+    )
     out = fn()
     assert isinstance(out, str)
     assert "boom" in out, out

@@ -116,7 +116,9 @@ def register(mcp):
                 filters.append(f"feature_id={feature_id}")
             if since:
                 filters.append(f"since={since}")
-            return f"No decisions found for query: {query} (filters: {', '.join(filters)})"
+            return (
+                f"No decisions found for query: {query} (filters: {', '.join(filters)})"
+            )
 
         output = [f"Found {len(filtered)} decisions for '{query}':\n"]
         for i, item in enumerate(filtered, 1):
@@ -214,14 +216,18 @@ def register(mcp):
 
         decision_results = []
         if include_decisions:
-            decision_results = backend.search(topic, top_k=3, memory_type="decision") or []
+            decision_results = (
+                backend.search(topic, top_k=3, memory_type="decision") or []
+            )
             if decision_results:
                 output.append(f"=== Related Decisions ({len(decision_results)}) ===\n")
                 for i, item in enumerate(decision_results, 1):
                     meta = item["metadata"]
                     title = meta.get("title", "Untitled")
                     rationale = meta.get("rationale", "")
-                    preview = rationale[:100] + "..." if len(rationale) > 100 else rationale
+                    preview = (
+                        rationale[:100] + "..." if len(rationale) > 100 else rationale
+                    )
 
                     output.append(f"{i}. {title}")
                     if preview:
@@ -281,7 +287,9 @@ def register(mcp):
         all_tags.append("dev-pattern")
         item_metadata["tags"] = all_tags
 
-        pattern_id = backend.add(content, memory_type="procedural", metadata=item_metadata)
+        pattern_id = backend.add(
+            content, memory_type="procedural", metadata=item_metadata
+        )
 
         return f"Pattern recorded: {pattern_id}\nName: {name}"
 
@@ -303,7 +311,11 @@ def register(mcp):
 
         backend = get_backend()
 
-        parts = [f"Friction: {description}", f"Category: {category}", f"Severity: {severity}"]
+        parts = [
+            f"Friction: {description}",
+            f"Category: {category}",
+            f"Severity: {severity}",
+        ]
         if context:
             parts.append(f"Context: {context}")
         content = "\n".join(parts)

@@ -165,8 +165,8 @@ class _StubVerifier(TokenVerifier):
                 token=token,
                 client_id="api-key",
                 scopes=[],
-                subject="user-key",
                 claims={
+                    "sub": "user-key",
                     "kind": "api_key",
                     "tenant_id": "tenant-key",
                     "default_team_id": API_KEY_WORKSPACE,
@@ -179,8 +179,7 @@ class _StubVerifier(TokenVerifier):
                 token=token,
                 client_id="mcp-client",
                 scopes=["openid"],
-                subject="clerk-sub",
-                claims={"kind": "oauth"},
+                claims={"sub": "clerk-sub", "kind": "oauth"},
             )
         return None
 
@@ -245,7 +244,7 @@ class _Harness:
 
         @self.mcp.tool
         async def set_team(team: str, ctx: Context) -> str:
-            await ctx.set_state("team_id", team)
+            await harness.middleware.set_session_team(ctx, team)
             return team
 
         @self.mcp.tool
@@ -525,6 +524,33 @@ def test_svc_api_401_inside_a_tool_becomes_an_unauthorized_tool_error(
     assert harness.cache.get(token_fingerprint(OAUTH_BEARER)) is None
 
 
+def test_svc_api_nda_gate_inside_a_tool_gives_the_web_acceptance_url(
+    monkeypatch,
+) -> None:
+    """A forwarded 403 must not leave an invited beta user stranded."""
+    harness = _Harness()
+
+    def fake_request(method, url, **kwargs):
+        request = httpx.Request(method, url)
+        return httpx.Response(
+            403, json={"detail": {"code": "nda_required"}}, request=request
+        )
+
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", fake_request)
+
+    async def body(client):
+        session = await harness.open_session(client, OAUTH_BEARER)
+        return await harness.call(client, OAUTH_BEARER, session, "probe_call")
+
+    result = anyio.run(_run, harness, body)
+
+    assert result["isError"] is True
+    assert _text(result) == (
+        "Accept the beta agreement in the SmartMemory web app at "
+        "https://app.smartmemory.ai."
+    )
+
+
 def test_a_healthy_call_leaves_the_cached_identity_in_place(monkeypatch) -> None:
     harness = _Harness()
 
@@ -575,8 +601,8 @@ def _access_token(kind: str = "api_key", token: str = API_KEY_BEARER) -> AccessT
         token=token,
         client_id="api-key",
         scopes=[],
-        subject="user-key",
         claims={
+            "sub": "user-key",
             "kind": kind,
             "tenant_id": "tenant-key",
             "default_team_id": API_KEY_WORKSPACE,

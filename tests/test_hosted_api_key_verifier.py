@@ -74,7 +74,7 @@ def test_valid_key_returns_access_token_with_claims(key: str) -> None:
     assert token.token == key
     assert token.client_id == "api-key"
     assert token.scopes == []
-    assert token.subject == "user-1"
+    assert token.claims["sub"] == "user-1"
     assert token.expires_at is None
     assert token.claims["kind"] == "api_key"
     assert token.claims["tenant_id"] == "tenant-1"
@@ -124,7 +124,7 @@ def test_positive_result_is_cached_so_the_second_call_skips_the_network() -> Non
     second = asyncio.run(verifier.verify_token(LIVE_KEY))
 
     assert first is not None and second is not None
-    assert second.subject == first.subject
+    assert second.claims["sub"] == first.claims["sub"]
     assert len(calls) == 1
 
 

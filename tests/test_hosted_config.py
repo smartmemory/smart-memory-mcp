@@ -25,6 +25,7 @@ def _apply(monkeypatch, env: dict[str, str]) -> None:
     for name in (
         *REQUIRED_ENV,
         "MCP_ALLOWED_CLIENT_REDIRECTS",
+        "SMARTMEMORY_WEB_URL",
         "MCP_HOSTED_PORT",
         "MCP_TRUST_PROXY",
     ):
@@ -55,6 +56,7 @@ def test_defaults_when_optional_vars_absent(monkeypatch) -> None:
 
     assert cfg.hosted_port == 8012
     assert cfg.trust_proxy is False
+    assert cfg.web_url == "https://app.smartmemory.ai"
     assert cfg.allowed_client_redirects == list(DEFAULT_ALLOWED_CLIENT_REDIRECTS)
     assert "https://claude.ai/api/mcp/auth_callback" in cfg.allowed_client_redirects
     assert "http://localhost:*" in cfg.allowed_client_redirects
@@ -102,6 +104,7 @@ def test_optional_overrides(monkeypatch) -> None:
         {
             **REQUIRED_ENV,
             "MCP_ALLOWED_CLIENT_REDIRECTS": "https://a.test/cb, https://b.test/cb ,",
+            "SMARTMEMORY_WEB_URL": "https://web.test/",
             "MCP_HOSTED_PORT": "9999",
             "MCP_TRUST_PROXY": "true",
         },
@@ -110,6 +113,7 @@ def test_optional_overrides(monkeypatch) -> None:
     cfg = HostedConfig.from_env()
 
     assert cfg.allowed_client_redirects == ["https://a.test/cb", "https://b.test/cb"]
+    assert cfg.web_url == "https://web.test"
     assert cfg.hosted_port == 9999
     assert cfg.trust_proxy is True
 

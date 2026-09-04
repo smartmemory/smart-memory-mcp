@@ -22,6 +22,7 @@ DEFAULT_ALLOWED_CLIENT_REDIRECTS: tuple[str, ...] = (
 )
 
 DEFAULT_HOSTED_PORT = 8012
+DEFAULT_SMARTMEMORY_WEB_URL = "https://app.smartmemory.ai"
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 
@@ -52,6 +53,7 @@ class HostedConfig:
     allowed_client_redirects: list[str] = field(
         default_factory=lambda: list(DEFAULT_ALLOWED_CLIENT_REDIRECTS)
     )
+    web_url: str = DEFAULT_SMARTMEMORY_WEB_URL
     hosted_port: int = DEFAULT_HOSTED_PORT
     trust_proxy: bool = False
 
@@ -75,6 +77,12 @@ class HostedConfig:
             values["allowed_client_redirects"] = [part for part in redirects if part]
         else:
             values["allowed_client_redirects"] = list(DEFAULT_ALLOWED_CLIENT_REDIRECTS)
+
+        values["web_url"] = (
+            (source.get("SMARTMEMORY_WEB_URL") or DEFAULT_SMARTMEMORY_WEB_URL)
+            .strip()
+            .rstrip("/")
+        )
 
         port_raw = (source.get("MCP_HOSTED_PORT") or "").strip()
         if port_raw:

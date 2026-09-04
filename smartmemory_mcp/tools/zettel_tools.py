@@ -19,7 +19,10 @@ def _get_zettel_memory():
     # LocalBackend exposes _mem; RemoteBackend does not
     mem = getattr(backend, "_mem", None)
     if mem is None:
-        return None, "Zettel tools require local backend. Remote mode does not support graph-based zettel operations."
+        return (
+            None,
+            "Zettel tools require local backend. Remote mode does not support graph-based zettel operations.",
+        )
 
     return ZettelMemory(memory=mem), None
 

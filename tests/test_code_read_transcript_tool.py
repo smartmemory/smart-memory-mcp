@@ -6,6 +6,7 @@ window of the authoring transcript. Local-backend only; the hosted REST surface 
 parked. The reader logic itself is covered in smart-memory-core
 (`test_provenance_reader.py`); here we cover the tool surface.
 """
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -50,8 +51,13 @@ class _RemoteBackend:
 
 def _window(**ov):
     base = {
-        "window": "user: add login\n[Write] {\"file_path\": \"auth.py\"}\nresult ok",
-        "handle": {"source": "cc", "source_path": "/t/s.jsonl", "session_id": "sess-A", "line_no": 2},
+        "window": 'user: add login\n[Write] {"file_path": "auth.py"}\nresult ok',
+        "handle": {
+            "source": "cc",
+            "source_path": "/t/s.jsonl",
+            "session_id": "sess-A",
+            "line_no": 2,
+        },
         "continue_cursor": {"prev_line": 1, "next_line": 3},
         "chars_used": 42,
         "char_budget": 20000,
@@ -77,7 +83,13 @@ def test_zero_line_becomes_none_and_locate_passed():
     tool = _registered()["code_read_transcript"]
     be = _LocalBackend(result=_window())
     with patch("smartmemory_mcp.tools.code_tools.get_backend", return_value=be):
-        tool(source_path="/t/s.jsonl", line_no=0, source="cc", file="auth.py", norm_hash="abc123")
+        tool(
+            source_path="/t/s.jsonl",
+            line_no=0,
+            source="cc",
+            file="auth.py",
+            norm_hash="abc123",
+        )
     assert be.last_kwargs["line_no"] is None  # 0 → None (live CC)
     assert be.last_kwargs["locate"] == {"file": "auth.py", "norm_hash": "abc123"}
 
@@ -111,7 +123,9 @@ def test_prev_line_forwards_cursor():
 
 def test_remote_is_parked():
     tool = _registered()["code_read_transcript"]
-    with patch("smartmemory_mcp.tools.code_tools.get_backend", return_value=_RemoteBackend()):
+    with patch(
+        "smartmemory_mcp.tools.code_tools.get_backend", return_value=_RemoteBackend()
+    ):
         out = tool(source_path="/t/s.jsonl", line_no=2)
     low = out.lower()
     assert "local" in low and "parked" in low

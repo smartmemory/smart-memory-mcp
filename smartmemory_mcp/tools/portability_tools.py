@@ -77,7 +77,9 @@ def _extract_bundle(archive_path: Path, destination: Path) -> Path:
 
     indexes = list(destination.rglob("index.md"))
     if len(indexes) != 1:
-        raise ValueError(f"OKF archive must contain exactly one index.md; found {len(indexes)}")
+        raise ValueError(
+            f"OKF archive must contain exactly one index.md; found {len(indexes)}"
+        )
     return indexes[0].parent
 
 
@@ -86,10 +88,14 @@ def _export_okf(backend: Any, output_path: Path) -> int:
     if _is_remote_backend(backend):
         if _is_archive(output_path):
             backend.export_okf(str(output_path))
-            with tempfile.TemporaryDirectory(prefix="smartmemory-okf-count-") as temp_dir:
+            with tempfile.TemporaryDirectory(
+                prefix="smartmemory-okf-count-"
+            ) as temp_dir:
                 bundle_dir = _extract_bundle(output_path, Path(temp_dir))
                 return _bundle_page_count(bundle_dir)
-        with tempfile.TemporaryDirectory(prefix="smartmemory-okf-download-") as temp_dir:
+        with tempfile.TemporaryDirectory(
+            prefix="smartmemory-okf-download-"
+        ) as temp_dir:
             archive_path = Path(temp_dir) / "bundle.tar.gz"
             backend.export_okf(str(archive_path))
             bundle_dir = _extract_bundle(archive_path, output_path)
@@ -124,7 +130,9 @@ def _import_okf(backend: Any, input_path: Path) -> Any:
 def _import_counts(result: Any) -> tuple[int, int]:
     """Normalize local ImportStats and remote response counters."""
     if isinstance(result, dict):
-        return int(result.get("imported", 0)), int(result.get("failed", result.get("errors", 0)))
+        return int(result.get("imported", 0)), int(
+            result.get("failed", result.get("errors", 0))
+        )
     return int(getattr(result, "imported", 0)), int(getattr(result, "errors", 0))
 
 
@@ -152,7 +160,9 @@ def register(mcp: Any) -> None:
             return f"Path not found: {import_path}"
         result = _import_okf(backend, import_path)
         imported, failed = _import_counts(result)
-        return f"Import complete: {imported} succeeded, {failed} failed from {import_path}"
+        return (
+            f"Import complete: {imported} succeeded, {failed} failed from {import_path}"
+        )
 
     @mcp.tool()
     @graceful

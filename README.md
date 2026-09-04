@@ -80,6 +80,7 @@ Optional:
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `MCP_ALLOWED_CLIENT_REDIRECTS` | the six built-in patterns | Comma-separated client callback allowlist |
+| `SMARTMEMORY_WEB_URL` | `https://app.smartmemory.ai` | Web app URL shown when an invited beta user must accept the agreement |
 | `MCP_HOSTED_PORT` | `8012` | Port to bind |
 | `MCP_TRUST_PROXY` | `false` | Honour `X-Forwarded-For` for rate limiting. Only true behind our own reverse proxy |
 

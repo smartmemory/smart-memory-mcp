@@ -96,8 +96,8 @@ class SmartMemoryApiKeyVerifier(TokenVerifier):
             # /auth/me carries no scopes field; authorization stays service-enforced
             # on the forwarded key (round 4 N2).
             scopes=[],
-            subject=str(user["id"]),
             claims={
+                "sub": str(user["id"]),
                 "kind": "api_key",
                 "tenant_id": user.get("tenant_id"),
                 "default_team_id": default_team_id,
@@ -111,7 +111,7 @@ class SmartMemoryApiKeyVerifier(TokenVerifier):
         self._cache[fingerprint] = (self._clock() + self._cache_ttl, access_token)
         logger.info(
             "API-key accepted for user %s (fingerprint %s).",
-            access_token.subject,
+            user["id"],
             fingerprint[:12],
         )
         return access_token

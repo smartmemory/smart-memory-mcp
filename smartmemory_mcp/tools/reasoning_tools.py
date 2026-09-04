@@ -126,7 +126,11 @@ def register(mcp):
 
         for r in result.get("results", [])[:5]:
             if r.get("content"):
-                preview = r["content"][:150] + "..." if len(r["content"]) > 150 else r["content"]
+                preview = (
+                    r["content"][:150] + "..."
+                    if len(r["content"]) > 150
+                    else r["content"]
+                )
                 parts.append(f"  - [{r['item_id']}] {preview}")
             else:
                 parts.append(f"  - {str(r)[:150]}")
@@ -238,8 +242,6 @@ def register(mcp):
             steps = meta.get("steps", [])
             item_id = item["item_id"]
             content = item["content"]
-            output.append(
-                f"- [{item_id}] ({len(steps)} steps): {content[:120]}"
-            )
+            output.append(f"- [{item_id}] ({len(steps)} steps): {content[:120]}")
 
         return "\n".join(output)

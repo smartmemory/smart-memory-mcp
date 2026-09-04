@@ -39,7 +39,9 @@ class FakeLocalBackend:
 def _fake_remote() -> RemoteBackend:
     backend = object.__new__(RemoteBackend)
     backend.export_okf = MagicMock(side_effect=_write_remote_archive)
-    backend.import_okf = MagicMock(return_value={"imported": 1, "failed": 0, "workspace_id": "ws-1"})
+    backend.import_okf = MagicMock(
+        return_value={"imported": 1, "failed": 0, "workspace_id": "ws-1"}
+    )
     return backend
 
 
@@ -119,7 +121,9 @@ def test_remote_export_can_expand_to_bundle_directory(tmp_path: Path) -> None:
 
 
 def test_remote_export_passes_active_workspace_to_headers(tmp_path: Path) -> None:
-    backend = RemoteBackend(api_url="https://example.test", api_key="key", team_id="workspace-1")
+    backend = RemoteBackend(
+        api_url="https://example.test", api_key="key", team_id="workspace-1"
+    )
     backend._session["_bootstrapped"] = True
     archive_path = tmp_path / "bundle.tar.gz"
     response = MagicMock()
@@ -131,7 +135,10 @@ def test_remote_export_passes_active_workspace_to_headers(tmp_path: Path) -> Non
         patch.object(
             backend,
             "_headers",
-            return_value={"Authorization": "Bearer key", "X-Workspace-Id": "workspace-1"},
+            return_value={
+                "Authorization": "Bearer key",
+                "X-Workspace-Id": "workspace-1",
+            },
         ) as build_headers,
         patch("smartmemory_mcp.backends.remote.httpx.stream", return_value=response),
     ):
@@ -159,7 +166,9 @@ def test_local_backend_import_constructs_direct_corpus_importer(tmp_path: Path) 
     importer = MagicMock()
     importer.run.return_value = SimpleNamespace(imported=1, errors=0)
 
-    with patch("smartmemory.corpus.importer.CorpusImporter", return_value=importer) as importer_class:
+    with patch(
+        "smartmemory.corpus.importer.CorpusImporter", return_value=importer
+    ) as importer_class:
         result = backend.import_okf(str(tmp_path))
 
     importer_class.assert_called_once_with(backend._mem, mode="direct")
@@ -181,12 +190,20 @@ def test_remote_import_packages_bundle_before_upload(tmp_path: Path) -> None:
     assert uploaded.name == "bundle.tar.gz"
 
 
-def test_remote_import_passes_active_workspace_to_headers_and_request(tmp_path: Path) -> None:
-    backend = RemoteBackend(api_url="https://example.test", api_key="key", team_id="workspace-1")
+def test_remote_import_passes_active_workspace_to_headers_and_request(
+    tmp_path: Path,
+) -> None:
+    backend = RemoteBackend(
+        api_url="https://example.test", api_key="key", team_id="workspace-1"
+    )
     backend._session["_bootstrapped"] = True
     archive_path = tmp_path / "bundle.tar.gz"
     archive_path.write_bytes(b"archive")
-    headers = {"Authorization": "Bearer key", "Content-Type": "application/json", "X-Workspace-Id": "workspace-1"}
+    headers = {
+        "Authorization": "Bearer key",
+        "Content-Type": "application/json",
+        "X-Workspace-Id": "workspace-1",
+    }
 
     with (
         patch.object(backend, "_headers", return_value=headers) as build_headers,
@@ -200,7 +217,10 @@ def test_remote_import_passes_active_workspace_to_headers_and_request(tmp_path: 
 
     build_headers.assert_called_once_with(workspace_id="workspace-1")
     assert request.call_args.kwargs["workspace_id"] == "workspace-1"
-    assert request.call_args.kwargs["headers"] == {"Authorization": "Bearer key", "X-Workspace-Id": "workspace-1"}
+    assert request.call_args.kwargs["headers"] == {
+        "Authorization": "Bearer key",
+        "X-Workspace-Id": "workspace-1",
+    }
     assert result["workspace_id"] == "workspace-1"
 
 

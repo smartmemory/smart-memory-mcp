@@ -56,14 +56,20 @@ def log_interaction(
         result_count = len(raw_results)
         for rank, item in enumerate(raw_results, 1):
             content = item.get("content", "")
-            snippet = content[:SNIPPET_MAX_LEN] + "..." if len(content) > SNIPPET_MAX_LEN else content
-            results_summary.append({
-                "item_id": item.get("item_id", ""),
-                "rank": rank,
-                "score": item.get("score"),
-                "memory_type": item.get("memory_type", ""),
-                "content_snippet": snippet,
-            })
+            snippet = (
+                content[:SNIPPET_MAX_LEN] + "..."
+                if len(content) > SNIPPET_MAX_LEN
+                else content
+            )
+            results_summary.append(
+                {
+                    "item_id": item.get("item_id", ""),
+                    "rank": rank,
+                    "score": item.get("score"),
+                    "memory_type": item.get("memory_type", ""),
+                    "content_snippet": snippet,
+                }
+            )
 
     record = {
         "id": str(uuid.uuid4()),

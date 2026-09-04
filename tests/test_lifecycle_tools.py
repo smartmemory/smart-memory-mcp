@@ -1,7 +1,5 @@
 """Tests for DIST-AGENT-HOOKS-1 MCP lifecycle tools."""
 
-from smartmemory_mcp.tier import Tier, resolve_tier
-
 
 class TestLifecycleToolRegistration:
     """memory_auto should be registered in FREE tier."""

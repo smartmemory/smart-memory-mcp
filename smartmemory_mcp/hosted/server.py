@@ -28,6 +28,7 @@ from .tools import apply_allowlist, register_module_tools
 
 logger = logging.getLogger(__name__)
 
+
 SERVER_NAME = "smartmemory"
 
 HOSTED_REFUSAL = "{what} is not available on the hosted server."
@@ -46,12 +47,13 @@ def build_hosted_server(
     if api_transport is not None:
         auth.verifiers[0]._transport = api_transport
 
+    identity_middleware = HostedIdentityMiddleware(
+        cfg, cache=cache, transport=api_transport
+    )
     mcp = FastMCP(
         SERVER_NAME,
         auth=auth,
-        middleware=[
-            HostedIdentityMiddleware(cfg, cache=cache, transport=api_transport)
-        ],
+        middleware=[identity_middleware],
         # The hosted variants of memory_search and memory_recall deliberately
         # supersede the ones their module registers. "replace" is fastmcp's
         # supported route for that (`local_provider.py:186-200`); there is no
@@ -64,13 +66,17 @@ def build_hosted_server(
     set_hosted_mode(True)
 
     originals = register_module_tools(mcp)
-    _register_hosted_tools(mcp, originals)
+    _register_hosted_tools(mcp, originals, identity_middleware)
     _register_health(mcp)
     apply_allowlist(mcp)
     return mcp
 
 
-def _register_hosted_tools(mcp: FastMCP, originals: dict[str, Any]) -> None:
+def _register_hosted_tools(
+    mcp: FastMCP,
+    originals: dict[str, Any],
+    identity_middleware: HostedIdentityMiddleware,
+) -> None:
     """Session tools and the two guarded overrides."""
 
     @mcp.tool(name="whoami")
@@ -80,7 +86,7 @@ def _register_hosted_tools(mcp: FastMCP, originals: dict[str, Any]) -> None:
         if identity is None:
             raise ToolError("Unauthorized: no identity bound to this call")
         verified = identity.verified
-        team_id = await ctx.get_state("team_id") or identity.team_id
+        team_id = await identity_middleware.get_session_team(ctx) or identity.team_id
         return "\n".join(
             [
                 f"User: {verified.email or verified.user_id}",
@@ -114,7 +120,7 @@ def _register_hosted_tools(mcp: FastMCP, originals: dict[str, Any]) -> None:
                 f"Available: {', '.join(sorted(available)) or 'none'}."
             )
 
-        await ctx.set_state("team_id", team_id)
+        await identity_middleware.set_session_team(ctx, team_id)
         return f"Switched to workspace: {team_id}"
 
     original_search = originals["memory_search"]

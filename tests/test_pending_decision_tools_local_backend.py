@@ -26,7 +26,8 @@ def test_create_pending_refuses_in_remote_mode():
     with patch("smartmemory_mcp.tools.decision_tools.get_backend") as gb:
         gb.return_value = object()  # no _mem -> remote
         out = tools["decision_create_pending"](
-            content="case", requirements=[{"description": "x", "requirement_type": "proof"}]
+            content="case",
+            requirements=[{"description": "x", "requirement_type": "proof"}],
         )
     assert isinstance(out, str)
     assert "local backend" in out.lower()
@@ -67,10 +68,14 @@ def test_create_pending_builds_residuation_with_local_sm():
     ):
         gb.return_value = backend
         out = tools["decision_create_pending"](
-            content="case", requirements=[{"description": "x", "requirement_type": "proof"}], domain="gtm"
+            content="case",
+            requirements=[{"description": "x", "requirement_type": "proof"}],
+            domain="gtm",
         )
 
-    assert captured["mem"] is backend._mem, "ResiduationManager must be built with backend._mem"
+    assert captured["mem"] is backend._mem, (
+        "ResiduationManager must be built with backend._mem"
+    )
     assert "dec_pending1" in out
     assert "req_abc12345" in out
 

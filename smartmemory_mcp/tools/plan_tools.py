@@ -56,7 +56,9 @@ def register(mcp):
             return "No active plans."
         lines = [f"Active plans ({len(plans)}):"]
         for p in plans:
-            lines.append(f"  {p['plan_id']}: {p['content']} ({p['completed_tasks']}/{p['total_tasks']} tasks)")
+            lines.append(
+                f"  {p['plan_id']}: {p['content']} ({p['completed_tasks']}/{p['total_tasks']} tasks)"
+            )
         return "\n".join(lines)
 
     @mcp.tool()

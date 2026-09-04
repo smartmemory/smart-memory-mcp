@@ -22,7 +22,9 @@ def _backend() -> RemoteBackend:
 
 def test_list_memories_raises_on_error_dict(monkeypatch) -> None:
     backend = _backend()
-    monkeypatch.setattr(backend, "_request", lambda *a, **k: {"error": "API error 500: boom"})
+    monkeypatch.setattr(
+        backend, "_request", lambda *a, **k: {"error": "API error 500: boom"}
+    )
 
     with pytest.raises(RuntimeError, match="boom"):
         backend.list_memories()
@@ -33,7 +35,10 @@ def test_list_memories_returns_items_on_success(monkeypatch) -> None:
     monkeypatch.setattr(
         backend,
         "_request",
-        lambda *a, **k: {"items": [{"item_id": "m-1", "content": "hi", "memory_type": "semantic"}], "total": 1},
+        lambda *a, **k: {
+            "items": [{"item_id": "m-1", "content": "hi", "memory_type": "semantic"}],
+            "total": 1,
+        },
     )
 
     out = backend.list_memories()
@@ -42,7 +47,9 @@ def test_list_memories_returns_items_on_success(monkeypatch) -> None:
 
 def test_search_by_metadata_raises_on_error_dict(monkeypatch) -> None:
     backend = _backend()
-    monkeypatch.setattr(backend, "_request", lambda *a, **k: {"error": "API error 403: nope"})
+    monkeypatch.setattr(
+        backend, "_request", lambda *a, **k: {"error": "API error 403: nope"}
+    )
 
     with pytest.raises(RuntimeError, match="nope"):
         backend.search_by_metadata("k", "v")
@@ -109,7 +116,9 @@ def test_search_by_metadata_legacy_bare_array_still_works(monkeypatch) -> None:
     monkeypatch.setattr(
         backend,
         "_request",
-        lambda *a, **k: [{"item_id": "m-9", "content": "legacy", "memory_type": "semantic"}],
+        lambda *a, **k: [
+            {"item_id": "m-9", "content": "legacy", "memory_type": "semantic"}
+        ],
     )
 
     assert [i["item_id"] for i in backend.search_by_metadata("k", "v")] == ["m-9"]
@@ -131,7 +140,11 @@ def test_search_unwraps_lineage_response_envelope(monkeypatch) -> None:
     }
 
     def _ok(*a, **k):
-        return httpx.Response(200, json=envelope, request=httpx.Request("POST", "https://api.test/memory/search"))
+        return httpx.Response(
+            200,
+            json=envelope,
+            request=httpx.Request("POST", "https://api.test/memory/search"),
+        )
 
     monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", _ok)
 
@@ -147,7 +160,9 @@ def test_search_returns_empty_on_malformed_envelope(monkeypatch) -> None:
 
     def _ok(*a, **k):
         return httpx.Response(
-            200, json={"results": "not-a-list"}, request=httpx.Request("POST", "https://api.test/memory/search")
+            200,
+            json={"results": "not-a-list"},
+            request=httpx.Request("POST", "https://api.test/memory/search"),
         )
 
     monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", _ok)
@@ -164,7 +179,9 @@ def test_search_raises_on_error_dict(monkeypatch) -> None:
         raise httpx.HTTPStatusError(
             "500",
             request=httpx.Request("POST", "https://api.test/memory/search"),
-            response=httpx.Response(500, request=httpx.Request("POST", "https://api.test/memory/search")),
+            response=httpx.Response(
+                500, request=httpx.Request("POST", "https://api.test/memory/search")
+            ),
         )
 
     monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", _raise)
@@ -179,10 +196,14 @@ def test_search_raises_on_error_dict(monkeypatch) -> None:
 # get() were both reporting failures as success.
 
 
-def test_add_raises_instead_of_returning_the_error_dict_as_an_item_id(monkeypatch) -> None:
+def test_add_raises_instead_of_returning_the_error_dict_as_an_item_id(
+    monkeypatch,
+) -> None:
     """add() used to hand back "{'error': 'API error 500: ...'}" AS THE NEW ITEM ID."""
     backend = _backend()
-    monkeypatch.setattr(backend, "_request", lambda *a, **k: {"error": "API error 500: boom"})
+    monkeypatch.setattr(
+        backend, "_request", lambda *a, **k: {"error": "API error 500: boom"}
+    )
 
     with pytest.raises(RuntimeError, match="boom"):
         backend.add("some content")
@@ -199,7 +220,9 @@ def test_add_raises_when_no_item_id_comes_back(monkeypatch) -> None:
 def test_add_returns_id_from_the_id_key(monkeypatch) -> None:
     """The service returns {"id": ...}, not {"item_id": ...} (crud.py add_memory)."""
     backend = _backend()
-    monkeypatch.setattr(backend, "_request", lambda *a, **k: {"id": "m-77", "status": "created"})
+    monkeypatch.setattr(
+        backend, "_request", lambda *a, **k: {"id": "m-77", "status": "created"}
+    )
 
     assert backend.add("some content") == "m-77"
 
@@ -207,7 +230,9 @@ def test_add_returns_id_from_the_id_key(monkeypatch) -> None:
 def test_get_raises_on_outage_instead_of_reporting_absence(monkeypatch) -> None:
     """A 403/500 rendered as "Memory item not found." is silent degradation."""
     backend = _backend()
-    monkeypatch.setattr(backend, "_request", lambda *a, **k: {"error": "API error 500: boom"})
+    monkeypatch.setattr(
+        backend, "_request", lambda *a, **k: {"error": "API error 500: boom"}
+    )
 
     with pytest.raises(RuntimeError, match="boom"):
         backend.get("m-1")
@@ -215,7 +240,9 @@ def test_get_raises_on_outage_instead_of_reporting_absence(monkeypatch) -> None:
 
 def test_get_still_returns_none_for_genuine_absence(monkeypatch) -> None:
     backend = _backend()
-    monkeypatch.setattr(backend, "_request", lambda *a, **k: {"error": "API error 404: not found"})
+    monkeypatch.setattr(
+        backend, "_request", lambda *a, **k: {"error": "API error 404: not found"}
+    )
     assert backend.get("m-1") is None
 
     monkeypatch.setattr(backend, "_request", lambda *a, **k: None)
@@ -225,7 +252,9 @@ def test_get_still_returns_none_for_genuine_absence(monkeypatch) -> None:
 def test_list_memories_guards_a_non_list_items_value(monkeypatch) -> None:
     """A regressed {"items": {...}} must not become one blank memory per dict key."""
     backend = _backend()
-    monkeypatch.setattr(backend, "_request", lambda *a, **k: {"items": {"a": 1, "b": 2}, "total": 2})
+    monkeypatch.setattr(
+        backend, "_request", lambda *a, **k: {"items": {"a": 1, "b": 2}, "total": 2}
+    )
 
     assert backend.list_memories() == []
 
@@ -238,7 +267,12 @@ def test_superseded_fields_survive_normalization(monkeypatch) -> None:
         "_request",
         lambda *a, **k: {
             "items": [
-                {"item_id": "old", "content": "stale fact", "superseded": True, "superseded_by": "new"},
+                {
+                    "item_id": "old",
+                    "content": "stale fact",
+                    "superseded": True,
+                    "superseded_by": "new",
+                },
                 {"item_id": "cur", "content": "current fact"},
             ],
             "count": 2,

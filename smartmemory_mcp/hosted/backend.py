@@ -19,6 +19,10 @@ from .identity import HostedAuthError
 logger = logging.getLogger(__name__)
 
 
+class HostedNdaRequiredError(RuntimeError):
+    """svc-api has gated this hosted call on accepting the beta agreement."""
+
+
 class HostedRemoteBackend(RemoteBackend):
     """Per-call backend for one hosted user in one workspace."""
 
@@ -48,3 +52,14 @@ class HostedRemoteBackend(RemoteBackend):
         )
         self._cache.invalidate(self._fingerprint)
         raise HostedAuthError("session expired, retry")
+
+    def _on_http_error(self, response: httpx.Response) -> None:
+        """Promote the beta gate to one shared hosted tool-error path."""
+        if response.status_code != 403:
+            return
+        try:
+            detail = response.json().get("detail")
+        except (TypeError, ValueError):
+            return
+        if isinstance(detail, dict) and detail.get("code") == "nda_required":
+            raise HostedNdaRequiredError

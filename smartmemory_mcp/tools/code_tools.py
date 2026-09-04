@@ -25,7 +25,7 @@ def _render_read_call(rh: dict) -> str:
         return "(read handle unavailable)"
     parts = [f'source="{rh.get("source")}"', f'source_path="{rh.get("source_path")}"']
     if rh.get("line_no") is not None:
-        parts.append(f'line_no={rh.get("line_no")}')
+        parts.append(f"line_no={rh.get('line_no')}")
     loc = rh.get("locate") or {}
     if loc:
         parts.append(f'file="{loc.get("file")}"')
@@ -44,7 +44,11 @@ def register(mcp):
         exclude_dirs: Optional[str] = None,
     ) -> str:
         """Index a Python codebase into SmartMemory's knowledge graph."""
-        from smartmemory_mcp.code_parser import CodeParser, collect_python_files, DEFAULT_EXCLUDE_DIRS
+        from smartmemory_mcp.code_parser import (
+            CodeParser,
+            collect_python_files,
+            DEFAULT_EXCLUDE_DIRS,
+        )
 
         abs_dir = os.path.abspath(directory)
         if not os.path.isdir(abs_dir):
@@ -82,7 +86,9 @@ def register(mcp):
                 "relations": [r.to_dict() for r in all_relations],
             }
             timeout = max(60, len(all_entities) // 50)
-            result = backend.request("POST", "/memory/code/index", timeout=timeout, json=payload)
+            result = backend.request(
+                "POST", "/memory/code/index", timeout=timeout, json=payload
+            )
             if isinstance(result, dict) and "error" not in result:
                 entities_stored = result.get("entities_created", len(all_entities))
                 edges_stored = result.get("edges_created", len(all_relations))
@@ -156,22 +162,24 @@ def register(mcp):
             # Local: search memory items with code type
             results = backend.search(query, top_k=limit, memory_type="code")
             items = []
-            for item in (results or []):
+            for item in results or []:
                 meta = item["metadata"]
                 if entity_type and meta.get("entity_type") != entity_type:
                     continue
                 if repo and meta.get("repo") != repo:
                     continue
-                items.append({
-                    "name": meta.get("name", "?"),
-                    "entity_type": meta.get("entity_type", "?"),
-                    "file_path": meta.get("file_path", "?"),
-                    "line_number": meta.get("line_number", "?"),
-                    "repo": meta.get("repo", ""),
-                    "docstring": item["content"][:200],
-                    "http_method": meta.get("http_method", ""),
-                    "http_path": meta.get("http_path", ""),
-                })
+                items.append(
+                    {
+                        "name": meta.get("name", "?"),
+                        "entity_type": meta.get("entity_type", "?"),
+                        "file_path": meta.get("file_path", "?"),
+                        "line_number": meta.get("line_number", "?"),
+                        "repo": meta.get("repo", ""),
+                        "docstring": item["content"][:200],
+                        "http_method": meta.get("http_method", ""),
+                        "http_path": meta.get("http_path", ""),
+                    }
+                )
 
         if not items:
             return f"No code entities found for: {query}"
@@ -243,7 +251,8 @@ def register(mcp):
 
         target = res.get("query", {})
         head = "Authoring session(s) for " + (
-            f"commit {target.get('commit', '')[:10]}" if target.get("commit")
+            f"commit {target.get('commit', '')[:10]}"
+            if target.get("commit")
             else f"{target.get('file', '?')}:{target.get('line', '?')}"
         )
         if status == "no_clear_author":
@@ -307,7 +316,9 @@ def register(mcp):
         elif prev_line:
             cursor, effective_line = {"prev_line": prev_line}, prev_line
 
-        locate = {"file": file, "norm_hash": norm_hash} if (file and norm_hash) else None
+        locate = (
+            {"file": file, "norm_hash": norm_hash} if (file and norm_hash) else None
+        )
         try:
             res = backend.read_transcript_centered(
                 source_path=source_path,
@@ -383,7 +394,10 @@ def register(mcp):
         backend = get_backend()
 
         if hasattr(backend, "request"):
-            params: dict[str, Any] = {"entity_name": entity_name, "direction": direction}
+            params: dict[str, Any] = {
+                "entity_name": entity_name,
+                "direction": direction,
+            }
             if repo:
                 params["repo"] = repo
             result = backend.request("GET", "/memory/code/dependencies", params=params)
