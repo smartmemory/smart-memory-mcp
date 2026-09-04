@@ -14,9 +14,8 @@ from typing import Any, Optional
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
 from key_value.aio.protocols.key_value import AsyncKeyValue
-from starlette.requests import Request
-from starlette.responses import JSONResponse
 
+from ..health import register_health
 from ..tools.common import get_backend, graceful
 from .auth import build_auth
 from .config import HostedConfig
@@ -67,7 +66,7 @@ def build_hosted_server(
 
     originals = register_module_tools(mcp)
     _register_hosted_tools(mcp, originals, identity_middleware)
-    _register_health(mcp)
+    register_health(mcp, mode="hosted")
     apply_allowlist(mcp)
     return mcp
 
@@ -211,13 +210,6 @@ def _list_team_ids() -> set[str] | None:
         str(row.get("id")) for row in rows if isinstance(row, dict) and row.get("id")
     }
     return ids
-
-
-def _register_health(mcp: FastMCP) -> None:
-    @mcp.custom_route("/health", methods=["GET"], include_in_schema=False)
-    async def health(request: Request) -> JSONResponse:
-        """Unauthenticated liveness probe for the container healthcheck."""
-        return JSONResponse({"status": "ok", "mode": "hosted"})
 
 
 def hosted_asgi_app(cfg: HostedConfig, **injection: Any):

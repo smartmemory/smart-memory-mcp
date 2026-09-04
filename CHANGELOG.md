@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `--http` now serves an unauthenticated `GET /health` liveness probe for the
+  single-identity MCP container healthcheck.
+
 ## 1.4.87 — 2026-09-04
 
 ### Fixed — hosted mode (PLAT-MCP-HOSTED-1 listing readiness)

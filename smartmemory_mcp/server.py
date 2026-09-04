@@ -16,6 +16,7 @@ import sys
 
 from fastmcp import FastMCP
 
+from smartmemory_mcp.health import register_health
 from smartmemory_mcp.tier import Tier, resolve_tier, store_api_key
 from smartmemory_mcp.tools.common import graceful
 
@@ -212,6 +213,13 @@ def resolve_http_bind(argv: list[str] | None = None) -> tuple[str, int]:
     return HOSTED_LOOPBACK_HOST, port
 
 
+def _register_http_health(mcp: FastMCP, argv: list[str] | None = None) -> None:
+    """Register liveness only for the single-identity HTTP transport."""
+    args = sys.argv if argv is None else argv
+    if "--http" in args:
+        register_health(mcp, mode="http")
+
+
 # Register tools at module load — but NOT in hosted mode, where the tool surface
 # is an explicit allowlist built by `hosted.server.build_hosted_server` and tier
 # resolution (which reads a stored API key) must never run.
@@ -242,6 +250,7 @@ def main():
         transcript_tools.schedule_warm_start()
 
     if "--http" in sys.argv:
+        _register_http_health(mcp)
         host, port = resolve_http_bind()
         mcp.run(transport="http", host=host, port=port, show_banner=False)
     else:
