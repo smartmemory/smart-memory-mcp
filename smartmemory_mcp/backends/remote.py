@@ -272,7 +272,7 @@ class RemoteBackend:
         return result
 
     def update(self, item_id: str, **kwargs: Any) -> dict[str, Any]:
-        """PUT /memory/{item_id}.
+        """PATCH /memory/{item_id}.
 
         Supports the CORE-CRUD-UPDATE-1 contract: content/metadata/properties/write_mode
         are forwarded verbatim. memory_type is forwarded for legacy compatibility.
@@ -281,7 +281,7 @@ class RemoteBackend:
         for key in ("content", "metadata", "properties", "write_mode", "memory_type"):
             if key in kwargs:
                 body[key] = kwargs[key]
-        return self._request("PUT", f"/memory/{item_id}", json=body) or {}
+        return self._request("PATCH", f"/memory/{item_id}", json=body) or {}
 
     def delete(self, item_id: str, **kwargs: Any) -> bool:
         """DELETE /memory/{item_id}. Returns True on success."""

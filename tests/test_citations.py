@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from tests._tools import tool_fn
+
 
 class MockBackend:
     def __init__(self, items=None):
@@ -16,7 +18,9 @@ class MockBackend:
         return self._items
 
 
-def _mk_item(item_id: str, content: str, score: float = 0.5, mtype: str = "semantic") -> dict:
+def _mk_item(
+    item_id: str, content: str, score: float = 0.5, mtype: str = "semantic"
+) -> dict:
     return {
         "item_id": item_id,
         "content": content,
@@ -27,26 +31,28 @@ def _mk_item(item_id: str, content: str, score: float = 0.5, mtype: str = "seman
 
 
 def _get_tool(name: str):
-    import smartmemory_mcp.server as srv
-
-    for tool in srv.mcp._tool_manager._tools.values():
-        if tool.name == name:
-            return tool.fn
-    raise AssertionError(f"{name} tool not registered")
+    return tool_fn(name)
 
 
 class TestMemorySearchCite:
     def test_cite_false_returns_string(self):
         """Default behavior unchanged — memory_search returns the catalog/text string."""
         fn = _get_tool("memory_search")
-        backend = MockBackend(items=[_mk_item(f"id-{i}", f"content {i}", score=1.0 - i * 0.1) for i in range(5)])
+        backend = MockBackend(
+            items=[
+                _mk_item(f"id-{i}", f"content {i}", score=1.0 - i * 0.1)
+                for i in range(5)
+            ]
+        )
         with patch("smartmemory_mcp.tools.common._backend", backend):
             out = fn(query="anything", top_k=5)
         assert isinstance(out, str)
 
     def test_cite_true_returns_structured_payload(self):
         fn = _get_tool("memory_search")
-        items = [_mk_item(f"id-{i}", f"content {i}", score=1.0 - i * 0.1) for i in range(5)]
+        items = [
+            _mk_item(f"id-{i}", f"content {i}", score=1.0 - i * 0.1) for i in range(5)
+        ]
         backend = MockBackend(items=items)
         with patch("smartmemory_mcp.tools.common._backend", backend):
             out = fn(query="anything", top_k=5, cite=True)
@@ -99,4 +105,7 @@ class TestMemorySearchCite:
         returned = out["items"][0]
         assert returned["metadata"] == {"legitimate": "kept"}
         assert returned["origin"] == "test"
-        assert not {"tenant_id", "workspace_id", "team_id", "user_id", "run_id"} & returned.keys()
+        assert (
+            not {"tenant_id", "workspace_id", "team_id", "user_id", "run_id"}
+            & returned.keys()
+        )

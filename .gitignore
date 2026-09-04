@@ -12,3 +12,7 @@ test-env/
 .act.secrets
 .idea/
 .DS_Store
+
+# Local env files (hosted MCP dev credentials etc.)
+.env
+.env.*

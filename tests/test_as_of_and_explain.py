@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+from tests._tools import tool_fn
+
 
 class MockBackend:
     def __init__(self):
@@ -19,12 +21,7 @@ class MockBackend:
 
 
 def _tool(name):
-    import smartmemory_mcp.server as srv
-
-    for tool in srv.mcp._tool_manager._tools.values():
-        if tool.name == name:
-            return tool.fn
-    raise AssertionError(f"{name} tool not found")
+    return tool_fn(name)
 
 
 class TestSearchAsOfParams:

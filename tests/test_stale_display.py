@@ -5,6 +5,8 @@ Verifies that memory_search output includes ⚠ prefix and [STALE] suffix for st
 
 from unittest.mock import patch
 
+from tests._tools import tool_fn
+
 
 class MockBackend:
     def __init__(self, items=None):
@@ -19,15 +21,7 @@ class MockBackend:
 class TestStaleDisplay:
     def _call_search(self, mock_items, **kwargs):
         """Call memory_search with MockBackend returning mock_items."""
-        import smartmemory_mcp.server as srv
-
-        fn = None
-        for tool in srv.mcp._tool_manager._tools.values():
-            if tool.name == "memory_search":
-                fn = tool.fn
-                break
-
-        assert fn is not None, "memory_search tool not found"
+        fn = tool_fn("memory_search")
 
         mock_backend = MockBackend(mock_items)
         with patch("smartmemory_mcp.tools.common._backend", mock_backend):

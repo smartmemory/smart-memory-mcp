@@ -2,6 +2,8 @@
 
 from unittest.mock import patch
 
+from tests._tools import tool_fn
+
 
 class MockBackend:
     def __init__(self, items=None):
@@ -16,17 +18,9 @@ class MockBackend:
 class TestServerMultiHop:
     def _call_search(self, **kwargs):
         """Call memory_search and capture kwargs sent to backend.search()."""
-        import smartmemory_mcp.server as srv
-
         mock_backend = MockBackend()
 
-        fn = None
-        for tool in srv.mcp._tool_manager._tools.values():
-            if tool.name == "memory_search":
-                fn = tool.fn
-                break
-
-        assert fn is not None, "memory_search tool not found"
+        fn = tool_fn("memory_search")
 
         with patch("smartmemory_mcp.tools.common._backend", mock_backend):
             result = fn(**kwargs)
@@ -76,7 +70,9 @@ class TestRemoteBackendMultiHop:
         import smartmemory_mcp.backends.remote as remote_mod
         from smartmemory_mcp.backends.remote import RemoteBackend
 
-        backend = RemoteBackend(api_url="http://test:9001", api_key="sk_test", team_id="ws-1")
+        backend = RemoteBackend(
+            api_url="http://test:9001", api_key="sk_test", team_id="ws-1"
+        )
         # Skip the /auth/me bootstrap network call in _headers().
         backend._session["_bootstrapped"] = True
 

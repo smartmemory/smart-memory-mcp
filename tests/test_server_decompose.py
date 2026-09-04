@@ -2,6 +2,8 @@
 
 from unittest.mock import patch
 
+from tests._tools import tool_fn
+
 
 class MockBackend:
     def __init__(self, items=None):
@@ -16,18 +18,10 @@ class MockBackend:
 class TestServerDecompose:
     def _call_search(self, **kwargs):
         """Call memory_search and capture kwargs sent to backend.search()."""
-        import smartmemory_mcp.server as srv
-
         mock_backend = MockBackend()
 
         # Find the memory_search tool and call its underlying function
-        fn = None
-        for tool in srv.mcp._tool_manager._tools.values():
-            if tool.name == "memory_search":
-                fn = tool.fn
-                break
-
-        assert fn is not None, "memory_search tool not found"
+        fn = tool_fn("memory_search")
 
         with patch("smartmemory_mcp.tools.common._backend", mock_backend):
             result = fn(**kwargs)

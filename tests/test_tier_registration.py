@@ -20,10 +20,11 @@ MCP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Snippet executed in subprocess to count tools and list names
 _COUNT_SNIPPET = """\
+import asyncio
 import json
 from smartmemory_mcp.server import mcp
-tools = mcp._tool_manager._tools
-print(json.dumps({"count": len(tools), "names": sorted(tools.keys())}))
+tools = asyncio.run(mcp.list_tools())
+print(json.dumps({"count": len(tools), "names": sorted(tool.name for tool in tools)}))
 """
 
 

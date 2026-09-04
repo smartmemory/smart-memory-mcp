@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.68
+
+- Upgraded to FastMCP 4, migrated test tool lookup helpers to its public API,
+  and fixed `RemoteBackend.update` to use `PATCH /memory/{id}`
+  (PLAT-MCP-HOSTED-1 T1).
+
 ## [Unreleased]
 
 ### Added (2026-08-22) — `include_archived` on `memory_search` (CORE-ARCHIVED-RECALL-1)
