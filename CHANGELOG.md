@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## 1.4.87 — 2026-09-04
+
+### Fixed — hosted mode (PLAT-MCP-HOSTED-1 listing readiness)
+
+- `switch_team` selection now survives across tool calls: FastMCP 4.0.2 context
+  state is request-local, so the selected workspace was lost on the next call.
+  The hosted middleware keys it by MCP session id.
+- A forwarded `403 nda_required` surfaces as one tool error naming the web app
+  (`SMARTMEMORY_WEB_URL`, default `https://app.smartmemory.ai`).
+- Every hosted search/recall sends `exclude_speculative=true`, so the service
+  drops origin tier-3 items server-side; the client-side gate stays as defence
+  in depth. Local/stdio requests are unchanged.
+
+### Added
+
+- `scripts/oauth_static_client_probe.py` (PKCE client for the static client_id
+  path, prints the authorize URL, exchanges, calls tools/list, tests refresh)
+  and `scripts/hosted_abuse_probe.py` (unauthenticated `/mcp` + bad
+  `/authorize` hammer with a 5xx gate). Both verified against production.
+
 ## 1.4.86 — 2026-09-04
 
 - Upgraded to FastMCP 4, migrated test tool lookup helpers to its public API,
