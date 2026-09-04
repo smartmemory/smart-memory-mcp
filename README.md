@@ -33,6 +33,9 @@ every request carries its own credential, and the tool call is executed as that
 caller against `smart-memory-service`. The process holds no shared API key and no
 core SmartMemory instance.
 
+Hosted search and recall ask the service to exclude speculative-derived memories
+server-side, while retaining client-side tier filtering as defence in depth.
+
 ```bash
 SMARTMEMORY_MCP_MODE=hosted smartmemory-mcp
 # or

@@ -133,6 +133,22 @@ def _post_mcp(
     return response
 
 
+def _decode_mcp_body(response: httpx.Response) -> dict[str, Any]:
+    """Streamable HTTP may answer JSON or a text/event-stream with one data: line."""
+    content_type = response.headers.get("content-type", "")
+    if "text/event-stream" not in content_type:
+        return response.json()
+    last: dict[str, Any] | None = None
+    for line in response.text.splitlines():
+        if line.startswith("data:"):
+            candidate = line[5:].strip()
+            if candidate:
+                last = json.loads(candidate)
+    if last is None:
+        raise RuntimeError("MCP SSE response carried no data: frame.")
+    return last
+
+
 def _mcp_tool_count(client: httpx.Client, base: str, access_token: str) -> int:
     mcp_url = f"{base}/mcp"
     initialized = _post_mcp(
@@ -167,7 +183,7 @@ def _mcp_tool_count(client: httpx.Client, base: str, access_token: str) -> int:
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         session_id,
     )
-    body = response.json()
+    body = _decode_mcp_body(response)
     if "error" in body:
         raise RuntimeError(
             f"MCP tools/list returned an error: {json.dumps(body['error'])}"

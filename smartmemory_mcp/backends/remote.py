@@ -127,6 +127,15 @@ class RemoteBackend:
         """
         return None
 
+    def _search_request_body(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Apply backend-specific policy to a POST /memory/search body.
+
+        The base remote backend preserves the established request contract.
+        HostedRemoteBackend overrides this hook for its server-enforced origin
+        filtering policy.
+        """
+        return body
+
     def request(self, method: str, path: str, **kwargs: Any) -> Any:
         """Public request method for tools that need REST calls not in the protocol."""
         return self._request(method, path, **kwargs)
@@ -378,6 +387,7 @@ class RemoteBackend:
         # the profile default.
         if kwargs.get("channel_weights"):
             body["channel_weights"] = kwargs["channel_weights"]
+        body = self._search_request_body(body)
         # SELF-IMPROVE-6: capture X-Search-Session-Id header from response
         self._last_search_session_id: str | None = None
         try:

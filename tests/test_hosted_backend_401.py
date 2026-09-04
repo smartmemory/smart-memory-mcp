@@ -7,6 +7,7 @@ Covers both override points: `_request` (error-dict path) and `search`
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 
 import httpx
 import pytest
@@ -59,7 +60,13 @@ def _respond(monkeypatch, status: int, body: object = None) -> list[httpx.Reques
     seen: list[httpx.Request] = []
 
     def fake_request(method, url, **kwargs):
-        request = httpx.Request(method, url, headers=kwargs.get("headers"))
+        request_kwargs = {
+            "headers": kwargs.get("headers"),
+            "params": kwargs.get("params"),
+        }
+        if "json" in kwargs:
+            request_kwargs["json"] = kwargs["json"]
+        request = httpx.Request(method, url, **request_kwargs)
         seen.append(request)
         return httpx.Response(status, json=body or {}, request=request)
 
@@ -136,6 +143,36 @@ def test_successful_calls_are_unaffected(monkeypatch) -> None:
     assert seen[0].headers["Authorization"] == "Bearer sm-jwt-abc"
     assert seen[0].headers["X-Workspace-Id"] == "org-42"
     assert cache.get(FINGERPRINT) is not None
+
+
+def test_hosted_search_excludes_speculative_items_server_side(monkeypatch) -> None:
+    seen = _respond(monkeypatch, 200, {"results": []})
+    backend = _backend(_cache_with_entry())
+    backend._session["_bootstrapped"] = True
+
+    backend.search("anything")
+
+    assert json.loads(seen[0].content)["exclude_speculative"] is True
+
+
+def test_local_search_keeps_its_existing_request_body(monkeypatch) -> None:
+    seen = _respond(monkeypatch, 200, {"results": []})
+    backend = RemoteBackend(api_url="https://api.test", api_key="k", team_id="ws-1")
+    backend._session["_bootstrapped"] = True
+
+    backend.search("anything")
+
+    assert "exclude_speculative" not in json.loads(seen[0].content)
+
+
+def test_hosted_direct_get_search_uses_the_query_parameter(monkeypatch) -> None:
+    seen = _respond(monkeypatch, 200, {"results": []})
+    backend = _backend(_cache_with_entry())
+    backend._session["_bootstrapped"] = True
+
+    backend.request("GET", "/memory/search", params={"query": "anything"})
+
+    assert seen[0].url.params["exclude_speculative"] == "true"
 
 
 # --- strict construction --------------------------------------------------------

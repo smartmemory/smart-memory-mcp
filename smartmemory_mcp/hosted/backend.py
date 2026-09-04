@@ -9,6 +9,7 @@ overrides that single hook (round 2 #10, round 3 M6).
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import httpx
 
@@ -52,6 +53,31 @@ class HostedRemoteBackend(RemoteBackend):
         )
         self._cache.invalidate(self._fingerprint)
         raise HostedAuthError("session expired, retry")
+
+    def _search_request_body(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Require the service to drop speculative-derived search results."""
+        body["exclude_speculative"] = True
+        return body
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        workspace_id: str | None = None,
+        timeout: int = 30,
+        **kwargs: Any,
+    ) -> Any:
+        """Add the hosted origin policy to direct search-route calls too."""
+        if path == "/memory/search":
+            if method.upper() == "GET":
+                params = dict(kwargs.get("params") or {})
+                params["exclude_speculative"] = "true"
+                kwargs["params"] = params
+            elif method.upper() == "POST":
+                kwargs["json"] = self._search_request_body(
+                    dict(kwargs.get("json") or {})
+                )
+        return super()._request(method, path, workspace_id, timeout, **kwargs)
 
     def _on_http_error(self, response: httpx.Response) -> None:
         """Promote the beta gate to one shared hosted tool-error path."""
