@@ -18,7 +18,9 @@ class _FakeMCP:
     def __init__(self):
         self.fns = {}
 
-    def tool(self):
+    def tool(
+        self, **_kwargs
+    ):  # title/annotations accepted like the real FastMCP decorator
         def deco(fn):
             self.fns[fn.__name__] = fn
             return fn
