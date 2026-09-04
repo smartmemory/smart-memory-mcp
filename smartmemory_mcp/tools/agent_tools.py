@@ -4,6 +4,8 @@ import json
 import logging
 from typing import Dict, Optional
 
+from mcp.types import ToolAnnotations
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -29,7 +31,15 @@ def _rest(backend):
 def register(mcp):
     """Register agent recall profile tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Set recall profile",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def agent_set_recall_profile(
         agent_id: str,
@@ -63,7 +73,15 @@ def register(mcp):
             return f"Recall profile set for {agent_id}: {weight_str}"
         return f"Recall profile cleared for {agent_id}."
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get recall profile",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def agent_get_recall_profile(agent_id: str) -> str:
         """Get an agent's recall profile."""

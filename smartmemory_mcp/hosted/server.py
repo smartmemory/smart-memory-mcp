@@ -14,6 +14,7 @@ from typing import Any, Optional
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
 from key_value.aio.protocols.key_value import AsyncKeyValue
+from mcp.types import ToolAnnotations
 
 from ..health import register_health
 from ..tools.common import get_backend, graceful
@@ -23,7 +24,7 @@ from .exchange import DEFAULT_EXCHANGE_CACHE, ExchangeCache
 from .identity import current_identity, set_hosted_mode
 from .middleware import HostedIdentityMiddleware
 from .ratelimit import hosted_asgi_middleware
-from .tools import apply_allowlist, register_module_tools
+from .tools import CapturedTool, apply_allowlist, register_module_tools
 
 logger = logging.getLogger(__name__)
 
@@ -73,12 +74,21 @@ def build_hosted_server(
 
 def _register_hosted_tools(
     mcp: FastMCP,
-    originals: dict[str, Any],
+    originals: dict[str, CapturedTool],
     identity_middleware: HostedIdentityMiddleware,
 ) -> None:
     """Session tools and the two guarded overrides."""
 
-    @mcp.tool(name="whoami")
+    @mcp.tool(
+        name="whoami",
+        title="Who am I",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     async def hosted_whoami(ctx: Context) -> str:
         """Show the current hosted session: user, workspace, and auth kind."""
         identity = current_identity.get()
@@ -97,7 +107,16 @@ def _register_hosted_tools(
             ]
         )
 
-    @mcp.tool(name="switch_team")
+    @mcp.tool(
+        name="switch_team",
+        title="Switch workspace",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     async def hosted_switch_team(team_id: str, ctx: Context) -> str:
         """Switch this session to another workspace you belong to.
 
@@ -124,7 +143,11 @@ def _register_hosted_tools(
 
     original_search = originals["memory_search"]
 
-    @mcp.tool(name="memory_search")
+    @mcp.tool(
+        name="memory_search",
+        title=original_search.title,
+        annotations=original_search.annotations,
+    )
     def hosted_memory_search(
         query: str,
         top_k: int = 5,
@@ -152,7 +175,7 @@ def _register_hosted_tools(
             # Refused explicitly rather than silently ignored: the caller asked
             # for citations and must know it did not get them (round 3, M5).
             raise ToolError(HOSTED_REFUSAL.format(what="cite=True"))
-        return original_search(
+        return original_search.function(
             query=query,
             top_k=top_k,
             memory_type=memory_type,
@@ -171,7 +194,13 @@ def _register_hosted_tools(
             include_archived=include_archived,
         )
 
-    @mcp.tool(name="memory_recall")
+    original_recall = originals["memory_recall"]
+
+    @mcp.tool(
+        name="memory_recall",
+        title=original_recall.title,
+        annotations=original_recall.annotations,
+    )
     @graceful
     def hosted_memory_recall(
         query: str,

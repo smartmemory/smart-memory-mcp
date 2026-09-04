@@ -4,6 +4,8 @@ import logging
 import os
 from typing import Any, Optional
 
+from mcp.types import ToolAnnotations
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -136,7 +138,15 @@ def register(mcp):
                 lines.append(f"    ... and {len(all_errors) - 5} more")
         return "\n".join(lines)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Search indexed code",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def code_search(
         query: str,
@@ -343,7 +353,15 @@ def register(mcp):
         )
         return f"{head}\n\n{res.get('window', '')}\n\n{footer}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Find dead code",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def code_dead_code(
         repo: str,
@@ -383,7 +401,15 @@ def register(mcp):
         lines.append(f"\nTotal: {count} potentially dead functions")
         return "\n".join(lines)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Trace code dependencies",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def code_dependencies(
         entity_name: str,

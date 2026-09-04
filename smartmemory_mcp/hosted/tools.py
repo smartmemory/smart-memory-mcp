@@ -11,7 +11,10 @@ work through `RemoteBackend` alone, touch no local filesystem path, and need no
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Callable
+
+from mcp.types import ToolAnnotations
 
 # --- the allowlist ---------------------------------------------------------------
 
@@ -63,6 +66,15 @@ PATH_PARAMETER_NAMES: frozenset[str] = frozenset(
 )
 
 
+@dataclass(frozen=True)
+class CapturedTool:
+    """A registered callable and the metadata its hosted replacement must retain."""
+
+    function: Callable[..., Any]
+    title: str | None
+    annotations: ToolAnnotations | None
+
+
 class _CapturingRegistrar:
     """Registers on the real server AND keeps a handle on each tool function.
 
@@ -74,17 +86,28 @@ class _CapturingRegistrar:
 
     def __init__(self, mcp: Any) -> None:
         self._mcp = mcp
-        self.captured: dict[str, Callable[..., Any]] = {}
+        self.captured: dict[str, CapturedTool] = {}
 
     def tool(self, *args: Any, **kwargs: Any) -> Any:
         # Bare `@mcp.tool` (no parentheses).
         if args and callable(args[0]) and not kwargs:
             fn = args[0]
-            self.captured[fn.__name__] = fn
+            self.captured[fn.__name__] = CapturedTool(
+                function=fn,
+                title=None,
+                annotations=None,
+            )
             return self._mcp.tool(fn)
 
         def decorator(fn: Callable[..., Any]) -> Any:
-            self.captured[kwargs.get("name") or fn.__name__] = fn
+            annotations = kwargs.get("annotations")
+            if isinstance(annotations, dict):
+                annotations = ToolAnnotations(**annotations)
+            self.captured[kwargs.get("name") or fn.__name__] = CapturedTool(
+                function=fn,
+                title=kwargs.get("title"),
+                annotations=annotations,
+            )
             return self._mcp.tool(*args, **kwargs)(fn)
 
         return decorator
@@ -93,7 +116,7 @@ class _CapturingRegistrar:
         return getattr(self._mcp, name)
 
 
-def register_module_tools(mcp: Any) -> dict[str, Callable[..., Any]]:
+def register_module_tools(mcp: Any) -> dict[str, CapturedTool]:
     """Register every module that CONTAINS an allowlisted tool.
 
     Modules bring siblings with them; the allowlist below removes those. Only

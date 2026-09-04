@@ -4,6 +4,8 @@ import logging
 import uuid as _uuid
 from typing import Any, Dict, List, Optional
 
+from mcp.types import ToolAnnotations
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -264,7 +266,15 @@ def _format_recall(
 def register_free(mcp):
     """Register FREE-tier memory tools (ingest, search, recall, get)."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Ingest a memory",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_ingest(content: str, memory_type: str = "semantic") -> str:
         """Ingest content through the full NLP pipeline with entity extraction."""
@@ -278,7 +288,15 @@ def register_free(mcp):
             item_id = str(result)
         return f"Memory ingested (pipeline). Item ID: {item_id}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Search memories",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_search(
         query: str,
@@ -426,7 +444,15 @@ def register_free(mcp):
             output.append(f"\nsearch_session_id: {session_id_from_search}")
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Recall memories",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_recall(
         query: str, session_id: Optional[str] = None, top_k: int = 5, cite: bool = False
@@ -536,7 +562,15 @@ def register_free(mcp):
             strategy=strategy,
         )
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Read surrounding conversation",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def read_around(
         item_id: str,
@@ -568,7 +602,15 @@ def register_free(mcp):
             cursor=cursor,
         )
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get a memory",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_get(item_id: str) -> str:
         """Retrieve a memory item by ID with full content and metadata."""
@@ -591,7 +633,15 @@ def register_free(mcp):
             parts.append(f"Metadata: {meta}")
         return "\n".join(parts)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Explain a memory",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_explain(memory_id: str):
         """Explain a memory's full provenance: origin, every belief the system
@@ -626,7 +676,15 @@ def register_free(mcp):
     # Mirrored from smartmemory.recall_pack.PRESETS.
     _RECALL_PRESETS = ("wakeup",)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Build a recall pack",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_recall_pack(
         budget_tokens: int,
@@ -670,7 +728,15 @@ def register_free(mcp):
             budget_tokens=budget_tokens, query=query, sections=sections, preset=preset
         )
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get policy bundle",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_policy_bundle(
         workflow: Optional[str] = None,
@@ -693,7 +759,15 @@ def register_free(mcp):
 def register_pro(mcp):
     """Register PRO-tier memory tools."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Add a memory",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_add(
         content: str,
@@ -709,7 +783,15 @@ def register_pro(mcp):
         item_id = backend.add(content, memory_type=memory_type, metadata=item_metadata)
         return f"Memory added (direct). Item ID: {item_id}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Update a memory",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_update(
         item_id: str,
@@ -734,7 +816,15 @@ def register_pro(mcp):
         )
         return str(result) if result else f"Updated: {item_id}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Delete a memory",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_delete(item_id: str) -> str:
         """Delete a memory item by ID."""
@@ -752,7 +842,15 @@ def register_pro(mcp):
         result = backend.clear_user_memories(confirm=True)
         return str(result)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="List memories",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_list(
         limit: int = 20,
@@ -797,7 +895,15 @@ def register_pro(mcp):
 
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Memory statistics",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_stats() -> str:
         """Get memory count statistics grouped by type."""
@@ -819,7 +925,15 @@ def register_pro(mcp):
 
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Distill a conversation turn",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_distill(
         user_turn: str, assistant_turn: str, session_id: Optional[str] = None
@@ -833,7 +947,15 @@ def register_pro(mcp):
         item_id = backend.add(content, memory_type="pending", metadata=meta)
         return f"Turn stored: {item_id}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Ingest a conversation",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_ingest_conversation(
         turns: list,
@@ -916,7 +1038,15 @@ def register_pro(mcp):
 
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Search memories by metadata",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_search_by_metadata(
         metadata_key: str, metadata_value: str, top_k: int = 10
@@ -956,7 +1086,15 @@ def register_pro(mcp):
 def register_feedback(mcp):
     """Register result-selection feedback tool (SELF-IMPROVE-6)."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Give search feedback",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_feedback(search_session_id: str, result_used: List[str]) -> str:
         """Report which search results you used from a previous memory_search call.

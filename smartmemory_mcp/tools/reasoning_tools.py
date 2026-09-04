@@ -2,6 +2,8 @@
 
 import logging
 
+from mcp.types import ToolAnnotations
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -226,7 +228,15 @@ def register(mcp):
 
         return "\n".join(parts)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Query reasoning traces",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def reasoning_query_traces(query: str, limit: int = 10) -> str:
         """Query stored reasoning traces — ask 'why' questions about past decisions."""

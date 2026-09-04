@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Hosted MCP tool listings now provide human-readable titles and explicit safety
+  annotations for every exposed tool.
+
 ### Fixed
 
 - `--http` now serves an unauthenticated `GET /health` liveness probe for the
