@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from smartmemory_mcp.backends.interface import BackendCapabilities
 from smartmemory_mcp.tools import code_tools
 
 
@@ -29,7 +30,7 @@ def _registered() -> dict:
     return captured
 
 
-class _LocalBackend:
+class _LocalBackend(BackendCapabilities):
     """Local backend: has read_transcript_centered, NO `request` attribute."""
 
     def __init__(self, result=None, raises=None):
@@ -44,7 +45,7 @@ class _LocalBackend:
         return self._result
 
 
-class _RemoteBackend:
+class _RemoteBackend(BackendCapabilities):
     def request(self, *a, **kw):  # pragma: no cover - never called
         return {}
 

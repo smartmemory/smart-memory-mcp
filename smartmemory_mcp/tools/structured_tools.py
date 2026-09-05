@@ -34,7 +34,8 @@ def register(mcp):
         linked via PART_OF edges. Deduplicates by source URL and content hash.
 
         Args:
-            source: URL (http/https) or file path (.txt, .md, .pdf, .docx).
+            source: Public URL (http/https), or a file path in local mode only
+                (.txt, .md, .pdf, .docx).
             source_type: "html" | "pdf" | "docx" | "txt" | "markdown" | "auto".
             chunk_size: Max characters per chunk (default 2000).
             chunk_strategy: "paragraph" | "sentence" | "markdown" | "recursive".

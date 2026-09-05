@@ -139,25 +139,33 @@ class TestToolRegistration:
         assert data["names"] == FREE_TOOLS
 
     def test_pro_tier_tool_count(self):
-        """PRO tier registers exactly 70 tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
+        """PRO tier registers exactly 67 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
         data = _run_snippet(env)
-        assert data["count"] == 70, (
-            f"Expected 70 PRO tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 67, (
+            f"Expected 67 remote PRO tools, got {data['count']}: {data['names']}"
         )
+        assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
+            data["names"]
+        )
+        assert "memory_ingest_document" in data["names"]
         # Verify FREE tools are a subset of PRO tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
 
     def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 101 tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
+        """PRO_PLUS tier registers exactly 98 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
         env = _clean_env(
             SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true"
         )
         data = _run_snippet(env)
-        assert data["count"] == 101, (
-            f"Expected 101 PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 98, (
+            f"Expected 98 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
         )
+        assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
+            data["names"]
+        )
+        assert "memory_ingest_document" in data["names"]
         # Verify FREE tools are a subset of PRO_PLUS tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], (

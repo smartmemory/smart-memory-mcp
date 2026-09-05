@@ -9,6 +9,11 @@
 
 ### Fixed
 
+- `memory_ingest_document` now delegates to the core facade locally and the
+  document ingestion service route remotely, preserving ingestion/dedup results
+  and surfacing API failures. Document ingestion and local-only provenance/peer
+  tools are advertised and callable only when the active backend supports them.
+
 - `--http` now serves an unauthenticated `GET /health` liveness probe for the
   single-identity MCP container healthcheck.
 

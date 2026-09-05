@@ -21,6 +21,8 @@ contract the tool depends on.
 
 from __future__ import annotations
 
+from smartmemory_mcp.backends.interface import BackendCapabilities
+
 
 class _FakeMCP:
     def __init__(self):
@@ -84,14 +86,14 @@ class _SmartMemory:
         return self._report
 
 
-class _LocalBackend:
+class _LocalBackend(BackendCapabilities):
     """LocalBackend stand-in: exposes _mem (the real SmartMemory), no `request`."""
 
     def __init__(self, report):
         self._mem = _SmartMemory(report)
 
 
-class _RemoteBackend:
+class _RemoteBackend(BackendCapabilities):
     """RemoteBackend stand-in: exposes `request`, no `_mem`."""
 
     def __init__(self, response):
@@ -187,7 +189,7 @@ def test_local_refuses_without_mem(monkeypatch):
     """A backend with neither `request` nor `_mem` -> clear refusal, not a crash."""
     fn = _tool()
     monkeypatch.setattr(
-        "smartmemory_mcp.tools.graph_tools.get_backend", lambda: object()
+        "smartmemory_mcp.tools.graph_tools.get_backend", lambda: BackendCapabilities()
     )
     out = fn()
     assert isinstance(out, str)

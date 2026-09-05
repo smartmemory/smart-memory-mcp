@@ -7,6 +7,18 @@ from typing import Any, Protocol, runtime_checkable
 from .models import MemoryResult
 
 
+class BackendCapabilities:
+    """Central capability check, including explicitly unsupported operations."""
+
+    unsupported_capabilities: frozenset[str] = frozenset()
+
+    @classmethod
+    def supports(cls, method: str) -> bool:
+        return method not in cls.unsupported_capabilities and callable(
+            getattr(cls, method, None)
+        )
+
+
 @runtime_checkable
 class MemoryBackend(Protocol):
     """Duck-typed interface that all backend implementations must satisfy.
@@ -15,6 +27,10 @@ class MemoryBackend(Protocol):
     SmartMemory) or remote (REST API via httpx). Methods use **kwargs liberally so
     backends can accept extra parameters without protocol changes.
     """
+
+    def supports(self, method: str) -> bool:
+        """Whether this backend implements an operation."""
+        ...
 
     # --- Core CRUD ---------------------------------------------------------------
 
@@ -77,6 +93,18 @@ class MemoryBackend(Protocol):
         self, data: dict[str, Any], schema: str | None = None, **kwargs: Any
     ) -> str:
         """Ingest structured data with an optional schema."""
+        ...
+
+    def ingest_document(
+        self,
+        source: str,
+        *,
+        source_type: str = "auto",
+        chunk_size: int = 2000,
+        chunk_strategy: str = "paragraph",
+        reference: bool = False,
+    ) -> dict[str, Any]:
+        """Return document_id, chunk_ids, and status (ingested or existing)."""
         ...
 
     def ingest_conversation_sync(

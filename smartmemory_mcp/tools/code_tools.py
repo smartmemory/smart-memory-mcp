@@ -81,7 +81,7 @@ def register(mcp):
         backend = get_backend()
 
         # Try REST endpoint first (RemoteBackend)
-        if hasattr(backend, "request"):
+        if backend.supports("request"):
             payload = {
                 "repo": repo,
                 "entities": [e.to_dict() for e in all_entities],
@@ -158,7 +158,7 @@ def register(mcp):
         backend = get_backend()
 
         # Try REST endpoint (RemoteBackend)
-        if hasattr(backend, "request"):
+        if backend.supports("request"):
             params: dict[str, Any] = {"query": query, "limit": limit}
             if entity_type:
                 params["entity_type"] = entity_type
@@ -237,7 +237,7 @@ def register(mcp):
             return "Error: provide either `commit`, or both `file` and `line`."
 
         backend = get_backend()
-        if hasattr(backend, "request"):
+        if not backend.supports("blame_code"):
             return _PARKED_MSG.format(cap="Provenance blame")
 
         try:
@@ -314,7 +314,7 @@ def register(mcp):
             return f"Error: unknown source {source!r} (expected 'cc' or 'codex')."
 
         backend = get_backend()
-        if hasattr(backend, "request"):
+        if not backend.supports("read_transcript_centered"):
             return _PARKED_MSG.format(cap="Transcript reading")
 
         # Directional paging: a cursor makes center_over_rendered extend forward/back
@@ -371,7 +371,7 @@ def register(mcp):
         """Find potentially dead (unreferenced) functions in an indexed codebase."""
         backend = get_backend()
 
-        if hasattr(backend, "request"):
+        if backend.supports("request"):
             params: dict[str, Any] = {"repo": repo, "limit": limit}
             if exclude_decorators:
                 params["exclude_decorators"] = exclude_decorators
@@ -419,7 +419,7 @@ def register(mcp):
         """Trace code dependencies -- what calls/imports/inherits what."""
         backend = get_backend()
 
-        if hasattr(backend, "request"):
+        if backend.supports("request"):
             params: dict[str, Any] = {
                 "entity_name": entity_name,
                 "direction": direction,

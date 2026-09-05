@@ -5,15 +5,15 @@ fake MCP (no FastMCP server) and asserts registration, the local-backend passthr
 the remote-path parked message, and argument validation. The synthesis itself is
 covered in smart-memory-core.
 
-Fake backends are explicit classes (not MagicMock) so ``hasattr(backend, "request")``
-is controlled — a MagicMock auto-creates ``request`` and would always take the remote
-branch.
+Fake backends use the shared capability check so only their explicitly defined
+operations are supported.
 """
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
+from smartmemory_mcp.backends.interface import BackendCapabilities
 from smartmemory_mcp.tools import peer_tools
 
 
@@ -32,7 +32,7 @@ def _registered() -> dict:
     return captured
 
 
-class _LocalBackend:
+class _LocalBackend(BackendCapabilities):
     """A local backend: has peer_chat, NO `request` attribute."""
 
     def __init__(self, result=None):
@@ -44,8 +44,8 @@ class _LocalBackend:
         return self._result
 
 
-class _RemoteBackend:
-    """A remote backend: has `request` (the remote-path discriminator)."""
+class _RemoteBackend(BackendCapabilities):
+    """A remote backend without the peer-chat capability."""
 
     def request(self, *a, **kw):  # pragma: no cover - never called in Phase 1
         return {}

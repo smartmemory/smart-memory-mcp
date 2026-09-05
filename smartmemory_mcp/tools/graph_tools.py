@@ -78,7 +78,7 @@ def register(mcp):
         backend = get_backend()
 
         # Try REST endpoint first (RemoteBackend) — dry_run/disambiguate are QUERY parameters.
-        if hasattr(backend, "request"):
+        if backend.supports("request"):
             params: dict = {}
             if dry_run:
                 params["dry_run"] = "true"

@@ -13,11 +13,16 @@ from typing import Any
 
 import httpx
 
+from .interface import BackendCapabilities
 from .models import MemoryResult, normalize_item, normalize_items
 
 
-class RemoteBackend:
+class RemoteBackend(BackendCapabilities):
     """HTTP client implementing MemoryBackend protocol for the hosted SmartMemory API."""
+
+    unsupported_capabilities = frozenset(
+        {"blame_code", "peer_chat", "read_transcript_centered"}
+    )
 
     def __init__(
         self,
@@ -609,6 +614,32 @@ class RemoteBackend:
         else:
             raw = result if isinstance(result, list) else []
         return normalize_items(raw)
+
+    def ingest_document(
+        self,
+        source: str,
+        *,
+        source_type: str = "auto",
+        chunk_size: int = 2000,
+        chunk_strategy: str = "paragraph",
+        reference: bool = False,
+    ) -> dict[str, Any]:
+        """POST /memory/ingest/document (public URLs only on the service)."""
+        result = self._request(
+            "POST",
+            "/memory/ingest/document",
+            timeout=300,
+            json={
+                "source": source,
+                "source_type": source_type,
+                "chunk_size": chunk_size,
+                "chunk_strategy": chunk_strategy,
+                "reference": reference,
+            },
+        )
+        if err := self._fmt_error(result):
+            raise RuntimeError(err)
+        return result
 
     # --- MemoryBackend protocol: NOT available in remote mode --------------------
 

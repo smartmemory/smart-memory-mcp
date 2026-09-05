@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from .interface import BackendCapabilities
 from .models import MemoryResult, normalize_item, normalize_items
 
 log = logging.getLogger(__name__)
@@ -31,8 +32,11 @@ def _metadata_matches(metadata: dict, key: str, value: Any) -> bool:
     return str(cur) == str(value)
 
 
-class LocalBackend:
+class LocalBackend(BackendCapabilities):
     """Wraps smartmemory package for local-mode operations."""
+
+    # Tools using REST have a separate local implementation.
+    unsupported_capabilities = frozenset({"request"})
 
     def __init__(self) -> None:
         try:
@@ -249,6 +253,24 @@ class LocalBackend:
         from smartmemory_app.storage import recall
 
         return recall(cwd, top_k)
+
+    def ingest_document(
+        self,
+        source: str,
+        *,
+        source_type: str = "auto",
+        chunk_size: int = 2000,
+        chunk_strategy: str = "paragraph",
+        reference: bool = False,
+    ) -> dict[str, Any]:
+        """Ingest a URL or local file through the core document facade."""
+        return self._mem.ingest_document(
+            source,
+            source_type=source_type,
+            chunk_size=chunk_size,
+            chunk_strategy=chunk_strategy,
+            reference=reference,
+        )
 
     def ingest_structured(
         self,

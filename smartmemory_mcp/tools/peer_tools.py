@@ -58,7 +58,7 @@ def register(mcp):
             }
 
         backend = get_backend()
-        if hasattr(backend, "request"):
+        if not backend.supports("peer_chat"):
             return {"error": _PARKED_MSG}
 
         return backend.peer_chat(
