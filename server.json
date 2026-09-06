@@ -1,0 +1,17 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "ai.smartmemory/smartmemory-mcp",
+  "title": "SmartMemory",
+  "description": "Graph + vector memory for agents: recall, ingest, search, distill. Local or remote backend.",
+  "version": "1.4.94",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "smartmemory-mcp",
+      "version": "1.4.94",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

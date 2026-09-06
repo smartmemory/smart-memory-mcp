@@ -2,6 +2,8 @@
 
 Unified SmartMemory MCP (Model Context Protocol) server — tiered tools, local + remote backends.
 
+mcp-name: ai.smartmemory/smartmemory-mcp
+
 ## Overview
 
 MCP server exposing SmartMemory operations to MCP-compatible clients (Claude Desktop, Cursor, etc.). Implements the full memory toolset (add, search, recall, decisions, plans, anchors, code-index) and routes to either a local SmartMemory instance or a remote `smart-memory-service` API endpoint.
