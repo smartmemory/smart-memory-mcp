@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added (2026-09-06) — creation windows and planner choice on both backends
+
+- Both memory search tools resolve and echo ISO or relative creation windows
+  (SEARCH-TIME-RANGE-1), and expose `consensus`/`relevance`/`semantic` hop strategies through
+  the local and remote backends, labelling an inert selection (SEARCH-HOP-STRATEGY-SURFACE-1).
+- Local metadata search now goes through the public metadata facade so predicates run before
+  the limit rather than after a scan.
+- Context origin is preserved through local and remote ingestion and remote conversation
+  ingestion (CORE-ORIGIN-PROPAGATION-1).
+
+
 ### Added
 
 - Hosted MCP tool listings now provide human-readable titles and explicit safety

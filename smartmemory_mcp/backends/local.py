@@ -77,8 +77,14 @@ class LocalBackend(BackendCapabilities):
         # origin='unknown' (tier 4, hidden from recall+search). An explicit origin in
         # metadata (e.g. an importer) wins; default to this producer.
         meta = dict(metadata or {})
-        origin = (
-            meta.pop("origin", None) or kwargs.pop("origin", None) or "mcp:memory_add"
+        context = dict(kwargs.pop("context", None) or {})
+        meta.update({key: value for key, value in context.items() if key != "origin"})
+        from smartmemory import resolve_origin
+
+        origin = resolve_origin(
+            context,
+            origin=kwargs.pop("origin", None) or meta.pop("origin", None),
+            default="mcp:memory_add",
         )
         item = MemoryItem(
             content=content, memory_type=memory_type, metadata=meta, origin=origin
@@ -156,37 +162,15 @@ class LocalBackend(BackendCapabilities):
     def search_by_metadata(
         self, metadata_key: str, metadata_value: str, top_k: int = 10, **kwargs: Any
     ) -> list[MemoryResult]:
-        """Search by metadata field.
-
-        `smartmemory.SmartMemory` has no `search_by_metadata` — this delegation
-        raised AttributeError on every local-mode call (verified 2026-08-02
-        against the core facade). Filter `search()` results instead so the tool
-        works in local mode at all. `search("*")` is required because CORE-GATE-1
-        makes `search("")` return [].
-        """
+        """Search via the public metadata facade; predicates run before LIMIT."""
         if not metadata_key:
             raise ValueError("metadata_key is required.")
-        hits = self._mem.search("*", top_k=max(top_k * 10, 100))
-        out: list[MemoryResult] = []
-        for raw in hits or []:
-            item = normalize_item(raw)
-            if _metadata_matches(
-                item.get("metadata") or {}, metadata_key, metadata_value
-            ):
-                out.append(item)
-            if len(out) >= top_k:
-                break
-        # An over-fetch that fills top_k exactly may have truncated real matches.
-        # Say so rather than presenting a possibly-partial result as complete.
-        if len(out) >= top_k:
-            log.warning(
-                "search_by_metadata hit the local top_k cap (%d) for %s=%s; "
-                "additional matches may exist beyond the scanned window.",
-                top_k,
-                metadata_key,
-                metadata_value,
-            )
-        return out
+        hits = self._mem.search_by_metadata(
+            {metadata_key: metadata_value},
+            top_k=top_k,
+            **{k: kwargs[k] for k in ("since", "until") if kwargs.get(k) is not None},
+        )
+        return normalize_items(hits)
 
     def blame_code(self, **kwargs: Any) -> dict[str, Any]:
         """Code-provenance blame passthrough (CORE-CODE-PROVENANCE-1 Phase 2b).
@@ -245,7 +229,15 @@ class LocalBackend(BackendCapabilities):
         # DIST-LITE-QUIET-1: attribute the write (the /remember skill + MCP memory_ingest
         # surface) so it lands as tier-2 user content, not origin='unknown'. A caller-
         # supplied origin is preserved.
-        kwargs.setdefault("origin", "mcp:memory_ingest")
+        from smartmemory import resolve_origin
+
+        context = dict(kwargs.pop("context", None) or {})
+        kwargs["origin"] = resolve_origin(
+            context, origin=kwargs.get("origin"), default="mcp:memory_ingest"
+        )
+        context.pop("origin", None)
+        if context:
+            kwargs["properties"] = {**(kwargs.get("properties") or {}), **context}
         return ingest(content, memory_type, **kwargs)
 
     def recall(self, cwd: str | None = None, top_k: int = 10, **kwargs: Any) -> str:

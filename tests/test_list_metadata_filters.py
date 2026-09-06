@@ -36,6 +36,17 @@ def _local(hits: list) -> LocalBackend:
             self.search_calls.append((query, top_k))
             return hits
 
+        def search_by_metadata(self, metadata_filters, top_k=10, **kw):
+            self.metadata_calls = (metadata_filters, top_k, kw)
+            return [
+                row
+                for row in hits
+                if all(
+                    _metadata_matches(row.get("metadata", {}), k, v)
+                    for k, v in metadata_filters.items()
+                )
+            ][:top_k]
+
         def clear(self):
             self.cleared = True
 
@@ -146,12 +157,13 @@ def test_local_search_by_metadata_filters_instead_of_attributeerror() -> None:
     assert [i["item_id"] for i in out] == ["a"]
 
 
-def test_local_search_by_metadata_uses_star_not_empty_query() -> None:
-    """CORE-GATE-1: search("") returns [] — an empty query would match nothing."""
+def test_local_search_by_metadata_uses_public_facade() -> None:
+    """SEARCH-TIME-RANGE-1: metadata predicates must run before a search limit."""
     backend = _local([])
     backend.search_by_metadata("tier", "pro")
 
-    assert backend._mem.search_calls[0][0] == "*"
+    assert backend._mem.search_calls == []
+    assert backend._mem.metadata_calls == ({"tier": "pro"}, 10, {})
 
 
 def test_local_list_memories_paginates_and_filters() -> None:

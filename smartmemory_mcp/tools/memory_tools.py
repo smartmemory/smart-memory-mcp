@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 
+from smartmemory_mcp.tools.search_window import with_search_window
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -298,6 +300,7 @@ def register_free(mcp):
         ),
     )
     @graceful
+    @with_search_window
     def memory_search(
         query: str,
         top_k: int = 5,
@@ -307,6 +310,7 @@ def register_free(mcp):
         decompose: bool = False,
         channel_weights: Optional[dict] = None,
         multi_hop: bool = False,
+        hop_strategy: Optional[str] = None,
         max_hops: int = 3,
         budget_ms: int = 1500,
         cite: bool = False,
@@ -315,8 +319,14 @@ def register_free(mcp):
         include_superseded: bool = False,
         include_retracted: bool = False,
         include_archived: bool = False,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
     ):
         """Search memories using semantic similarity with optional hybrid mode.
+
+        hop_strategy: consensus follows entities several top results agree on; relevance
+        follows best-result entities and one-off bridges; semantic asks an LLM.
+        since/until: ISO-8601 or relative (7d, 24h, 30m), echoed as an absolute window.
 
         as_of_date (ISO-8601) travels transaction time: what the system
         believed at that instant. include_superseded keeps replaced items
@@ -348,6 +358,7 @@ def register_free(mcp):
             decompose_query=decompose,
             channel_weights=channel_weights,
             multi_hop=multi_hop,
+            **({"hop_strategy": hop_strategy} if hop_strategy is not None else {}),
             max_hops=max_hops,
             budget_ms=budget_ms,
             as_of_date=as_of_date,
@@ -355,6 +366,11 @@ def register_free(mcp):
             include_superseded=include_superseded,
             include_retracted=include_retracted,
             include_archived=include_archived,
+            **{
+                k: v
+                for k, v in {"since": since, "until": until}.items()
+                if v is not None
+            },
         )
 
         # CORE-ORIGIN-1: apply search tier policy
@@ -1048,12 +1064,26 @@ def register_pro(mcp):
         ),
     )
     @graceful
+    @with_search_window
     def memory_search_by_metadata(
-        metadata_key: str, metadata_value: str, top_k: int = 10
+        metadata_key: str,
+        metadata_value: str,
+        top_k: int = 10,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
     ) -> str:
         """Search memories by exact metadata key-value match."""
         backend = get_backend()
-        results = backend.search_by_metadata(metadata_key, metadata_value, top_k=top_k)
+        results = backend.search_by_metadata(
+            metadata_key,
+            metadata_value,
+            top_k=top_k,
+            **{
+                k: v
+                for k, v in {"since": since, "until": until}.items()
+                if v is not None
+            },
+        )
 
         if not results:
             return f"No memories found with {metadata_key}={metadata_value}"

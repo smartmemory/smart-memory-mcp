@@ -392,6 +392,13 @@ class RemoteBackend(BackendCapabilities):
         # the profile default.
         if kwargs.get("channel_weights"):
             body["channel_weights"] = kwargs["channel_weights"]
+        body.update(
+            {
+                k: kwargs[k]
+                for k in ("since", "until", "hop_strategy")
+                if kwargs.get(k) is not None
+            }
+        )
         body = self._search_request_body(body)
         # SELF-IMPROVE-6: capture X-Search-Session-Id header from response
         self._last_search_session_id: str | None = None
@@ -450,6 +457,9 @@ class RemoteBackend(BackendCapabilities):
             "metadata_value": metadata_value,
             "limit": str(max(1, min(top_k, 200))),
         }
+        params.update(
+            {k: kwargs[k] for k in ("since", "until") if kwargs.get(k) is not None}
+        )
         result = self._request("GET", "/memory/by-metadata", params=params)
         if isinstance(result, dict):
             # Surface the error rather than returning [error_dict] as a fake item.
@@ -512,6 +522,9 @@ class RemoteBackend(BackendCapabilities):
         metadata = kwargs.get("metadata")
         if metadata and isinstance(metadata, dict):
             context.update(metadata)
+        context.update(kwargs.get("context") or {})
+        if kwargs.get("origin") and not context.get("origin"):
+            context["origin"] = kwargs["origin"]
         body: dict[str, Any] = {"content": content, "context": context}
         result = self._request("POST", "/memory/ingest", timeout=120, json=body)
         if err := self._fmt_error(result):
@@ -543,6 +556,8 @@ class RemoteBackend(BackendCapabilities):
             body["max_chunk_chars"] = max_chunk_chars
         if max_concurrent != 4:
             body["max_concurrent"] = max_concurrent
+        if kwargs.get("context") is not None:
+            body["context"] = kwargs["context"]
         result = self._request(
             "POST", "/memory/ingest/conversation", timeout=300, json=body
         )
