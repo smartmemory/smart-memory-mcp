@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### CI (2026-09-08) — enforce tool-to-backend contracts
+
+- Run backend conformance on pull requests and pushes to main, including
+  unsupported-tool filtering and local/remote document-ingestion delegation.
+
 ### Added (2026-09-06) — creation windows and planner choice on both backends
 
 - Both memory search tools resolve and echo ISO or relative creation windows
