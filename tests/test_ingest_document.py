@@ -10,7 +10,8 @@ from smartmemory_mcp.backends.remote import RemoteBackend
 
 
 @pytest.mark.parametrize(
-    "status,chunk_ids", [("ingested", ["c1", "c2"]), ("existing", [])]
+    "status,chunk_ids",
+    [("ingested", ["c1", "c2"]), ("existing", []), ("resumed", ["c2"])],
 )
 @pytest.mark.parametrize(
     "options",
@@ -47,7 +48,8 @@ def test_local_ingest_document(status, chunk_ids, options):
 
 
 @pytest.mark.parametrize(
-    "status,chunk_ids", [("ingested", ["c1", "c2"]), ("existing", [])]
+    "status,chunk_ids",
+    [("ingested", ["c1", "c2"]), ("existing", []), ("resumed", ["c2"])],
 )
 @pytest.mark.parametrize(
     "options",

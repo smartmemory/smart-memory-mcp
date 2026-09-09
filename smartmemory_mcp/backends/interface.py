@@ -104,7 +104,12 @@ class MemoryBackend(Protocol):
         chunk_strategy: str = "paragraph",
         reference: bool = False,
     ) -> dict[str, Any]:
-        """Return document_id, chunk_ids, and status (ingested or existing)."""
+        """Return document_id, chunk_ids, and a status:
+
+        ingested: a new document and its chunks were created.
+        existing: the document was already fully present.
+        resumed: a prior incomplete ingest created its missing chunks.
+        """
         ...
 
     def ingest_conversation_sync(

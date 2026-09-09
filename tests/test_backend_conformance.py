@@ -82,7 +82,8 @@ def test_capabilities_filter_listings_and_reject_unsupported_calls(
 
 @pytest.mark.parametrize("backend_class", [LocalBackend, RemoteBackend])
 @pytest.mark.parametrize(
-    "status,chunk_ids", [("ingested", ["c1", "c2"]), ("existing", [])]
+    "status,chunk_ids",
+    [("ingested", ["c1", "c2"]), ("existing", []), ("resumed", ["c2"])],
 )
 def test_advertised_document_tool_executes(
     monkeypatch, backend_class, status, chunk_ids
@@ -107,7 +108,7 @@ def test_advertised_document_tool_executes(
             )
             assert (
                 response.content[0].text
-                == f"Document ingested. ID: doc1, chunks: {len(chunk_ids)}, status: {status}"
+                == f"Document processed. ID: doc1, chunks: {len(chunk_ids)}, status: {status}"
             )
 
     asyncio.run(check())

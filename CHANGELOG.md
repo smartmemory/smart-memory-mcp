@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed (2026-09-09)
+
+- Document-ingestion results now distinguish resumed partial ingests, reporting
+  only the chunks created during the resumed attempt.
+
 ### CI (2026-09-08) — enforce tool-to-backend contracts
 
 - Run backend conformance on pull requests and pushes to main, including

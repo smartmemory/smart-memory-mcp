@@ -50,6 +50,6 @@ def register(mcp):
             reference=reference,
         )
         return (
-            f"Document ingested. ID: {result['document_id']}, "
+            f"Document processed. ID: {result['document_id']}, "
             f"chunks: {len(result['chunk_ids'])}, status: {result['status']}"
         )
