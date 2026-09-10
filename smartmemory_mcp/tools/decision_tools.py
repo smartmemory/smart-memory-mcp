@@ -182,8 +182,11 @@ def register(mcp):
         reason: str,
         new_decision_type: str = "inference",
         new_confidence: float = 0.8,
+        rejected_alternatives: Optional[List[str]] = None,
+        rationale: Optional[str] = None,
+        constraints: Optional[List[str]] = None,
     ) -> str:
-        """Replace a decision with a new one, marking the old as superseded."""
+        """Replace a decision, preserving its rationale, alternatives and constraints."""
         try:
             backend = get_backend()
             result = backend.decision_supersede(
@@ -192,6 +195,9 @@ def register(mcp):
                 reason=reason,
                 new_decision_type=new_decision_type,
                 new_confidence=new_confidence,
+                rejected_alternatives=rejected_alternatives,
+                rationale=rationale,
+                constraints=constraints,
             )
             if result is None:
                 return f"Decision not found: {decision_id}"
@@ -275,6 +281,10 @@ def register(mcp):
                 parts.append(f"Evidence: {len(provenance['evidence'])} items")
             if provenance.get("superseded"):
                 parts.append(f"Superseded: {len(provenance['superseded'])} decisions")
+            if provenance.get("superseded_by"):
+                parts.append(
+                    f"Superseded by: {len(provenance['superseded_by'])} decisions"
+                )
             return "\n".join(parts)
         except Exception as e:
             logger.error(f"Failed to get provenance: {e}", exc_info=True)

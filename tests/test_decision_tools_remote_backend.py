@@ -182,6 +182,9 @@ def test_supersede_posts_the_replacement(monkeypatch):
         new_content="Use CockroachDB",
         reason="multi-region",
         new_confidence=0.95,
+        rejected_alternatives=["Keep Citus"],
+        rationale="Regional failover is required",
+        constraints=["No manual operator"],
     )
     method, path, kwargs = transport.calls[0]
     assert (method, path) == ("POST", "/memory/decisions/dec_1/supersede")
@@ -190,6 +193,9 @@ def test_supersede_posts_the_replacement(monkeypatch):
         "new_decision_type": "inference",
         "new_confidence": 0.95,
         "reason": "multi-region",
+        "rejected_alternatives": ["Keep Citus"],
+        "rationale": "Regional failover is required",
+        "constraints": ["No manual operator"],
     }
     assert out == "Decision dec_1 superseded.\nNew decision: dec_2"
     assert "user_x" not in out

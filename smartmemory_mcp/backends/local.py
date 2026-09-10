@@ -615,6 +615,9 @@ class LocalBackend(BackendCapabilities):
         reason: str,
         new_decision_type: str = "inference",
         new_confidence: float = 0.8,
+        rejected_alternatives: list[str] | None = None,
+        rationale: str | None = None,
+        constraints: list[str] | None = None,
     ) -> dict[str, Any] | None:
         from smartmemory.models.decision import Decision
 
@@ -625,7 +628,12 @@ class LocalBackend(BackendCapabilities):
         )
         try:
             result = self._decision_manager().supersede(
-                decision_id, new_decision, reason=reason
+                decision_id,
+                new_decision,
+                reason=reason,
+                rejected_alternatives=rejected_alternatives,
+                rationale=rationale,
+                constraints=constraints,
             )
         except ValueError:
             # Core raises ValueError for "no such decision"; the service answers
@@ -680,6 +688,9 @@ class LocalBackend(BackendCapabilities):
             "evidence": provenance.get("evidence") or [],
             "superseded": [
                 _decision_dict(d) for d in (provenance.get("superseded") or [])
+            ],
+            "superseded_by": [
+                _decision_dict(d) for d in (provenance.get("superseded_by") or [])
             ],
         }
 

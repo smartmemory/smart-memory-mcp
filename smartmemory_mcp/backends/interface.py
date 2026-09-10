@@ -269,6 +269,9 @@ class MemoryBackend(Protocol):
         reason: str,
         new_decision_type: str = "inference",
         new_confidence: float = 0.8,
+        rejected_alternatives: list[str] | None = None,
+        rationale: str | None = None,
+        constraints: list[str] | None = None,
     ) -> dict[str, Any] | None:
         """{old_decision_id, new_decision_id, status}, or None when absent."""
         ...
@@ -290,7 +293,7 @@ class MemoryBackend(Protocol):
         ...
 
     def decision_provenance(self, decision_id: str) -> dict[str, Any] | None:
-        """{decision, reasoning_trace, evidence, superseded}, or None when absent."""
+        """{decision, reasoning_trace, evidence, superseded, superseded_by}, or None when absent."""
         ...
 
     def decision_find_conflicts(self, decision_id: str) -> dict[str, Any] | None:

@@ -150,10 +150,14 @@ def _cases():
             "decision_id": "dec_1",
             "new_content": "Use CockroachDB",
             "reason": "multi-region",
+            "new_confidence": 0.95,
+            "rejected_alternatives": ["Keep Citus"],
+            "rationale": "Regional failover is required",
+            "constraints": ["No manual operator"],
         },
         _local(
             _decision_manager=lambda: _Manager(
-                supersede=lambda _id, _new, reason: _Decision(
+                supersede=lambda _id, _new, reason, **context: _Decision(
                     {**DECISION, "decision_id": "dec_2"}
                 )
             )
@@ -209,6 +213,7 @@ def _cases():
                     "reasoning_trace": None,
                     "evidence": [{"memory": {}}],
                     "superseded": [decision],
+                    "superseded_by": [],
                 }
             )
         ),
@@ -218,6 +223,7 @@ def _cases():
                 "reasoning_trace": None,
                 "evidence": [{"memory": {}}],
                 "superseded": [DECISION],
+                "superseded_by": [],
             }
         ),
     )

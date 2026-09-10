@@ -872,18 +872,28 @@ class RemoteBackend(BackendCapabilities):
         reason: str,
         new_decision_type: str = "inference",
         new_confidence: float = 0.8,
+        rejected_alternatives: list[str] | None = None,
+        rationale: str | None = None,
+        constraints: list[str] | None = None,
     ) -> dict[str, Any] | None:
         """POST /memory/decisions/{decision_id}/supersede."""
+        body: dict[str, Any] = {
+            "new_content": new_content,
+            "new_decision_type": new_decision_type,
+            "new_confidence": new_confidence,
+            "reason": reason,
+        }
+        if rejected_alternatives is not None:
+            body["rejected_alternatives"] = rejected_alternatives
+        if rationale is not None:
+            body["rationale"] = rationale
+        if constraints is not None:
+            body["constraints"] = constraints
         result = self._decision_request(
             "POST",
             f"/memory/decisions/{decision_id}/supersede",
             none_on_404=True,
-            json={
-                "new_content": new_content,
-                "new_decision_type": new_decision_type,
-                "new_confidence": new_confidence,
-                "reason": reason,
-            },
+            json=body,
         )
         return self._strip_scope(result) if result is not None else None
 

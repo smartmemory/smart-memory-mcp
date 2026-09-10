@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed (2026-09-10) — decision supersession context and direction
+
+- `decision_supersede` accepts optional replacement `rejected_alternatives`, `rationale`, and
+  `constraints` in local and remote modes. The remote backend sends only fields explicitly supplied.
+- Decision provenance renders the new directional `superseded_by` successor list while retaining
+  the existing predecessor summary.
+
 ### Added (2026-09-10) — MCP-REMOTE-DECISIONS-1: decision tools work in remote mode
 
 - All 13 decision tools (`decision_create`, `_get`, `_list`, `_search`, `_supersede`, `_retract`,
