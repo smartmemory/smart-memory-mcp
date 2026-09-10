@@ -53,6 +53,18 @@ async def test_all_mcp_search_paths_obey_lexical_contract(monkeypatch, path, cas
     unavailable = case in {"unavailable", "connection", "validation"}
     removed = case in CONTRACT["channels"]["removed"]
     message = "LexicalIndexUnavailableError: connection refused; sm rebuild --lexical"
+    if case == "validation":
+        message = CONTRACT["errors"]["validation"]["unmatched_quote_message"]
+    wire = (
+        CONTRACT["errors"][case]["http"]
+        if case in {"validation", "unavailable"}
+        else None
+    )
+    body = (
+        {key: value.format(message=message) for key, value in wire["body"].items()}
+        if wire
+        else {"results": []}
+    )
     seen = []
 
     def transport(method, url, **kwargs):
@@ -60,8 +72,8 @@ async def test_all_mcp_search_paths_obey_lexical_contract(monkeypatch, path, cas
         if case == "connection":
             raise httpx.ConnectError("connection refused")
         return httpx.Response(
-            400 if case == "validation" else 503 if unavailable else 200,
-            json={"detail": message} if unavailable else {"results": []},
+            wire["status"] if wire else 200,
+            json=body,
             request=httpx.Request(method, url),
         )
 
@@ -72,6 +84,8 @@ async def test_all_mcp_search_paths_obey_lexical_contract(monkeypatch, path, cas
         if unavailable or removed:
             with pytest.raises(ValueError if removed else RuntimeError) as error:
                 backend.search("quartz", **options)
+            if wire:
+                assert str(error.value) == body["detail"]
             if removed:
                 assert "lexical" in str(error.value)
                 assert not seen
@@ -106,6 +120,11 @@ async def test_all_mcp_search_paths_obey_lexical_contract(monkeypatch, path, cas
             "memory_search", {"query": "quartz", **options}, raise_on_error=False
         )
         assert result.is_error == (unavailable or removed), result
+        if wire:
+            expected_detail = (
+                str(backend.search.side_effect) if path == "local" else body["detail"]
+            )
+            assert any(expected_detail in part.text for part in result.content)
     if path == "local":
         if removed:
             backend.search.assert_not_called()

@@ -426,6 +426,13 @@ class RemoteBackend(BackendCapabilities):
             self._on_http_error(e.response)
             if e.response.status_code == 401:
                 self._on_unauthorized(e.response)
+            if e.response.status_code in (400, 503):
+                try:
+                    body = e.response.json()
+                except ValueError:
+                    body = None
+                if isinstance(body, dict) and isinstance(body.get("detail"), str):
+                    raise RuntimeError(body["detail"]) from e
             result = {"error": f"API error {e.response.status_code}: {e.response.text}"}
         except Exception as e:
             result = {"error": f"Request failed: {e}"}
