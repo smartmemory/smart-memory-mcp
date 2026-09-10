@@ -26,9 +26,9 @@ def test_channel_weights_are_forwarded(monkeypatch) -> None:
     backend = RemoteBackend(api_url="https://api.test", api_key="k", team_id="ws-1")
     backend._session["_bootstrapped"] = True
 
-    backend.search("q", channel_weights={"vector": 0.7, "keyword": 0.3})
+    backend.search("q", channel_weights={"semantic": 0.7, "lexical": 0.3})
 
-    assert captured["body"]["channel_weights"] == {"vector": 0.7, "keyword": 0.3}
+    assert captured["body"]["channel_weights"] == {"semantic": 0.7, "lexical": 0.3}
     assert json.dumps(captured["body"])  # body stays JSON-serialisable
 
 

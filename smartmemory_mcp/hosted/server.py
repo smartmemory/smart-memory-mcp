@@ -18,6 +18,7 @@ from mcp.types import ToolAnnotations
 
 from ..health import register_health
 from ..tools.common import get_backend, graceful
+from ..tools.lexical_contract import validate_channel_weights
 from .auth import build_auth
 from .config import HostedConfig
 from .exchange import DEFAULT_EXCHANGE_CACHE, ExchangeCache
@@ -171,6 +172,7 @@ def _register_hosted_tools(
         Hosted note: `cite=True` is not available — citation formatting runs in
         the `smartmemory` core package, which the hosted server does not ship.
         """
+        validate_channel_weights(channel_weights)
         if cite:
             # Refused explicitly rather than silently ignored: the caller asked
             # for citations and must know it did not get them (round 3, M5).

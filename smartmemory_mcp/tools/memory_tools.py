@@ -9,6 +9,7 @@ from mcp.types import ToolAnnotations
 from smartmemory_mcp.tools.search_window import with_search_window
 
 from .common import get_backend, graceful
+from .lexical_contract import validate_channel_weights
 
 logger = logging.getLogger(__name__)
 
@@ -299,7 +300,6 @@ def register_free(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
     @with_search_window
     def memory_search(
         query: str,
@@ -346,6 +346,8 @@ def register_free(mcp):
         believed then. Set as_of_strict to refuse a partial history outright
         rather than receive labelled results (gap #2).
         """
+        # Search failures must become MCP errors, including connection failures.
+        validate_channel_weights(channel_weights)
         backend = get_backend()
         # SELF-IMPROVE-6 fix: pass actual top_k, not 3x over-fetch.
         # Over-fetch for origin filtering + reranking happens server-side.

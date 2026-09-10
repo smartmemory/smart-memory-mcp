@@ -6,6 +6,8 @@ _request() never raises — returns error dicts on all failure modes.
 
 from __future__ import annotations
 
+from smartmemory_mcp.tools.lexical_contract import validate_channel_weights
+
 import json
 import os
 from pathlib import Path
@@ -358,6 +360,7 @@ class RemoteBackend(BackendCapabilities):
 
     def search(self, query: str, top_k: int = 5, **kwargs: Any) -> list[MemoryResult]:
         """POST /memory/search."""
+        validate_channel_weights(kwargs.get("channel_weights"))
         body: dict[str, Any] = {"query": query, "top_k": top_k}
         if kwargs.get("enable_hybrid", True):
             body["enable_hybrid"] = True
@@ -390,7 +393,7 @@ class RemoteBackend(BackendCapabilities):
         # CORE-SEARCH-2a: per-query channel weighting (SearchRequest.channel_weights,
         # request_models.py:70). Dropping it silently reverted every hosted search to
         # the profile default.
-        if kwargs.get("channel_weights"):
+        if kwargs.get("channel_weights") is not None:
             body["channel_weights"] = kwargs["channel_weights"]
         body.update(
             {
