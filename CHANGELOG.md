@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed (2026-09-10) — CORE-DECISION-BELIEF-SURFACE-1: decision uncertainty is legible
+
+- `decision_get` now carries `belief_hold`, `plausibility_hold` and `ignorance`, inherited from core's
+  `Decision.to_dict()` with no code change here and pinned by test so a refactor cannot drop them.
+- `decision_list` and `decision_search` summary lines append `⟨not enough evidence⟩` when `ignorance`
+  exceeds 0.7. The marker is words, not a float: an agent scanning the list must not read an unevidenced
+  decision as a settled assertion just because its prior `confidence` is high. The belief reads are
+  evidence-only, so a 0.9-confidence decision nothing has reinforced or contradicted reads `ignorance = 1.0`.
+- The remote-backend refusal is unchanged. Decision tools still require the local backend.
+
 ### Changed (2026-09-09)
 
 - Document-ingestion results now distinguish resumed partial ingests, reporting

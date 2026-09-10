@@ -28,6 +28,24 @@ def _local_sm():
     return getattr(get_backend(), "_mem", None)
 
 
+# CORE-DECISION-BELIEF-SURFACE-1: summary lines render uncertainty in words, not a
+# float. An agent scanning a list should see "this is not settled" without having to
+# interpret a Dempster-Shafer interval — and, more importantly, should not read an
+# unevidenced decision as an unqualified assertion just because it has a confident
+# prior. `ignorance` is evidence-only: 1.0 means nothing has reinforced or
+# contradicted it either way, whatever `confidence` says.
+_UNCERTAINTY_THRESHOLD = 0.7
+_UNCERTAINTY_MARKER = "\u27e8not enough evidence\u27e9"
+
+
+def _uncertainty_marker(decision) -> str:
+    """Return a words-not-maths uncertainty marker, or an empty string."""
+    ignorance = getattr(decision, "ignorance", None)
+    if ignorance is None or ignorance <= _UNCERTAINTY_THRESHOLD:
+        return ""
+    return f" {_UNCERTAINTY_MARKER}"
+
+
 def register(mcp):
     """Register decision tools with the MCP server (10 tools)."""
 
@@ -137,7 +155,7 @@ def register(mcp):
             for d in decisions:
                 output.append(
                     f"- [{d.decision_id}] ({d.decision_type}, conf={d.confidence:.2f}): "
-                    f"{d.content[:100]}"
+                    f"{d.content[:100]}{_uncertainty_marker(d)}"
                 )
             return "\n".join(output)
         except Exception as e:
@@ -164,7 +182,7 @@ def register(mcp):
             for d in decisions:
                 output.append(
                     f"- [{d.decision_id}] ({d.decision_type}, conf={d.confidence:.2f}): "
-                    f"{d.content[:100]}"
+                    f"{d.content[:100]}{_uncertainty_marker(d)}"
                 )
             return "\n".join(output)
         except Exception as e:
