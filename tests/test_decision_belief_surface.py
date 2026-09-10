@@ -9,13 +9,17 @@ show a new dict key at all, so they gain a words-not-maths uncertainty marker: a
 scanning the list must not read an unevidenced decision as a settled assertion just
 because its prior ``confidence`` is high.
 
-Local mode only. The remote-backend refusal (``_REMOTE_DECISION_MSG``) is unchanged and
-out of scope for this feature.
+Driven through ``LocalBackend`` since MCP-REMOTE-DECISIONS-1 moved manager
+construction into the backend. The belief contract is transport-agnostic: both
+backends hand the tool the same ``Decision.to_dict()`` shape, so these assertions
+hold in remote mode too (pinned in test_decision_tools_remote_backend.py).
 """
 
 from unittest.mock import patch
 
 from smartmemory.models.decision import Decision
+
+from smartmemory_mcp.backends.local import LocalBackend
 
 
 class _FakeMCP:
@@ -38,8 +42,11 @@ def _tools():
     return mcp.tools
 
 
-class _LocalBackend:
-    _mem = object()
+def _local_backend():
+    """A LocalBackend without running its smartmemory-importing __init__."""
+    backend = LocalBackend.__new__(LocalBackend)
+    backend._mem = object()
+    return backend
 
 
 def _decision(decision_id: str, *, supports: int = 0, contradicts: int = 0) -> Decision:
@@ -59,7 +66,7 @@ def _run(tool_name, tools, manager=None, queries=None, **kwargs):
         patches.append(patch("smartmemory.decisions.queries.DecisionQueries", queries))
     started = [p.start() for p in patches]
     try:
-        started[0].return_value = _LocalBackend()
+        started[0].return_value = _local_backend()
         return tools[tool_name](**kwargs)
     finally:
         for p in patches:

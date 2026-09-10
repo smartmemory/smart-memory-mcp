@@ -1,5 +1,14 @@
 from unittest.mock import MagicMock, patch
 
+from smartmemory_mcp.backends.local import LocalBackend
+
+
+def _local_backend(mem=None):
+    """A LocalBackend without running its smartmemory-importing __init__."""
+    backend = LocalBackend.__new__(LocalBackend)
+    backend._mem = mem if mem is not None else MagicMock(name="SmartMemory")
+    return backend
+
 
 class _FakeMCP:
     def __init__(self):
@@ -21,38 +30,28 @@ def _tools():
     return mcp.tools
 
 
-def test_create_pending_refuses_in_remote_mode():
-    tools = _tools()
-    with patch("smartmemory_mcp.tools.decision_tools.get_backend") as gb:
-        gb.return_value = object()  # no _mem -> remote
-        out = tools["decision_create_pending"](
-            content="case",
-            requirements=[{"description": "x", "requirement_type": "proof"}],
-        )
-    assert isinstance(out, str)
-    assert "local backend" in out.lower()
-
-
 def test_create_pending_builds_residuation_with_local_sm():
     tools = _tools()
 
-    class _LocalBackend:
-        def __init__(self):
-            self._mem = MagicMock(name="SmartMemory")
-
-    backend = _LocalBackend()
+    backend = _local_backend()
     captured = {}
 
-    class _FakeReq:
-        requirement_id = "req_abc12345"
-        description = "x"
-        requirement_type = "proof"
-        resolved = False
-
     class _FakeDecision:
-        decision_id = "dec_pending1"
-        status = "pending"
-        pending_requirements = [_FakeReq()]
+        """Stands in for a core Decision: the backend serializes via to_dict()."""
+
+        def to_dict(self):
+            return {
+                "decision_id": "dec_pending1",
+                "status": "pending",
+                "pending_requirements": [
+                    {
+                        "requirement_id": "req_abc12345",
+                        "description": "x",
+                        "requirement_type": "proof",
+                        "resolved": False,
+                    }
+                ],
+            }
 
     class _FakeResiduation:
         def __init__(self, mem, **kw):
@@ -80,25 +79,10 @@ def test_create_pending_builds_residuation_with_local_sm():
     assert "req_abc12345" in out
 
 
-def test_resolve_requirement_refuses_in_remote_mode():
-    tools = _tools()
-    with patch("smartmemory_mcp.tools.decision_tools.get_backend") as gb:
-        gb.return_value = object()  # no _mem -> remote
-        out = tools["decision_resolve_requirement"](
-            decision_id="dec_test", requirement_id="req_test", memory_id="mem_test"
-        )
-    assert isinstance(out, str)
-    assert "local backend" in out.lower()
-
-
 def test_resolve_requirement_calls_residuation():
     tools = _tools()
 
-    class _LocalBackend:
-        def __init__(self):
-            self._mem = MagicMock(name="SmartMemory")
-
-    backend = _LocalBackend()
+    backend = _local_backend()
     captured = {}
 
     class _FakeResiduation:
@@ -124,23 +108,10 @@ def test_resolve_requirement_calls_residuation():
     assert "resolved" in out.lower()
 
 
-def test_try_activate_refuses_in_remote_mode():
-    tools = _tools()
-    with patch("smartmemory_mcp.tools.decision_tools.get_backend") as gb:
-        gb.return_value = object()  # no _mem -> remote
-        out = tools["decision_try_activate"](decision_id="dec_test")
-    assert isinstance(out, str)
-    assert "local backend" in out.lower()
-
-
 def test_try_activate_calls_residuation():
     tools = _tools()
 
-    class _LocalBackend:
-        def __init__(self):
-            self._mem = MagicMock(name="SmartMemory")
-
-    backend = _LocalBackend()
+    backend = _local_backend()
     captured = {}
 
     class _FakeResiduation:

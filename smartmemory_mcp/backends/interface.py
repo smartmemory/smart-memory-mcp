@@ -231,3 +231,88 @@ class MemoryBackend(Protocol):
     ) -> dict[str, Any]:
         """Submit result-selection feedback for a completed search session."""
         ...
+
+    # --- Decision lifecycle (MCP-REMOTE-DECISIONS-1) -------------------------------
+    #
+    # Every method here returns a PLAIN DICT in `Decision.to_dict()` shape (or a
+    # list of them, or a bool), never a core `Decision` object. That is what makes
+    # the rendered tool output byte-identical between local and remote mode: the
+    # tool formats one shape and neither branch on `_mem` nor re-implement
+    # rendering. Absence is `None`; every other failure raises.
+
+    def decision_create(self, content: str, **kwargs: Any) -> dict[str, Any]:
+        """Create a decision. Returns at least decision_id/decision_type/confidence."""
+        ...
+
+    def decision_get(self, decision_id: str) -> dict[str, Any] | None:
+        """Full `Decision.to_dict()`, or None when the decision does not exist."""
+        ...
+
+    def decision_list(
+        self,
+        domain: str | None = None,
+        decision_type: str | None = None,
+        min_confidence: float = 0.0,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Active decisions, filtered."""
+        ...
+
+    def decision_search(self, topic: str, limit: int = 20) -> list[dict[str, Any]]:
+        """Active decisions related to a topic."""
+        ...
+
+    def decision_supersede(
+        self,
+        decision_id: str,
+        new_content: str,
+        reason: str,
+        new_decision_type: str = "inference",
+        new_confidence: float = 0.8,
+    ) -> dict[str, Any] | None:
+        """{old_decision_id, new_decision_id, status}, or None when absent."""
+        ...
+
+    def decision_retract(self, decision_id: str, reason: str) -> dict[str, Any] | None:
+        """{decision_id, status}, or None when the decision does not exist."""
+        ...
+
+    def decision_reinforce(
+        self, decision_id: str, evidence_id: str
+    ) -> dict[str, Any] | None:
+        """{decision_id, confidence, reinforcement_count}, or None when absent."""
+        ...
+
+    def decision_contradict(
+        self, decision_id: str, evidence_id: str
+    ) -> dict[str, Any] | None:
+        """{decision_id, confidence, contradiction_count}, or None when absent."""
+        ...
+
+    def decision_provenance(self, decision_id: str) -> dict[str, Any] | None:
+        """{decision, reasoning_trace, evidence, superseded}, or None when absent."""
+        ...
+
+    def decision_find_conflicts(self, decision_id: str) -> dict[str, Any] | None:
+        """{decision_id, conflicts, count}, or None when the decision is absent."""
+        ...
+
+    def decision_create_pending(
+        self,
+        content: str,
+        requirements: list[dict[str, Any]],
+        domain: str | None = None,
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Full `Decision.to_dict()` of the new pending decision."""
+        ...
+
+    def decision_resolve_requirement(
+        self, decision_id: str, requirement_id: str, memory_id: str
+    ) -> bool:
+        """True when the requirement was found and marked resolved."""
+        ...
+
+    def decision_try_activate(self, decision_id: str) -> bool:
+        """True when the pending decision became active."""
+        ...

@@ -32,6 +32,17 @@ def _metadata_matches(metadata: dict, key: str, value: Any) -> bool:
     return str(cur) == str(value)
 
 
+def _decision_dict(decision: Any) -> dict[str, Any]:
+    """Serialize a core Decision to the same dict the REST routes return.
+
+    Tolerates something that is already a dict so a caller-supplied double is
+    not forced to re-implement `to_dict()`.
+    """
+    if isinstance(decision, dict):
+        return decision
+    return decision.to_dict()
+
+
 class LocalBackend(BackendCapabilities):
     """Wraps smartmemory package for local-mode operations."""
 
@@ -530,3 +541,183 @@ class LocalBackend(BackendCapabilities):
             }
         except Exception as exc:
             return {"error": str(exc)}
+
+    # -- Decision lifecycle (MCP-REMOTE-DECISIONS-1) --
+    #
+    # The managed-type Managers/Queries take the REAL SmartMemory (``self._mem``),
+    # never this wrapper: ``DecisionManager`` calls ``sm.add(MemoryItem)`` and
+    # ``sm._graph``, and passing the wrapper silently re-wrapped the MemoryItem as
+    # ``content`` — a successful-looking write that discarded decision_type,
+    # confidence, rationale and the deterministic id (2026-06-02 bug hunt).
+    # Living here rather than in the tool is what lets the tool stay
+    # transport-agnostic; the ``_mem`` requirement is unchanged.
+
+    def _decision_manager(self):
+        from smartmemory.decisions.manager import DecisionManager
+
+        return DecisionManager(self._mem)
+
+    def _decision_queries(self):
+        from smartmemory.decisions.queries import DecisionQueries
+
+        return DecisionQueries(self._mem)
+
+    def _residuation(self):
+        from smartmemory.reasoning.residuation import ResiduationManager
+
+        return ResiduationManager(self._mem)
+
+    def decision_create(self, content: str, **kwargs: Any) -> dict[str, Any]:
+        """DecisionManager.create, serialized to the wire shape."""
+        decision = self._decision_manager().create(
+            content=content,
+            decision_type=kwargs.get("decision_type", "inference"),
+            confidence=kwargs.get("confidence", 0.8),
+            source_trace_id=kwargs.get("source_trace_id"),
+            evidence_ids=kwargs.get("evidence_ids") or [],
+            domain=kwargs.get("domain"),
+            tags=kwargs.get("tags") or [],
+            rejected_alternatives=kwargs.get("rejected_alternatives") or [],
+            rationale=kwargs.get("rationale"),
+            constraints=kwargs.get("constraints") or [],
+        )
+        return _decision_dict(decision)
+
+    def decision_get(self, decision_id: str) -> dict[str, Any] | None:
+        decision = self._decision_manager().get_decision(decision_id)
+        return _decision_dict(decision) if decision else None
+
+    def decision_list(
+        self,
+        domain: str | None = None,
+        decision_type: str | None = None,
+        min_confidence: float = 0.0,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        decisions = self._decision_queries().get_active_decisions(
+            domain=domain,
+            decision_type=decision_type,
+            min_confidence=min_confidence,
+            limit=limit,
+        )
+        return [_decision_dict(d) for d in decisions]
+
+    def decision_search(self, topic: str, limit: int = 20) -> list[dict[str, Any]]:
+        decisions = self._decision_queries().get_decisions_about(
+            topic=topic, limit=limit
+        )
+        return [_decision_dict(d) for d in decisions]
+
+    def decision_supersede(
+        self,
+        decision_id: str,
+        new_content: str,
+        reason: str,
+        new_decision_type: str = "inference",
+        new_confidence: float = 0.8,
+    ) -> dict[str, Any] | None:
+        from smartmemory.models.decision import Decision
+
+        new_decision = Decision(
+            content=new_content,
+            decision_type=new_decision_type,
+            confidence=new_confidence,
+        )
+        try:
+            result = self._decision_manager().supersede(
+                decision_id, new_decision, reason=reason
+            )
+        except ValueError:
+            # Core raises ValueError for "no such decision"; the service answers
+            # 404 for the same case. Both arms report absence as None.
+            return None
+        return {
+            "old_decision_id": decision_id,
+            "new_decision_id": result.decision_id,
+            "status": "superseded",
+        }
+
+    def decision_retract(self, decision_id: str, reason: str) -> dict[str, Any] | None:
+        try:
+            self._decision_manager().retract(decision_id, reason=reason)
+        except ValueError:
+            return None
+        return {"decision_id": decision_id, "status": "retracted"}
+
+    def decision_reinforce(
+        self, decision_id: str, evidence_id: str
+    ) -> dict[str, Any] | None:
+        try:
+            decision = self._decision_manager().reinforce(decision_id, evidence_id)
+        except ValueError:
+            return None
+        return {
+            "decision_id": decision_id,
+            "confidence": decision.confidence,
+            "reinforcement_count": decision.reinforcement_count,
+        }
+
+    def decision_contradict(
+        self, decision_id: str, evidence_id: str
+    ) -> dict[str, Any] | None:
+        try:
+            decision = self._decision_manager().contradict(decision_id, evidence_id)
+        except ValueError:
+            return None
+        return {
+            "decision_id": decision_id,
+            "confidence": decision.confidence,
+            "contradiction_count": decision.contradiction_count,
+        }
+
+    def decision_provenance(self, decision_id: str) -> dict[str, Any] | None:
+        provenance = self._decision_queries().get_decision_provenance(decision_id)
+        if not provenance or provenance.get("decision") is None:
+            return None
+        return {
+            "decision": _decision_dict(provenance["decision"]),
+            "reasoning_trace": provenance.get("reasoning_trace"),
+            "evidence": provenance.get("evidence") or [],
+            "superseded": [
+                _decision_dict(d) for d in (provenance.get("superseded") or [])
+            ],
+        }
+
+    def decision_find_conflicts(self, decision_id: str) -> dict[str, Any] | None:
+        manager = self._decision_manager()
+        decision = manager.get_decision(decision_id)
+        if not decision:
+            return None
+        conflicts = manager.find_conflicts(decision)
+        return {
+            "decision_id": decision_id,
+            "conflicts": [_decision_dict(c) for c in conflicts],
+            "count": len(conflicts),
+        }
+
+    def decision_create_pending(
+        self,
+        content: str,
+        requirements: list[dict[str, Any]],
+        domain: str | None = None,
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        decision = self._residuation().create_pending(
+            content=content,
+            requirements=requirements,
+            domain=domain,
+            tags=tags or [],
+        )
+        return _decision_dict(decision)
+
+    def decision_resolve_requirement(
+        self, decision_id: str, requirement_id: str, memory_id: str
+    ) -> bool:
+        return bool(
+            self._residuation().resolve_requirement(
+                decision_id, requirement_id, memory_id
+            )
+        )
+
+    def decision_try_activate(self, decision_id: str) -> bool:
+        return bool(self._residuation().try_activate(decision_id))

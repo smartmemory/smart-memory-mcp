@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Added (2026-09-10) — MCP-REMOTE-DECISIONS-1: decision tools work in remote mode
+
+- All 13 decision tools (`decision_create`, `_get`, `_list`, `_search`, `_supersede`, `_retract`,
+  `_reinforce`, `_contradict`, `_provenance`, `_find_conflicts`, `_create_pending`,
+  `_resolve_requirement`, `_try_activate`) now forward to the service decision routes when the
+  server runs against a hosted backend. They previously answered every remote caller with
+  "remote decision support is not yet implemented", so an agent on the hosted product — the
+  primary configuration — could not record a decision at all.
+- Decision access is now a backend capability rather than a branch inside the tool:
+  `LocalBackend` wraps the core managers over the real `SmartMemory`, `RemoteBackend` calls
+  `/memory/decisions/*`, and both return the same `Decision.to_dict()` dict. The tools render
+  once, so the text an agent sees is byte-identical in both modes (pinned by
+  `tests/test_decision_tools_mode_parity.py`, which fails if a new decision tool arrives without
+  a parity case).
+- Failures surface loudly: an API error raises a `RuntimeError` naming the status and the route.
+  A 500 on a list can never render as "No active decisions found", and a failed create can never
+  render as a success. Only a genuine 404 on an addressed decision reads as absence.
+- The scope context the create/supersede/retract routes echo back (`user_id`, `tenant_id`,
+  `workspace_id`, `team_id`, `isolation_level`) is stripped in the backend. Server-only identity
+  must not reach an MCP client.
+
+#### Known upstream defect (not worked around here)
+
+`GET /memory/decisions/search` and `GET /memory/decisions/{id}/provenance` return the stored
+`confidence` as the `Decision` default 0.8. Verified live 2026-09-10: a decision created at 0.33
+reads 0.33 from `GET /memory/decisions/{id}` and `GET /memory/decisions`, and 0.8 from the other
+two. Root cause is core, not the transport — `DecisionQueries._hydrate` rebuilds the Decision from
+`MemoryItem.metadata`, which does not persist `confidence` (nor `rationale`/`domain`), so
+`Decision.from_dict` falls back to its default. The MCP forwards what the route returns rather than
+masking it. Note this is NOT the supersede defect the feature plan predicted: `new_confidence` is
+stored correctly and reads back correctly.
+
 ### Changed (2026-09-10) — CORE-DECISION-BELIEF-SURFACE-1: decision uncertainty is legible
 
 - `decision_get` now carries `belief_hold`, `plausibility_hold` and `ignorance`, inherited from core's
@@ -10,7 +42,8 @@
   exceeds 0.7. The marker is words, not a float: an agent scanning the list must not read an unevidenced
   decision as a settled assertion just because its prior `confidence` is high. The belief reads are
   evidence-only, so a 0.9-confidence decision nothing has reinforced or contradicted reads `ignorance = 1.0`.
-- The remote-backend refusal is unchanged. Decision tools still require the local backend.
+- The remote-backend refusal was unchanged by that feature; MCP-REMOTE-DECISIONS-1 (above)
+  removed it, and the uncertainty marker now renders in remote mode too.
 
 ### Changed (2026-09-09)
 

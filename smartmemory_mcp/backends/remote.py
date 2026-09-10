@@ -768,3 +768,208 @@ class RemoteBackend(BackendCapabilities):
             "/memory/result-feedback",
             json={"search_session_id": search_session_id, "result_used": result_used},
         )
+
+    # --- Decision lifecycle (MCP-REMOTE-DECISIONS-1) ------------------------------
+    #
+    # Contract read-only against
+    # smart-memory-service/memory_service/api/routes/decisions.py. The service
+    # returns `Decision.to_dict()` verbatim for reads, so these methods hand the
+    # tool exactly the shape LocalBackend produces and rendering stays identical.
+    #
+    # Error policy (no-silent-degradation): 404 on an addressed decision is genuine
+    # absence and returns None; EVERY other failure raises a RuntimeError naming the
+    # status and the route. A decision write must never report success, and a
+    # decision read must never look like "no decisions", because the API was down.
+
+    _DECISION_CTX_KEYS = frozenset(
+        {"user_id", "tenant_id", "workspace_id", "team_id", "isolation_level"}
+    )
+
+    def _decision_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        none_on_404: bool = False,
+        **kwargs: Any,
+    ) -> Any:
+        """Call a decision route, raising loudly on anything but genuine absence."""
+        result = self._request(method, path, **kwargs)
+        if err := self._fmt_error(result):
+            if none_on_404 and "API error 404" in err:
+                return None
+            raise RuntimeError(f"{method} {path} failed: {err}")
+        if result is None:
+            raise RuntimeError(f"{method} {path} failed: empty response from the API")
+        return result
+
+    @classmethod
+    def _strip_scope(cls, payload: dict[str, Any]) -> dict[str, Any]:
+        """Drop the server-only identity the write routes echo back.
+
+        `models.py` is explicit that workspace/tenant/user ids must never reach an
+        MCP client; the create/supersede/retract routes splat `scope.get_context_dict()`
+        into their response, so strip it here rather than at every render site.
+        """
+        return {k: v for k, v in payload.items() if k not in cls._DECISION_CTX_KEYS}
+
+    def decision_create(self, content: str, **kwargs: Any) -> dict[str, Any]:
+        """POST /memory/decisions/create."""
+        body: dict[str, Any] = {
+            "content": content,
+            "decision_type": kwargs.get("decision_type", "inference"),
+            "confidence": kwargs.get("confidence", 0.8),
+        }
+        for key in (
+            "source_trace_id",
+            "evidence_ids",
+            "domain",
+            "tags",
+            "rejected_alternatives",
+            "rationale",
+            "constraints",
+        ):
+            value = kwargs.get(key)
+            if value is not None:
+                body[key] = value
+        return self._strip_scope(
+            self._decision_request("POST", "/memory/decisions/create", json=body)
+        )
+
+    def decision_get(self, decision_id: str) -> dict[str, Any] | None:
+        """GET /memory/decisions/{decision_id}."""
+        return self._decision_request(
+            "GET", f"/memory/decisions/{decision_id}", none_on_404=True
+        )
+
+    def decision_list(
+        self,
+        domain: str | None = None,
+        decision_type: str | None = None,
+        min_confidence: float = 0.0,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """GET /memory/decisions."""
+        params: dict[str, Any] = {"min_confidence": min_confidence, "limit": limit}
+        if domain is not None:
+            params["domain"] = domain
+        if decision_type is not None:
+            params["decision_type"] = decision_type
+        result = self._decision_request("GET", "/memory/decisions", params=params)
+        return list(result.get("decisions") or [])
+
+    def decision_search(self, topic: str, limit: int = 20) -> list[dict[str, Any]]:
+        """GET /memory/decisions/search."""
+        result = self._decision_request(
+            "GET", "/memory/decisions/search", params={"topic": topic, "limit": limit}
+        )
+        return list(result.get("decisions") or [])
+
+    def decision_supersede(
+        self,
+        decision_id: str,
+        new_content: str,
+        reason: str,
+        new_decision_type: str = "inference",
+        new_confidence: float = 0.8,
+    ) -> dict[str, Any] | None:
+        """POST /memory/decisions/{decision_id}/supersede."""
+        result = self._decision_request(
+            "POST",
+            f"/memory/decisions/{decision_id}/supersede",
+            none_on_404=True,
+            json={
+                "new_content": new_content,
+                "new_decision_type": new_decision_type,
+                "new_confidence": new_confidence,
+                "reason": reason,
+            },
+        )
+        return self._strip_scope(result) if result is not None else None
+
+    def decision_retract(self, decision_id: str, reason: str) -> dict[str, Any] | None:
+        """POST /memory/decisions/{decision_id}/retract."""
+        result = self._decision_request(
+            "POST",
+            f"/memory/decisions/{decision_id}/retract",
+            none_on_404=True,
+            json={"reason": reason},
+        )
+        return self._strip_scope(result) if result is not None else None
+
+    def decision_reinforce(
+        self, decision_id: str, evidence_id: str
+    ) -> dict[str, Any] | None:
+        """POST /memory/decisions/{decision_id}/reinforce."""
+        return self._decision_request(
+            "POST",
+            f"/memory/decisions/{decision_id}/reinforce",
+            none_on_404=True,
+            json={"evidence_id": evidence_id},
+        )
+
+    def decision_contradict(
+        self, decision_id: str, evidence_id: str
+    ) -> dict[str, Any] | None:
+        """POST /memory/decisions/{decision_id}/contradict."""
+        return self._decision_request(
+            "POST",
+            f"/memory/decisions/{decision_id}/contradict",
+            none_on_404=True,
+            json={"evidence_id": evidence_id},
+        )
+
+    def decision_provenance(self, decision_id: str) -> dict[str, Any] | None:
+        """GET /memory/decisions/{decision_id}/provenance."""
+        return self._decision_request(
+            "GET", f"/memory/decisions/{decision_id}/provenance", none_on_404=True
+        )
+
+    def decision_find_conflicts(self, decision_id: str) -> dict[str, Any] | None:
+        """POST /memory/decisions/{decision_id}/conflicts."""
+        return self._decision_request(
+            "POST",
+            f"/memory/decisions/{decision_id}/conflicts",
+            none_on_404=True,
+            json={},
+        )
+
+    def decision_create_pending(
+        self,
+        content: str,
+        requirements: list[dict[str, Any]],
+        domain: str | None = None,
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """POST /memory/decisions/pending/create."""
+        body: dict[str, Any] = {"content": content, "requirements": requirements}
+        if domain is not None:
+            body["domain"] = domain
+        if tags:
+            body["tags"] = tags
+        return self._decision_request(
+            "POST", "/memory/decisions/pending/create", json=body
+        )
+
+    def decision_resolve_requirement(
+        self, decision_id: str, requirement_id: str, memory_id: str
+    ) -> bool:
+        """POST /memory/decisions/pending/{decision_id}/resolve.
+
+        The route 404s when the requirement is not on the decision, which is the
+        same "not found" the local path reports as False — not an API failure.
+        """
+        result = self._decision_request(
+            "POST",
+            f"/memory/decisions/pending/{decision_id}/resolve",
+            none_on_404=True,
+            json={"requirement_id": requirement_id, "memory_id": memory_id},
+        )
+        return bool(result and result.get("resolved"))
+
+    def decision_try_activate(self, decision_id: str) -> bool:
+        """POST /memory/decisions/pending/{decision_id}/activate."""
+        result = self._decision_request(
+            "POST", f"/memory/decisions/pending/{decision_id}/activate", json={}
+        )
+        return bool(result.get("activated"))
