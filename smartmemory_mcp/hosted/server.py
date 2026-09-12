@@ -147,7 +147,12 @@ def _register_hosted_tools(
     @mcp.tool(
         name="memory_search",
         title=original_search.title,
-        annotations=original_search.annotations,
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
     )
     def hosted_memory_search(
         query: str,
@@ -201,7 +206,12 @@ def _register_hosted_tools(
     @mcp.tool(
         name="memory_recall",
         title=original_recall.title,
-        annotations=original_recall.annotations,
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
     )
     @graceful
     def hosted_memory_recall(

@@ -12,6 +12,8 @@ the primary configuration — could not record a decision at all.
 import logging
 from typing import Any, Dict, List, Optional
 
+from mcp.types import ToolAnnotations
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -60,7 +62,15 @@ def _summary_line(decision: Any) -> str:
 def register(mcp):
     """Register decision tools with the MCP server (13 tools)."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Create a decision",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def decision_create(
         content: str,
@@ -112,7 +122,15 @@ def register(mcp):
             logger.error(f"Failed to create decision: {e}", exc_info=True)
             raise
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get a decision",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def decision_get(decision_id: str) -> str:
         """Retrieve a decision by ID."""
@@ -128,7 +146,15 @@ def register(mcp):
             logger.error(f"Failed to get decision: {e}", exc_info=True)
             raise
 
-    @mcp.tool()
+    @mcp.tool(
+        title="List active decisions",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def decision_list(
         domain: Optional[str] = None,
@@ -156,7 +182,15 @@ def register(mcp):
             logger.error(f"Failed to list decisions: {e}", exc_info=True)
             raise
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Search decisions",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def decision_search(topic: str, limit: int = 20) -> str:
         """Search for active decisions related to a topic."""
@@ -174,7 +208,15 @@ def register(mcp):
             logger.error(f"Failed to search decisions: {e}", exc_info=True)
             raise
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Supersede a decision",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def decision_supersede(
         decision_id: str,
@@ -210,7 +252,15 @@ def register(mcp):
             logger.error(f"Failed to supersede decision: {e}", exc_info=True)
             raise
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Retract a decision",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def decision_retract(decision_id: str, reason: str) -> str:
         """Retract a decision, marking it as no longer valid."""
@@ -224,7 +274,15 @@ def register(mcp):
             logger.error(f"Failed to retract decision: {e}", exc_info=True)
             raise
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Reinforce a decision",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def decision_reinforce(decision_id: str, evidence_id: str) -> str:
         """Record supporting evidence for a decision."""
@@ -243,7 +301,15 @@ def register(mcp):
             logger.error(f"Failed to reinforce decision: {e}", exc_info=True)
             raise
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Contradict a decision",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def decision_contradict(decision_id: str, evidence_id: str) -> str:
         """Record contradicting evidence against a decision."""
@@ -262,7 +328,15 @@ def register(mcp):
             logger.error(f"Failed to contradict decision: {e}", exc_info=True)
             raise
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get decision provenance",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def decision_provenance(decision_id: str) -> str:
         """Get full provenance chain for a decision."""
@@ -290,7 +364,15 @@ def register(mcp):
             logger.error(f"Failed to get provenance: {e}", exc_info=True)
             raise
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Find decision conflicts",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def decision_find_conflicts(decision_id: str) -> str:
         """Find existing decisions that may conflict with this one."""
@@ -316,7 +398,15 @@ def register(mcp):
             logger.error(f"Failed to find conflicts: {e}", exc_info=True)
             raise
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Create a pending decision",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def decision_create_pending(
         content: str,
@@ -353,7 +443,15 @@ def register(mcp):
             logger.error(f"Failed to create pending decision: {e}", exc_info=True)
             raise
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Resolve a decision requirement",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def decision_resolve_requirement(
         decision_id: str, requirement_id: str, memory_id: str
@@ -373,7 +471,15 @@ def register(mcp):
             logger.error(f"Failed to resolve requirement: {e}", exc_info=True)
             raise
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Activate a pending decision",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def decision_try_activate(decision_id: str) -> str:
         """Activate a pending decision if all requirements are resolved (no-op otherwise)."""

@@ -17,7 +17,15 @@ _GRAPH_UNAVAILABLE_MSG = (
 def register(mcp):
     """Register reasoning tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Challenge an assertion",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=True,
+        ),
+    )
     @graceful
     def reasoning_challenge(
         assertion: str,
@@ -59,7 +67,15 @@ def register(mcp):
 
         return "\n".join(parts)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Resolve an assertion conflict",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+    )
     @graceful
     def reasoning_resolve_conflict(
         existing_item_id: str,
@@ -111,7 +127,15 @@ def register(mcp):
 
         return "\n".join(parts)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Route a reasoning query",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def reasoning_query(query: str, top_k: int = 10) -> str:
         """Route a query to the cheapest effective retrieval method (symbolic, semantic, or hybrid)."""
@@ -139,7 +163,15 @@ def register(mcp):
 
         return "\n".join(parts)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Build a decision proof tree",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def reasoning_proof_tree(decision_id: str, max_depth: int = 5) -> str:
         """Build an auditable proof tree for a decision, tracing evidence back to sources."""
@@ -162,7 +194,15 @@ def register(mcp):
 
         return tree.render_text()
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get fuzzy decision confidence",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def reasoning_fuzzy_confidence(decision_id: str) -> str:
         """Get multi-dimensional confidence score for a decision (evidence, recency, consensus, directness)."""
@@ -190,7 +230,15 @@ def register(mcp):
 
         return f"Fuzzy confidence for {decision_id}:\n{score.to_dict()}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Extract a reasoning trace",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=True,
+        ),
+    )
     @graceful
     def reasoning_extract_trace(
         content: str,

@@ -4,6 +4,8 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 
+from mcp.types import ToolAnnotations
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -23,7 +25,15 @@ FRICTION_SEVERITIES = ("low", "medium", "high")
 def register(mcp):
     """Register development workflow tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Record a development decision",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def dev_record_decision(
         title: str,
@@ -69,7 +79,15 @@ def register(mcp):
             f"Search tip: use dev_query_decisions with query related to '{title}'"
         )
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Query development decisions",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def dev_query_decisions(
         query: str,
@@ -139,7 +157,15 @@ def register(mcp):
 
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Save a development session",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def dev_save_session(
         summary: str,
@@ -186,7 +212,15 @@ def register(mcp):
 
         return f"Session saved: {session_id}\nSummary: {summary}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Load development context",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def dev_load_context(
         topic: str,
@@ -254,7 +288,15 @@ def register(mcp):
 
         return "\n".join(output) if output else f"No context found for topic: {topic}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Record a development pattern",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def dev_record_pattern(
         name: str,
@@ -293,7 +335,15 @@ def register(mcp):
 
         return f"Pattern recorded: {pattern_id}\nName: {name}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Log development friction",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def dev_log_friction(
         description: str,

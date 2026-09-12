@@ -10,6 +10,8 @@ Contract: smart-memory-docs/docs/features/CORE-GRAPH-ALIAS-RESOLVE-2/resolve-ali
 
 import logging
 
+from mcp.types import ToolAnnotations
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -55,7 +57,15 @@ def _format_alias_report(data: dict) -> str:
 def register(mcp):
     """Register graph-maintenance tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Resolve entity aliases",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_resolve_aliases(
         dry_run: bool = False, disambiguate: bool = False

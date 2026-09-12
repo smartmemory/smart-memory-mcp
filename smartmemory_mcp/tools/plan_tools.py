@@ -4,6 +4,8 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
+from mcp.types import ToolAnnotations
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -12,7 +14,15 @@ logger = logging.getLogger(__name__)
 def register(mcp):
     """Register plan and failure tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Create a memory plan",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_plan_create(
         title: str,
@@ -28,7 +38,15 @@ def register(mcp):
         result = manager.create(title, tasks or [], context, created_by)
         return f"Plan created. plan_id: {result['plan_id']}, tasks: {len(result['task_ids'])}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get a memory plan",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_plan_get(
         plan_id: str,
@@ -43,7 +61,15 @@ def register(mcp):
             return f"Plan {plan_id} not found."
         return json.dumps(result, indent=2, default=str)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="List active memory plans",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_plan_active() -> str:
         """Get all active plans."""
@@ -61,7 +87,15 @@ def register(mcp):
             )
         return "\n".join(lines)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Update a plan task",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_plan_update_task(
         plan_id: str,
@@ -76,7 +110,15 @@ def register(mcp):
         manager.update_task(plan_id, task_id, status)
         return f"Task {task_id} updated to '{status}' in plan {plan_id}."
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Log a failure",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_log_failure(
         error_type: str,
@@ -103,7 +145,15 @@ def register(mcp):
         )
         return f"Failure logged. Item ID: {item_id}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Check prior failures",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_check_failure(
         error_type: str,

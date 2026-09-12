@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from mcp.types import ToolAnnotations
+
 from smartmemory_mcp.backends.remote import RemoteBackend
 
 from .common import get_backend, graceful
@@ -139,7 +141,15 @@ def _import_counts(result: Any) -> tuple[int, int]:
 def register(mcp: Any) -> None:
     """Register portability tools with the MCP server (3 tools)."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Export a memory bundle",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_export(path: str) -> str:
         """Export all memories as an OKF bundle directory or tar.gz archive."""
@@ -150,7 +160,15 @@ def register(mcp: Any) -> None:
             return "No memories to export."
         return f"Exported {count} memories as an OKF bundle to {export_path}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Import a memory bundle",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_import(path: str) -> str:
         """Losslessly import an OKF bundle through the direct add path."""
@@ -164,7 +182,15 @@ def register(mcp: Any) -> None:
             f"Import complete: {imported} succeeded, {failed} failed from {import_path}"
         )
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Migrate memories to a backend",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_migrate(target: str) -> str:
         """Migrate all memories to a different backend via a temporary OKF bundle."""

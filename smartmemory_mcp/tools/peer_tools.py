@@ -3,6 +3,8 @@
 import logging
 from typing import Optional
 
+from mcp.types import ToolAnnotations
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -26,7 +28,15 @@ def register(mcp):
     # surfaces that as an explicit error payload here, because an MCP server must not
     # crash its transport on a tool failure. An explicit error return is not a silent
     # degradation — no answer is ever invented.
-    @mcp.tool()
+    @mcp.tool(
+        title="Ask a peer about their memory",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=True,
+        ),
+    )
     @graceful
     def peer_chat(
         peer_id: str,

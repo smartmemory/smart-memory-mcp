@@ -8,6 +8,8 @@ import logging
 import os
 from typing import Any, List, Optional, Union
 
+from mcp.types import ToolAnnotations
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -23,7 +25,15 @@ def _pattern_to_dict(p: Any) -> dict:
 def register(mcp):
     """Register read-only pattern tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Query adherence patterns",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def pattern_query(
         scope: Optional[str] = None,
@@ -50,7 +60,15 @@ def register(mcp):
         )
         return [_pattern_to_dict(p) for p in results]
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get an adherence pattern",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def pattern_get(pattern_id: str) -> Optional[dict]:
         """Fetch one pattern by id, or null if not found."""
@@ -62,7 +80,15 @@ def register(mcp):
             return None
         return _pattern_to_dict(inst)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="List adherence patterns",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def pattern_list(limit: int = 200) -> List[dict]:
         """Return every active pattern (no filters)."""
@@ -72,7 +98,15 @@ def register(mcp):
         results = manager.queries.list_all(limit=limit)
         return [_pattern_to_dict(p) for p in results]
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get violation patterns",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_get_violation_patterns(
         rule_id: Optional[str] = None,

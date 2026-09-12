@@ -552,7 +552,15 @@ def register_free(mcp):
 
         return _format_recall(query, final, session_id=session_id)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get working context",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def get_working_context(
         session_id: str,
@@ -850,7 +858,15 @@ def register_pro(mcp):
         success = backend.delete(item_id)
         return f"Deleted: {item_id}" if success else f"Failed to delete: {item_id}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Clear all memories",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_clear(confirm: bool = False) -> str:
         """Clear all memories permanently (requires confirm=True)."""
@@ -1018,7 +1034,15 @@ def register_pro(mcp):
         r = asdict(response) if hasattr(response, "__dataclass_fields__") else response
         return f"Conversation ingested: {r}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Search memories with graph traversal",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_search_advanced(
         query: str, algorithm: str = "query_traversal", max_results: int = 15

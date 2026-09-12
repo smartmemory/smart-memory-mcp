@@ -38,7 +38,15 @@ def _render_read_call(rh: dict) -> str:
 def register(mcp):
     """Register code indexing and search tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Index a codebase",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def code_index(
         directory: str,
@@ -214,7 +222,15 @@ def register(mcp):
             lines.append(line)
         return "\n".join(lines)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Find code authorship",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def code_blame(
         commit: str = "",
@@ -285,7 +301,15 @@ def register(mcp):
             lines.append(f"\n{len(amb)} ambiguous span(s) (tied candidates).")
         return "\n".join(lines)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Read an authoring transcript",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def code_read_transcript(
         source_path: str = "",

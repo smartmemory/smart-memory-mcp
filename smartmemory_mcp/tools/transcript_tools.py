@@ -29,6 +29,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from mcp.types import ToolAnnotations
+
 from smartmemory_mcp.tools.common import graceful
 
 logger = logging.getLogger(__name__)
@@ -292,7 +294,15 @@ def schedule_warm_start() -> bool:
 def register(mcp):
     """Register transcript tools (PRO tier, local backend only)."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Search past coding sessions",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def transcript_search(
         query: str, top_k: int = 5, source: str = "all", project: str = ""
@@ -390,7 +400,15 @@ def register(mcp):
             lines.append("")
         return "\n".join(lines).rstrip() + note
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get transcript index status",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def transcript_status() -> str:
         """Report how much of your Claude Code / Codex history is actually searchable

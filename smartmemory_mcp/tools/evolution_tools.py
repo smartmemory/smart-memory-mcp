@@ -2,6 +2,8 @@
 
 import logging
 
+from mcp.types import ToolAnnotations
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -10,7 +12,15 @@ logger = logging.getLogger(__name__)
 def register(mcp):
     """Register evolution tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Run memory evolution",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def evolution_trigger() -> str:
         """Trigger a memory evolution cycle — runs clustering, deduplication, and consolidation."""
@@ -18,7 +28,15 @@ def register(mcp):
         backend.run_evolution_cycle()
         return "Memory evolution cycle completed successfully."
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Run the deprecated dream phase",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def evolution_dream() -> str:
         """**Deprecated:** CORE-MEMORY-DYNAMICS-1 M1b moved routing to at-ingest
@@ -32,7 +50,15 @@ def register(mcp):
             "ConsolidationRouter (CORE-MEMORY-DYNAMICS-1). Nothing to do."
         )
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get evolution status",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def evolution_status() -> str:
         """Get status of memory evolution processes."""
@@ -51,7 +77,15 @@ def register(mcp):
             f"Pending memory items (formerly 'working'): {pending_count}"
         )
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Synthesize opinions",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def evolution_synthesize_opinions() -> str:
         """Run opinion synthesis — detect patterns in episodic memories and form opinions."""
@@ -59,7 +93,15 @@ def register(mcp):
         backend.run_evolver("opinion_synthesis", log=logger)
         return "Opinion synthesis completed."
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Synthesize observations",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def evolution_synthesize_observations() -> str:
         """Run observation synthesis — create entity summaries from scattered facts."""
@@ -67,7 +109,15 @@ def register(mcp):
         backend.run_evolver("observation_synthesis", log=logger)
         return "Observation synthesis completed."
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Reinforce opinions",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def evolution_reinforce_opinions() -> str:
         """Run opinion reinforcement — update confidence scores based on new evidence."""
@@ -75,7 +125,15 @@ def register(mcp):
         backend.run_evolver("opinion_reinforcement", log=logger)
         return "Opinion reinforcement completed."
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Cluster duplicate entities",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def clustering_run(distance_threshold: float = 0.1) -> str:
         """Run entity clustering/deduplication — merge duplicate entities by vector similarity."""

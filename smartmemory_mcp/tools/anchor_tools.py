@@ -3,6 +3,8 @@
 import logging
 from typing import List, Optional
 
+from mcp.types import ToolAnnotations
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -11,7 +13,15 @@ logger = logging.getLogger(__name__)
 def register(mcp):
     """Register anchor lifecycle tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Set a session anchor",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_anchor_set(
         content: str,
@@ -26,7 +36,15 @@ def register(mcp):
         item_id = manager.set(content, anchor_type, session_id)
         return f"Anchor set: {item_id} (type={anchor_type}, session={session_id})"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="List session anchors",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_anchor_list(
         session_id: str = "",
@@ -48,7 +66,15 @@ def register(mcp):
             )
         return "\n".join(lines)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Clear session anchors",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_anchor_clear(
         session_id: str = "",
@@ -63,7 +89,15 @@ def register(mcp):
         type_label = f" (type={anchor_type})" if anchor_type else ""
         return f"Cleared {count} anchor(s){type_label} for session={session_id}."
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Graduate session anchors",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_anchor_graduate(
         session_id: str = "",
@@ -81,7 +115,15 @@ def register(mcp):
             lines.append(f"  {did}")
         return "\n".join(lines)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Check anchor drift",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_anchor_check_drift(
         session_id: str = "",

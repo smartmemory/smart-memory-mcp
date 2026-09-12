@@ -2,6 +2,8 @@
 
 import logging
 
+from mcp.types import ToolAnnotations
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -30,7 +32,15 @@ def _get_zettel_memory():
 def register(mcp):
     """Register Zettelkasten tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Find memory backlinks",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def zettel_backlinks(
         note_id: str,
@@ -50,7 +60,15 @@ def register(mcp):
             output.append(f"  - {bl}")
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Find memory connections",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def zettel_connections(
         note_id: str,
@@ -70,7 +88,15 @@ def register(mcp):
             output.append(f"  - {conn}")
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Find memory clusters",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def zettel_clusters(
         min_size: int = 3,
@@ -94,7 +120,15 @@ def register(mcp):
             )
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Discover related memories",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def zettel_discover(
         note_id: str,

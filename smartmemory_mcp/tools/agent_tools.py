@@ -100,7 +100,15 @@ def register(mcp):
             return f"Agent {agent_id} has no recall profile (default behavior)."
         return f"Recall profile for {agent_id}: {json.dumps(profile, indent=2)}"
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get an agent evaluation",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def agent_evaluation_get(
         agent_id: str,

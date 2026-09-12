@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added (2026-09-12) — tool annotations on every MCP tool (directory submission blocker)
+
+- All 106 `@mcp.tool` registrations now carry a `title` and an explicit `ToolAnnotations`
+  (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`). Previously 26 did.
+- Required by both the Anthropic Claude Connectors Directory and the OpenAI ChatGPT Apps
+  directory: a reviewer rejects a submission before accepting it when tools lack annotations.
+  See `smart-memory-docs/docs/features/PLAT-MCP-HOSTED-1/directory-submissions.md`.
+- Classified from each tool's implementation, not its name. Notable calls: alias resolution and
+  clustering merge existing graph entities, and decision supersede/retract change lifecycle
+  state, so all are `destructiveHint=True`; export writes to a caller-selected path, so it is
+  not read-only; `peer_chat` is read-only but `openWorldHint=True` because it synthesizes
+  through a model.
+- The two hosted wrapper registrations now declare annotations explicitly instead of forwarding
+  an annotation object indirectly.
+- Behaviour unchanged: only `title=`, `annotations=` and the `ToolAnnotations` imports were
+  added. No tool was renamed and no signature changed.
+- Flagged for human review as conservatively classified destructive: `memory_anchor_graduate`,
+  `reasoning_resolve_conflict`, `evolution_trigger`.
+
 ### Changed: CORE-LEXICAL-INDEX-1 consumer cutover
 - R-E4: Pin lexical HTTP contract v2 to exact 400/503 detail envelopes and verify consumer error fidelity.
 

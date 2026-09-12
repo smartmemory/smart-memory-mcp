@@ -3,6 +3,8 @@
 import logging
 from typing import Optional
 
+from mcp.types import ToolAnnotations
+
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -11,7 +13,15 @@ logger = logging.getLogger(__name__)
 def register(mcp):
     """Register insight tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get memory health",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def insight_health() -> str:
         """Get memory health summary — item counts, health score, and detected issues."""
@@ -59,7 +69,15 @@ def register(mcp):
 
         return "\n".join(parts)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Reflect on memory patterns",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def insight_reflect(top_k: int = 10) -> str:
         """Reflect on memory patterns — identify key concepts, top entities, and dominant topics."""
@@ -98,7 +116,15 @@ def register(mcp):
 
         return "\n".join(parts)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Get maintenance status",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def insight_maintenance_status(
         stale_threshold_days: int = 90,
@@ -126,7 +152,15 @@ def register(mcp):
 
         return "\n".join(parts)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="List available plugins",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def insight_plugins() -> str:
         """List available extractors and enrichers."""
@@ -160,7 +194,15 @@ def register(mcp):
 
         return "\n".join(parts)
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Set personalization settings",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def insight_personalize(
         traits: Optional[dict] = None,
@@ -175,7 +217,15 @@ def register(mcp):
         )
         return "Personalization applied successfully."
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Process memory feedback",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def insight_feedback(
         feedback: Optional[dict] = None,
@@ -186,7 +236,15 @@ def register(mcp):
         backend.update_from_feedback(feedback=feedback or {}, memory_type=memory_type)
         return "Feedback processed successfully."
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Ground a memory item",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def insight_ground(item_id: str, source_url: str) -> str:
         """Ground a memory item to an external source URL for provenance."""

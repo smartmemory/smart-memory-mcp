@@ -11,6 +11,8 @@ import logging
 import os
 from pathlib import Path
 
+from mcp.types import ToolAnnotations
+
 from smartmemory_mcp.tools.common import graceful
 
 log = logging.getLogger(__name__)
@@ -19,7 +21,15 @@ log = logging.getLogger(__name__)
 def register(mcp) -> None:
     """Register lifecycle tools on the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(
+        title="Configure automatic memory lifecycle",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     @graceful
     def memory_auto(
         session_id: str = "",

@@ -15,6 +15,7 @@ import os
 import sys
 
 from fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from smartmemory_mcp.capabilities import BackendCapabilityMiddleware
 from smartmemory_mcp.health import register_health
@@ -36,7 +37,15 @@ _TRANSCRIPT_TOOLS_REGISTERED = False
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Log in with an API key",
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
 @graceful
 def login(api_key: str) -> str:
     """Authenticate with a SmartMemory API key. Restart MCP server to unlock PRO tools."""
@@ -54,7 +63,15 @@ def login(api_key: str) -> str:
     return f"{result}\nRestart MCP server to unlock PRO tools."
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Show the current account",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
 @graceful
 def whoami() -> str:
     """Show current session: user, team, tier, and backend mode."""
@@ -78,7 +95,15 @@ def whoami() -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Switch workspace",
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
 @graceful
 def switch_team(team_id: str) -> str:
     """Switch to a different workspace/team."""
