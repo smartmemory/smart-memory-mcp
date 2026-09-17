@@ -143,7 +143,7 @@ def fake_svc_api(seen: list[tuple[str, str]] | None = None):
         if path == "/memory/by-metadata":
             return ok({"items": [ITEM], "total": 1})
         if path == "/memory/health":
-            return ok({"status": "ok", "total_items": 1, "memory_types": {}})
+            return ok({"total_items": 1, "items_by_type": {"semantic": 1}})
         if path == "/memory/result-feedback":
             return ok({"result_used_count": 1, "result_shown_count": 1})
         if path == "/memory/teams":

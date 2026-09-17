@@ -899,27 +899,80 @@ def register_pro(mcp):
         memory_search_by_metadata, whose endpoint is deprecated (GRAPH-API-1l).
         """
         backend = get_backend()
-        result = backend.list_memories(
-            limit=limit,
-            offset=offset,
-            metadata_key=metadata_key,
-            metadata_value=metadata_value,
-        )
+        try:
+            result = backend.list_memories(
+                limit=limit,
+                offset=offset,
+                metadata_key=metadata_key,
+                metadata_value=metadata_value,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Memory list unavailable; page items and corpus total were lost because the "
+                "backend list call failed: %s",
+                exc,
+            )
+            raise
 
         # Handle both list and dict responses
         if isinstance(result, dict):
-            items = result.get("items", [])
-            total = result.get("total", len(items))
+            if error := result.get("error"):
+                logger.warning(
+                    "Memory list unavailable; page items and corpus total were lost because the "
+                    "backend returned an error: %s",
+                    error,
+                )
+                raise RuntimeError(str(error))
+            raw_items = result.get("items")
+            if not isinstance(raw_items, list):
+                logger.warning(
+                    "Memory list unavailable; page items and corpus total were lost because the "
+                    "backend response did not contain an 'items' list."
+                )
+                raise RuntimeError(
+                    "Memory list response did not contain an 'items' list."
+                )
+            items = raw_items
+            raw_total = result.get("total")
+            total = (
+                raw_total
+                if isinstance(raw_total, int) and not isinstance(raw_total, bool)
+                else None
+            )
+            if total is None:
+                logger.warning(
+                    "Memory list total is unavailable; corpus size was lost because the backend "
+                    "response omitted a valid integer 'total'."
+                )
         elif isinstance(result, list):
             items = result
-            total = len(items)
+            total = None
+            logger.warning(
+                "Memory list total is unavailable; corpus size was lost because the backend "
+                "returned only a page list."
+            )
         else:
-            return "Unexpected response format."
+            logger.warning(
+                "Memory list unavailable; page items and corpus total were lost because the "
+                "backend returned %s instead of an object or list.",
+                type(result).__name__,
+            )
+            raise RuntimeError("Unexpected memory list response format.")
 
         if not items:
-            return "No memories found."
+            if total == 0:
+                return "No memories found."
+            if total is not None:
+                return (
+                    f"No memories returned for this page (offset {offset}); "
+                    f"{total} memories exist."
+                )
+            return "No memories returned; total unavailable."
 
-        output = [f"Showing {len(items)} of {total} memories:\n"]
+        if total is None:
+            output = [f"Returned {len(items)} memories; total unavailable:\n"]
+        else:
+            output = [f"Showing {len(items)} of {total} memories:\n"]
         for item in items:
             item_id = item["item_id"]
             content = str(item["content"])
@@ -943,15 +996,59 @@ def register_pro(mcp):
         """Get memory count statistics grouped by type."""
         backend = get_backend()
         try:
-            result = backend.stats()
-        except NotImplementedError:
-            result = backend.get_all_items_debug()
+            try:
+                result = backend.stats()
+            except NotImplementedError as exc:
+                logger.warning(
+                    "Dedicated memory statistics are unavailable because the backend does not "
+                    "implement stats (%s); falling back to the debug summary, so health fields "
+                    "may be lost.",
+                    exc,
+                )
+                result = backend.get_all_items_debug()
+        except Exception as exc:
+            logger.warning(
+                "Memory statistics unavailable; total and per-type counts were lost because the "
+                "backend stats call failed: %s",
+                exc,
+            )
+            raise
 
-        if isinstance(result, dict):
-            total = result.get("total_items", 0)
-            by_type = result.get("items_by_type", {})
-        else:
-            return f"Stats: {result}"
+        if not isinstance(result, dict):
+            logger.warning(
+                "Memory statistics unavailable; total and per-type counts were lost because the "
+                "backend returned %s instead of an object.",
+                type(result).__name__,
+            )
+            raise RuntimeError("Memory statistics response must be an object.")
+
+        if error := result.get("error"):
+            logger.warning(
+                "Memory statistics unavailable; total and per-type counts were lost because the "
+                "backend returned an error: %s",
+                error,
+            )
+            raise RuntimeError(str(error))
+
+        total = result.get("total_items")
+        if not isinstance(total, int) or isinstance(total, bool):
+            logger.warning(
+                "Memory statistics unavailable; the total count was lost because the backend "
+                "response omitted a valid integer 'total_items'."
+            )
+            raise RuntimeError(
+                "Memory statistics response did not contain a valid 'total_items'."
+            )
+
+        by_type = result.get("items_by_type")
+        if not isinstance(by_type, dict):
+            logger.warning(
+                "Memory statistics unavailable; per-type counts were lost because the backend "
+                "response omitted a valid 'items_by_type' object."
+            )
+            raise RuntimeError(
+                "Memory statistics response did not contain a valid 'items_by_type'."
+            )
 
         output = ["Memory Statistics:\n", f"Total memories: {total}", "\nBy type:"]
         for mtype, count in sorted(by_type.items()):

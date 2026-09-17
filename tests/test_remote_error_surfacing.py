@@ -42,7 +42,39 @@ def test_list_memories_returns_items_on_success(monkeypatch) -> None:
     )
 
     out = backend.list_memories()
-    assert [i["item_id"] for i in out] == ["m-1"]
+    assert out["total"] == 1
+    assert [i["item_id"] for i in out["items"]] == ["m-1"]
+
+
+def test_list_memories_preserves_server_total_larger_than_page(monkeypatch) -> None:
+    """The backend must not replace the corpus total with the current page size."""
+    backend = _backend()
+    monkeypatch.setattr(
+        backend,
+        "_request",
+        lambda *a, **k: {
+            "items": [{"item_id": "m-1", "content": "hi", "memory_type": "semantic"}],
+            "total": 4000,
+            "limit": 1,
+            "offset": 0,
+        },
+    )
+
+    out = backend.list_memories(limit=1)
+
+    assert out["total"] == 4000
+    assert len(out["items"]) == 1
+
+
+def test_stats_raises_on_error_dict(monkeypatch) -> None:
+    """A failed stats call must surface as failure, never as a zero count."""
+    backend = _backend()
+    monkeypatch.setattr(
+        backend, "_request", lambda *a, **k: {"error": "API error 500: boom"}
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        backend.stats()
 
 
 def test_search_by_metadata_raises_on_error_dict(monkeypatch) -> None:
@@ -249,14 +281,15 @@ def test_get_still_returns_none_for_genuine_absence(monkeypatch) -> None:
     assert backend.get("m-1") is None
 
 
-def test_list_memories_guards_a_non_list_items_value(monkeypatch) -> None:
-    """A regressed {"items": {...}} must not become one blank memory per dict key."""
+def test_list_memories_rejects_a_non_list_items_value(monkeypatch) -> None:
+    """A malformed page must surface as failure, not as an empty corpus."""
     backend = _backend()
     monkeypatch.setattr(
         backend, "_request", lambda *a, **k: {"items": {"a": 1, "b": 2}, "total": 2}
     )
 
-    assert backend.list_memories() == []
+    with pytest.raises(RuntimeError, match="items.*list"):
+        backend.list_memories()
 
 
 def test_superseded_fields_survive_normalization(monkeypatch) -> None:

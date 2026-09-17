@@ -9,6 +9,7 @@ from __future__ import annotations
 from smartmemory_mcp.tools.lexical_contract import validate_channel_weights
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,8 @@ import httpx
 
 from .interface import BackendCapabilities
 from .models import MemoryResult, normalize_item, normalize_items
+
+logger = logging.getLogger(__name__)
 
 
 class RemoteBackend(BackendCapabilities):
@@ -584,7 +587,22 @@ class RemoteBackend(BackendCapabilities):
 
     def stats(self, **kwargs: Any) -> dict[str, Any]:
         """GET /memory/health."""
-        return self._request("GET", "/memory/health") or {}
+        result = self._request("GET", "/memory/health")
+        if err := self._fmt_error(result):
+            logger.warning(
+                "Memory statistics unavailable; total and per-type counts were lost because "
+                "GET /memory/health failed: %s",
+                err,
+            )
+            raise RuntimeError(err)
+        if not isinstance(result, dict):
+            logger.warning(
+                "Memory statistics unavailable; total and per-type counts were lost because "
+                "GET /memory/health returned %s instead of an object.",
+                type(result).__name__,
+            )
+            raise RuntimeError("GET /memory/health returned an invalid response.")
+        return result
 
     def health(self) -> dict[str, Any]:
         """GET /health — API-level health check."""
@@ -595,7 +613,7 @@ class RemoteBackend(BackendCapabilities):
         except Exception as e:
             return {"healthy": False, "error": str(e), "api_url": self._api_url}
 
-    def list_memories(self, **kwargs: Any) -> list[MemoryResult]:
+    def list_memories(self, **kwargs: Any) -> dict[str, Any] | list[MemoryResult]:
         """GET /memory/list — list memories, optionally filtered by metadata.
 
         GRAPH-API-1l added `metadata_key`/`metadata_value` to this route (the
@@ -629,16 +647,47 @@ class RemoteBackend(BackendCapabilities):
         if isinstance(result, dict):
             # Surface the error instead of masking a backend 500 as "no memories".
             if err := self._fmt_error(result):
+                logger.warning(
+                    "Memory list unavailable; page items and corpus total were lost because "
+                    "GET /memory/list failed: %s",
+                    err,
+                )
                 raise RuntimeError(err)
             # Service returns paginated dict with "items" and "total".
             # isinstance-guarded like search_by_metadata: a regressed
             # {"items": {...}} would otherwise become one blank memory per dict
             # key instead of surfacing a contract error.
             rows = result.get("items")
-            raw = rows if isinstance(rows, list) else []
-        else:
-            raw = result if isinstance(result, list) else []
-        return normalize_items(raw)
+            if not isinstance(rows, list):
+                logger.warning(
+                    "Memory list unavailable; page items and corpus total were lost because "
+                    "GET /memory/list returned an 'items' value that was not a list."
+                )
+                raise RuntimeError(
+                    "GET /memory/list returned an invalid response: 'items' must be a list."
+                )
+
+            page = {**result, "items": normalize_items(rows)}
+            if "total" not in result:
+                logger.warning(
+                    "Memory list response omitted 'total'; corpus size was lost because the "
+                    "service returned only page items."
+                )
+            return page
+
+        if isinstance(result, list):
+            logger.warning(
+                "Memory list response used the legacy bare-list shape; corpus total is unavailable "
+                "because the service returned only page items."
+            )
+            return normalize_items(result)
+
+        logger.warning(
+            "Memory list unavailable; page items and corpus total were lost because "
+            "GET /memory/list returned %s instead of an object or list.",
+            type(result).__name__,
+        )
+        raise RuntimeError("GET /memory/list returned an invalid response.")
 
     def ingest_document(
         self,

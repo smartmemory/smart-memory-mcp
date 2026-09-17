@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed (2026-09-17) — list and statistics failures no longer look like empty memory
+
+- Remote statistics failures now raise through the MCP tool instead of letting a service error
+  dictionary render as `Total memories: 0`; malformed statistics responses fail explicitly too.
+- Remote list responses preserve the service-reported corpus total. The tool now distinguishes
+  returned page size from total corpus size, labels totals unavailable for legacy bare-list
+  responses, and does not call an empty page an empty corpus.
+- Touched degradation and contract-error paths log warnings naming the data lost and the reason.
+
 ### Added (2026-09-12) — tool annotations on every MCP tool (directory submission blocker)
 
 - All 106 `@mcp.tool` registrations now carry a `title` and an explicit `ToolAnnotations`

@@ -128,8 +128,8 @@ class MemoryBackend(Protocol):
 
     # --- Collection operations ---------------------------------------------------
 
-    def list_memories(self, **kwargs: Any) -> list[MemoryResult]:
-        """List all memory items."""
+    def list_memories(self, **kwargs: Any) -> dict[str, Any] | list[MemoryResult]:
+        """List memory items, preserving pagination metadata when available."""
         ...
 
     def clear_user_memories(self, **kwargs: Any) -> dict[str, Any]:
