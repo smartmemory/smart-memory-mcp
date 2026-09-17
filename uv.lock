@@ -1486,7 +1486,7 @@ wheels = [
 
 [[package]]
 name = "smartmemory-mcp"
-version = "1.4.88"
+version = "1.4.100"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
