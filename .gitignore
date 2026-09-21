@@ -16,3 +16,6 @@ test-env/
 # Local env files (hosted MCP dev credentials etc.)
 .env
 .env.*
+
+# session flush scratch (per-session, not shared state)
+session-context*
