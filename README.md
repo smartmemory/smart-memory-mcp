@@ -166,7 +166,7 @@ Full SmartMemory documentation: https://docs.smartmemory.ai
 
 ## Part of SmartMemory
 
-This is one component of the SmartMemory ecosystem. See the [main repo](https://github.com/smart-memory/smart-memory) for the broader project.
+This is one component of the SmartMemory ecosystem. See the [main repo](https://github.com/smartmemory/smart-memory) for the broader project.
 
 ## Lexical search migration
 
@@ -174,4 +174,4 @@ Search uses `lexical` with default weight 0.8. Replace removed `contains` and `k
 
 Local tools, hosted search and the remote backend validate the same names. Failed search returns an MCP error result, including connection failure.
 
-Quiesce old writers before first-open indexing. Verify the engine capability pin and use `sm rebuild --lexical` for recovery. [Migration, targets and measured limitations](https://github.com/smart-memory/smart-memory-docs/blob/main/docs/features/CORE-LEXICAL-INDEX-1/migration.md).
+Quiesce old writers before first-open indexing. Verify the engine capability pin and use `sm rebuild --lexical` for recovery. [Migration, targets and measured limitations](https://github.com/smartmemory/smart-memory-docs/blob/main/docs/features/CORE-LEXICAL-INDEX-1/migration.md).
