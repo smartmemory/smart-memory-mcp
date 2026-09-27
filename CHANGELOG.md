@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## 1.5.0 — 2026-09-27
 
 ### Fixed (2026-09-27) — release test harness drift
 
