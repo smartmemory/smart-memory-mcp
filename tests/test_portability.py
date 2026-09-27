@@ -11,8 +11,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from smartmemory_mcp.backends.remote import RemoteBackend
 from smartmemory_mcp.backends.local import LocalBackend
+from smartmemory_mcp.backends.remote import RemoteBackend
 from smartmemory_mcp.tools import portability_tools
 
 
@@ -59,7 +59,7 @@ def _registered_tools() -> dict[str, object]:
     registered: dict[str, object] = {}
 
     class FakeMCP:
-        def tool(self):
+        def tool(self, *args, **kwargs):
             def decorator(fn):
                 registered[fn.__name__] = fn
                 return fn

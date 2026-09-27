@@ -13,7 +13,6 @@ import os
 import subprocess
 import sys
 
-
 from smartmemory_mcp.tier import Tier, resolve_tier
 
 MCP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -22,6 +21,15 @@ MCP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _COUNT_SNIPPET = """\
 import asyncio
 import json
+import os
+import smartmemory_mcp.tier as tier
+import smartmemory_mcp.capabilities as capabilities
+from smartmemory_mcp.backends.remote import RemoteBackend
+
+# Isolate registration from stored login credentials and local database setup.
+# The listing still runs the real capability middleware against a remote backend.
+tier.get_api_key = lambda: os.environ.get("SMARTMEMORY_API_KEY", "")
+capabilities.get_backend = lambda: RemoteBackend(api_key="sk_test_key_123")
 from smartmemory_mcp.server import mcp
 tools = asyncio.run(mcp.list_tools())
 print(json.dumps({"count": len(tools), "names": sorted(tool.name for tool in tools)}))
@@ -45,6 +53,7 @@ def _run_snippet(env: dict[str, str]) -> dict:
         [sys.executable, "-c", _COUNT_SNIPPET],
         capture_output=True,
         text=True,
+        check=False,
         env=env,
         cwd=MCP_ROOT,
     )
@@ -121,16 +130,7 @@ FREE_TOOLS = sorted(
 
 class TestToolRegistration:
     def test_free_tier_tool_count(self):
-        """FREE tier registers exactly 17 tools.
-
-        NOTE: `_clean_env` only strips the two tier env vars — it cannot reach the
-        keyring/file credential store that `tier.get_api_key()` also consults. On a
-        developer machine that is logged in (smartmemory_app keyring), this resolves
-        to a paid tier and the count comes back 69 instead of 16. That is a local
-        artifact, NOT a regression; CI and any clean container see FREE correctly.
-        Verify locally with: docker run --rm -v "$PWD":/w -w /w python:3.11-slim \
-        sh -c "pip install -q -e . pytest && pytest tests/ -q"
-        """
+        """FREE tier registers exactly 17 tools."""
         env = _clean_env()
         data = _run_snippet(env)
         assert data["count"] == 17, (

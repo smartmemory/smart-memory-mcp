@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed (2026-09-27) — release test harness drift
+
+- Isolate tier registration checks from stored credentials and local database setup while listing through the real remote capability filter. Keep the documented FREE/PRO/PRO+ tool counts and membership assertions.
+- Update the hosted search smoke input to the accepted semantic channel and allow the portability test registrar to accept tool metadata.
+
 ### Fixed (2026-09-17) — list and statistics failures no longer look like empty memory
 
 - Remote statistics failures now raise through the MCP tool instead of letting a service error
@@ -471,7 +476,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## Historical lockstep version entries
 ### Changed (auto, lockstep) — track product version 1.4.51 (1.4.51)
 - Version copied from the smartmemory-core release (single-source lockstep).
 

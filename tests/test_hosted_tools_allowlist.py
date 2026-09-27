@@ -182,12 +182,14 @@ class _Harness:
 
     def run(self, body):
         async def outer():
-            async with self.app.router.lifespan_context(self.app):
-                async with httpx.AsyncClient(
+            async with (
+                self.app.router.lifespan_context(self.app),
+                httpx.AsyncClient(
                     transport=httpx.ASGITransport(app=self.app),
                     base_url="https://mcp.test",
-                ) as client:
-                    return await body(client)
+                ) as client,
+            ):
+                return await body(client)
 
         return anyio.run(outer)
 
@@ -300,7 +302,7 @@ def test_no_hosted_tool_takes_a_filesystem_path() -> None:
 SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ("memory_search", {"query": "runbook"}),
     ("memory_search", {"query": "runbook", "memory_type": "semantic"}),
-    ("memory_search", {"query": "runbook", "channel_weights": {"vector": 1.0}}),
+    ("memory_search", {"query": "runbook", "channel_weights": {"semantic": 1.0}}),
     ("memory_search", {"query": "runbook", "top_k": 3, "decompose": True}),
     ("memory_search", {"query": "runbook", "multi_hop": True, "max_hops": 2}),
     ("memory_search", {"query": "runbook", "as_of_date": "2026-01-01"}),
