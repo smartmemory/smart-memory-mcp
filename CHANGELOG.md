@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `whoami` reports missing local models with the core `sm setup` instructions and logs a warning, instead of describing the failure as a missing login.
+
 ## 1.5.0 — 2026-09-27
 
 ### Fixed (2026-09-27) — release test harness drift

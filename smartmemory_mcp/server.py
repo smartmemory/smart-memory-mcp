@@ -77,6 +77,14 @@ def whoami() -> str:
     """Show current session: user, team, tier, and backend mode."""
     from smartmemory_mcp.backends.dispatch import resolve_backend
 
+    # Core is optional for remote-only MCP installs.
+    try:
+        from smartmemory.errors import MissingModelError
+    except ImportError:
+        missing_model_errors = ()
+    else:
+        missing_model_errors = (MissingModelError,)
+
     tier = resolve_tier()
     lines = [f"Tier: {tier.name}"]
 
@@ -88,6 +96,9 @@ def whoami() -> str:
     try:
         backend = resolve_backend()
         lines.append(backend.whoami())
+    except missing_model_errors as exc:
+        logger.warning("Local model unavailable: %s", exc)
+        lines.append(str(exc))
     except RuntimeError:
         lines.append("Not logged in. Run login(api_key) to authenticate.")
         lines.append("Backend: none resolved")
