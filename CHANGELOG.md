@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.5.19 — 2026-10-03
+
 ### Fixed
 
 - OKF archive imports and expanded remote exports reject Windows path escapes, device names, alternate data streams and case collisions before writing any member.
