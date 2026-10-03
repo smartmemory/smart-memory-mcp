@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any
 
 from .interface import BackendCapabilities
@@ -50,15 +51,32 @@ class LocalBackend(BackendCapabilities):
     unsupported_capabilities = frozenset({"request"})
 
     def __init__(self) -> None:
+        self._memory: Any = None
+        self._init_lock = threading.Lock()
+
+    def _get_memory(self) -> Any:
+        """Resolve storage only when an operation needs the local memory."""
         try:
             from smartmemory_app.storage import get_memory
-
-            self._get_memory = get_memory
-            self._mem = get_memory()
-        except ImportError:
+        except ImportError as exc:
             raise RuntimeError(
                 "Local backend requires the smartmemory package.\nInstall with: pip install smartmemory"
-            )
+            ) from exc
+        return get_memory()
+
+    @property
+    def _mem(self) -> Any:
+        """Initialize once under a lock, caching only successful construction."""
+        if self._memory is None:
+            with self._init_lock:
+                if self._memory is None:
+                    self._memory = self._get_memory()
+        return self._memory
+
+    @_mem.setter
+    def _mem(self, memory: Any) -> None:
+        """Allow explicit memory injection by existing adapters and tests."""
+        self._memory = memory
 
     # -- Core CRUD --
 

@@ -237,6 +237,63 @@ def test_extract_bundle_rejects_parent_traversal(tmp_path: Path) -> None:
     assert not (tmp_path / "escape.md").exists()
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        r"..\escape.md",
+        r"folder\..\..\escape.md",
+        r"C:\escape.md",
+        "C:/escape.md",
+        "C:escape.md",
+        r"\\server\share\escape.md",
+        "/escape.md",
+        "folder/item.md:stream",
+        "folder/NUL.md",
+        "folder/CON",
+        "folder/nul .txt",
+        "folder/COM¹.md",
+        "folder/CONOUT$.md",
+        "folder/item.md.",
+        "folder/item.md ",
+    ],
+)
+def test_extract_rejects_windows_escapes_before_any_write(tmp_path, name):
+    archive_path = tmp_path / "malicious.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        archive.addfile(tarfile.TarInfo("index.md"))
+        archive.addfile(tarfile.TarInfo(name))
+
+    destination = tmp_path / "out"
+    with pytest.raises(ValueError, match="Unsafe archive member path"):
+        portability_tools._extract_bundle(archive_path, destination)
+    assert list(destination.iterdir()) == []
+
+
+def test_extract_rejects_case_collisions_before_any_write(tmp_path):
+    archive_path = tmp_path / "collision.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        for name in ("index.md", "Item.md", "item.md"):
+            archive.addfile(tarfile.TarInfo(name))
+    destination = tmp_path / "out"
+    with pytest.raises(ValueError, match="Duplicate archive member path"):
+        portability_tools._extract_bundle(archive_path, destination)
+    assert list(destination.iterdir()) == []
+
+
+def test_extract_rejects_symlink_before_any_write(tmp_path):
+    archive_path = tmp_path / "symlink.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        archive.addfile(tarfile.TarInfo("index.md"))
+        member = tarfile.TarInfo("link")
+        member.type = tarfile.SYMTYPE
+        member.linkname = "../outside"
+        archive.addfile(member)
+    destination = tmp_path / "out"
+    with pytest.raises(ValueError, match="Unsupported archive member type"):
+        portability_tools._extract_bundle(archive_path, destination)
+    assert list(destination.iterdir()) == []
+
+
 def test_migrate_reverts_config_on_total_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

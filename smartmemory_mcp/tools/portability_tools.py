@@ -6,7 +6,7 @@ import logging
 import shutil
 import tarfile
 import tempfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from mcp.types import ToolAnnotations
@@ -18,6 +18,13 @@ from .common import get_backend, graceful
 logger = logging.getLogger(__name__)
 
 _ARCHIVE_SUFFIXES = (".tar.gz", ".tgz")
+# Windows device names are unsafe on every host. Keep this check usable on
+# Python 3.10+ without the deprecated PureWindowsPath.is_reserved API.
+_WINDOWS_RESERVED_NAMES = (
+    {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+    | {f"COM{char}" for char in "123456789¹²³"}
+    | {f"LPT{char}" for char in "123456789¹²³"}
+)
 
 
 def _is_archive(path: Path) -> bool:
@@ -51,7 +58,19 @@ def _validate_archive_members(members: list[tarfile.TarInfo]) -> None:
     """Reject archive members that could escape the extraction directory."""
     for member in members:
         path = PurePosixPath(member.name)
-        if path.is_absolute() or ".." in path.parts:
+        if (
+            path.is_absolute()
+            or ".." in path.parts
+            or PureWindowsPath(member.name).anchor
+            or "\\" in member.name
+            or any(
+                any(char in part for char in '<>:"|?*')
+                or any(ord(char) < 32 for char in part)
+                or part.endswith((".", " "))
+                or part.partition(".")[0].rstrip(" ").upper() in _WINDOWS_RESERVED_NAMES
+                for part in path.parts
+            )
+        ):
             raise ValueError(f"Unsafe archive member path: {member.name}")
         if not (member.isdir() or member.isreg()):
             raise ValueError(f"Unsupported archive member type: {member.name}")
@@ -65,8 +84,22 @@ def _extract_bundle(archive_path: Path, destination: Path) -> Path:
     with tarfile.open(archive_path, mode="r:gz") as archive:
         members = archive.getmembers()
         _validate_archive_members(members)
+        root = destination.resolve()
+        targets = []
+        seen = set()
+        # Validate the entire archive before publishing any member.
         for member in members:
             target = destination.joinpath(*PurePosixPath(member.name).parts)
+            if not target.resolve().is_relative_to(root):
+                raise ValueError(f"Unsafe archive member path: {member.name}")
+            identity = target.relative_to(destination).as_posix().casefold()
+            if identity in seen:
+                raise ValueError(f"Duplicate archive member path: {member.name}")
+            seen.add(identity)
+            targets.append(target)
+        for member, target in zip(members, targets):
+            if not target.resolve().is_relative_to(root):
+                raise ValueError(f"Unsafe archive member path: {member.name}")
             if member.isdir():
                 target.mkdir(parents=True, exist_ok=True)
                 continue

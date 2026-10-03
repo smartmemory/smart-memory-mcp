@@ -9,6 +9,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
+import tempfile
+import time
 from pathlib import Path
 
 from mcp.types import ToolAnnotations
@@ -75,10 +78,14 @@ def register(mcp) -> None:
         # Write overrides to session state file so hook-driven CLI calls see them.
         if not session_id:
             log.warning(
-                "memory_auto called without session_id — overrides will not persist"
+                "memory_auto called without session_id, overrides will not persist"
             )
+            return "Lifecycle settings not saved: session_id is required."
         else:
-            _write_session_overrides(session_id, overrides)
+            try:
+                _write_session_overrides(session_id, overrides)
+            except (ValueError, RuntimeError) as exc:
+                return f"Lifecycle settings not saved: {exc}"
 
         status = "enabled" if enabled else "disabled"
         parts = [
@@ -103,22 +110,47 @@ def _write_session_overrides(session_id: str, overrides: dict) -> None:
     # Sanitize session_id
     safe_id = "".join(c for c in session_id if c.isalnum() or c in "-_")
     if not safe_id:
-        return
+        raise ValueError(
+            "session_id must contain a letter, digit, hyphen or underscore"
+        )
 
     data_dir = os.environ.get("SMARTMEMORY_DATA_DIR", str(Path.home() / ".smartmemory"))
     sessions_dir = Path(data_dir) / "sessions"
-    sessions_dir.mkdir(parents=True, exist_ok=True)
-
     path = sessions_dir / f"{safe_id}.json"
+    tmp = None
     try:
+        sessions_dir.mkdir(parents=True, exist_ok=True)
         # Read existing state or create new
         if path.exists():
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
         else:
             data = {"session_id": session_id}
         data["config_overrides"] = overrides
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data))
-        tmp.rename(path)
-    except (json.JSONDecodeError, OSError) as e:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=sessions_dir,
+            prefix=f"{safe_id}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            tmp = Path(handle.name)
+            handle.write(json.dumps(data))
+        for attempt in range(3):
+            try:
+                tmp.replace(path)
+                break
+            except OSError as exc:
+                if (
+                    sys.platform != "win32"
+                    or getattr(exc, "winerror", None) not in (32, 33)
+                    or attempt == 2
+                ):
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+    except (ValueError, TypeError, OSError) as e:
         log.warning("Failed to write session overrides: %s", e)
+        raise RuntimeError(f"could not persist session overrides: {e}") from e
+    finally:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)

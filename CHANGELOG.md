@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- OKF archive imports and expanded remote exports reject Windows path escapes, device names, alternate data streams and case collisions before writing any member.
+- Automatic lifecycle overrides replace existing session files on Windows, retry bounded sharing violations, preserve UTF-8 state and report persistence failures instead of claiming success.
+- Local backend construction and PRO-tier tool listing defer memory and model initialization until the first storage operation, with locked, retryable initialization.
 - `whoami` reports missing local models with the core `sm setup` instructions and logs a warning, instead of describing the failure as a missing login.
 
 ## 1.5.0 — 2026-09-27
