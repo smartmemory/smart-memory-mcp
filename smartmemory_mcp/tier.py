@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from enum import IntEnum
 from pathlib import Path
 
@@ -26,60 +27,69 @@ class Tier(IntEnum):
 
 
 def get_api_key() -> str:
-    """Resolve API key from env var, keyring (via smartmemory_app), or file fallback."""
-
-    # 1. Env var always wins
-    env_key = os.environ.get("SMARTMEMORY_API_KEY", "").strip()
-    if env_key:
-        return env_key
-
-    # 2. Try smartmemory_app keyring helper (desktop app installed)
+    """Resolve environment, OS keyring, then the selected protected fallback."""
+    if key := os.environ.get("SMARTMEMORY_API_KEY", "").strip():
+        return key
     try:
-        from smartmemory_app.config import get_api_key as _app_get_api_key
+        import keyring
 
-        app_key = _app_get_api_key()
-        if app_key:
-            return app_key
+        if key := keyring.get_password("smartmemory", "api_key"):
+            return key
     except Exception as exc:
-        logger.debug("smartmemory_app keyring lookup unavailable: %s", exc)
+        logger.debug("Keyring lookup unavailable: %s", type(exc).__name__)
 
-    # 3. File fallback
+    if sys.platform == "win32":
+        from smartmemory_mcp import windows_credentials
+
+        try:
+            return windows_credentials.read_key(
+                windows_credentials.key_path(),
+                legacy=windows_credentials.legacy_key_path(),
+            )
+        except OSError as exc:
+            logger.warning("Protected credential unavailable: %s", exc)
+            return ""
+
+    try:
+        from smartmemory_app.config import get_api_key as app_get_api_key
+
+        if key := app_get_api_key():
+            return key
+    except ImportError:
+        pass
     try:
         if _KEY_FILE.exists():
-            stat = _KEY_FILE.stat()
-            if stat.st_mode & 0o077:
-                logger.warning(
-                    "API key file %s has overly permissive mode %o — reading anyway",
-                    _KEY_FILE,
-                    stat.st_mode & 0o777,
-                )
-            file_key = _KEY_FILE.read_text().strip()
-            if file_key:
-                return file_key
+            if _KEY_FILE.stat().st_mode & 0o077:
+                logger.warning("API key file %s has overly permissive mode", _KEY_FILE)
+            return _KEY_FILE.read_text(encoding="utf-8").strip()
     except OSError as exc:
-        logger.debug("Could not read API key file %s: %s", _KEY_FILE, exc)
-
+        logger.warning("Could not read API key file: %s", type(exc).__name__)
     return ""
 
 
 def store_api_key(key: str) -> None:
-    """Persist API key via keyring (preferred) or file fallback with 0o600 permissions."""
-
-    # 1. Try keyring via smartmemory_app
+    """Persist in keyring first. Windows consumers share one fallback writer."""
     try:
         import keyring
 
         keyring.set_password("smartmemory", "api_key", key)
-        logger.debug("API key stored in keyring")
         return
     except Exception as exc:
-        logger.debug("Keyring storage unavailable: %s", exc)
+        logger.debug("Keyring storage unavailable: %s", type(exc).__name__)
 
-    # 2. File fallback
-    _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    _KEY_FILE.write_text(key)
+    if sys.platform == "win32":
+        from smartmemory_mcp import windows_credentials
+
+        windows_credentials.store_key(
+            windows_credentials.key_path(),
+            key,
+            legacy=windows_credentials.legacy_key_path(),
+        )
+        return
+
+    _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _KEY_FILE.write_text(key, encoding="utf-8")
     _KEY_FILE.chmod(0o600)
-    logger.debug("API key stored at %s", _KEY_FILE)
 
 
 def resolve_tier() -> Tier:
