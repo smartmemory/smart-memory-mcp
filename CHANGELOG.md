@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.5.20 — 2026-10-04
+
 - Standalone Windows MCP selects the canonical credential file and lock without importing the wrapper. Legacy credentials are migration sources only, and a newer legacy write is preserved through protected migration.
 - Windows fallback credentials use one shared implementation with wrapper setup and standalone MCP. Writers lock updates, verify a protected current-SID-only temporary file before secret bytes, and preserve the previous key on ACL failure. Wrapper installations migrate and remove the legacy MCP file once.
 
