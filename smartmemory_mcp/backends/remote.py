@@ -159,6 +159,7 @@ class RemoteBackend(BackendCapabilities):
     ) -> CodeIngestResult:
         """Prepare a complete client-side code bundle and publish it through REST."""
         notice = ""
+        summary = {}
         try:
             from smartmemory.code.indexer import CodeIndexer
         except ModuleNotFoundError as exc:
@@ -168,20 +169,26 @@ class RemoteBackend(BackendCapabilities):
 
             notice = (
                 "WARNING: Python-only indexing. TS/JS/TSX/JSX indexing and shared cross-file "
-                "resolution require smartmemory-core. Install with: pip install smartmemory-core"
+                "resolution require smartmemory-core. Grammar coverage diagnostics and persistent file checkpoints "
+                "are unavailable in the bundled parser. Install with: pip install smartmemory-core"
             )
             logger.warning("%s", notice)
             parser = CodeParser(repo, directory)
             entities, relations, errors = [], [], []
             files = collect_python_files(directory, exclude_dirs, errors=errors)
+            parsed_files = []
             for path in files:
                 parsed_file = parser.parse_file(path)
+                parsed_files.append(parsed_file)
                 entities.extend(parsed_file.entities)
                 relations.extend(parsed_file.relations)
                 errors.extend(parsed_file.errors)
             if errors:
                 return CodeIngestResult(
                     errors=errors,
+                    files_clean=sum(not item.errors for item in parsed_files),
+                    files_failed=len(errors),
+                    publication="refused",
                     files_parsed=len(files),
                     notice=notice,
                     error_message=(
@@ -216,6 +223,16 @@ class RemoteBackend(BackendCapabilities):
                     error_message=f"{notice}\nError indexing: code bundle exceeds 10,000 files or 64 MiB",
                 )
             files_parsed = len(files)
+            summary = dict(
+                files_clean=files_parsed,
+                files_partial=0,
+                files_failed=0,
+                diagnostics=[],
+                acceptance="accepted",
+                staging="prepared",
+                publication="not_attempted",
+                g16_complete=False,
+            )
         else:
             indexer = CodeIndexer(
                 None,
@@ -223,8 +240,20 @@ class RemoteBackend(BackendCapabilities):
                 directory,
                 set(exclude_dirs) if exclude_dirs is not None else None,
             )
-            payload, parsed = indexer.prepare_bundle(languages)
+            try:
+                payload, parsed = indexer.prepare_bundle(languages)
+            except ValueError as exc:
+                if not hasattr(exc, "result"):
+                    raise
+                parsed = exc.result
+                return CodeIngestResult(
+                    files_parsed=parsed.files_parsed,
+                    errors=parsed.errors,
+                    error_message=str(exc),
+                    **parsed.parse_summary(),
+                )
             files_parsed, errors = parsed.files_parsed, parsed.errors
+            summary = parsed.parse_summary()
         response = self.request(
             "POST",
             "/memory/code/index",
@@ -238,6 +267,7 @@ class RemoteBackend(BackendCapabilities):
                 files_parsed=files_parsed,
                 notice=notice,
                 error_message=message,
+                **{**summary, "publication": "failed", "staging": "failed"},
             )
         return CodeIngestResult(
             replaced=True,
@@ -246,6 +276,15 @@ class RemoteBackend(BackendCapabilities):
             errors=errors,
             files_parsed=files_parsed,
             notice=notice,
+            **{
+                **summary,
+                "staging": "written",
+                "publication": "published_partial"
+                if summary.get("files_partial")
+                else "published",
+                **{key: response[key] for key in summary if key in response},
+                "g16_complete": False,
+            },
         )
 
     @property

@@ -52,6 +52,25 @@ def test_remote_ingest_code_preserves_upload_payload(
         exclude_dirs=["excluded"],
         languages=["python", "typescript"],
     )
+    actual = requests[0]
+    if core_installed:
+        summary = actual["json"].pop("parse_summary")
+        assert (
+            summary["files_clean"],
+            summary["files_partial"],
+            summary["files_failed"],
+        ) == (3, 0, 0)
+        assert summary["publication"] == "not_attempted"
+        assert summary["g16_complete"] is False
+        assert {d["file_path"] for d in summary["diagnostics"]} == {
+            "helper.py",
+            "use.py",
+            "view.ts",
+        }
+        for entity in actual["json"]["entities"]:
+            diagnostic = entity.pop("parse_diagnostic")
+            assert diagnostic["file_path"] == entity["file_path"]
+            assert diagnostic["status"] == "clean"
     assert requests == [expected]
     assert result.replaced is True
     assert (result.entities_created, result.edges_created) == (3, 2)

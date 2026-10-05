@@ -95,7 +95,9 @@ every token already issued.
 
 ### Tools
 
-Local `code_index` indexes Python, JavaScript, TypeScript, JSX and TSX through core CodeIndexer. Standalone remote installations without core use the bundled Python parser and report a warning that TS/JS/TSX/JSX indexing and shared cross-file resolution require `pip install smartmemory-core`. A parse error refuses replacement and retains the prior index. Hosted `code_upload` publishes a client-parsed bundle containing `repo`, `entities`, `relations` and optional `commit_hash`. It accepts up to 10,000 source files and 64 MiB per bundle. Destination workspace comes from the authenticated session. The hosted tool accepts no checkout path.
+Local `code_index` indexes Python, JavaScript, TypeScript, JSX and TSX through core CodeIndexer. Standalone remote installations without core use the bundled Python parser and report a warning that TS/JS/TSX/JSX indexing and shared cross-file resolution require `pip install smartmemory-core`. A hard parse error refuses replacement and retains the prior index. Recoverable grammar partials travel with visible diagnostics. Hosted `code_upload` publishes a client-parsed bundle containing `repo`, `entities`, `relations` and optional `commit_hash` and `parse_summary`. It accepts up to 10,000 source files and 64 MiB per bundle. Destination workspace comes from the authenticated session. The hosted tool accepts no checkout path.
+
+Code indexing reports clean, partial and failed file counts plus acceptance, staging and publication outcomes. Localized grammar partials with usable extraction can publish with visible spans and byte coverage. Hard collection or parse failures retain the prior index. Partial 1.x acceptance does not prove G16 complete-generation publication. Successful file extraction checkpoints are stored under `SMARTMEMORY_CODE_CHECKPOINT_DIR` (default `~/.cache/smartmemory/code-parse`) and reused when source, configuration and parser versions match.
 
 Hosted mode advertises 25 tools, an explicit allowlist rather than a tier:
 
