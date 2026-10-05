@@ -16,6 +16,12 @@ def test_local_dead_code_preserves_components_hooks_and_jsx(tmp_path, monkeypatc
     data = tmp_path / "test_fw_store"
     root.mkdir()
     (root / "view.tsx").write_text("""
+
+import express from 'express';
+const {request: app} = express();
+function uncertainHandler() {}
+app.get('header', uncertainHandler);
+
 const Child = () => <span/>;
 const Unused = () => <div/>;
 function useUnused() { return 1; }
@@ -38,6 +44,7 @@ export const View = () => <Child/>;
         code_tools.register(registrar)
         output = registrar.captured["code_dead_code"].function("test_fw_repo")
         assert "Unused (component)" in output and "useUnused (hook)" in output
+        assert "uncertainHandler" not in output
         assert "Child" not in output and "View" not in output
     finally:
         if memory is not None:
@@ -81,6 +88,12 @@ def test_local_falkordb_dead_code_selects_indexed_memory_type(tmp_path, monkeypa
     root.mkdir()
     (root / "view.test.tsx").write_text("""
 import { test } from 'vitest';
+
+import express from 'express';
+const {request: app} = express();
+function uncertainHandler() {}
+app.get('header', uncertainHandler);
+
 const Child = () => <span/>;
 const Unused = () => <div/>;
 function useUnused() { return 1; }
@@ -136,6 +149,7 @@ test('target', () => tested(), 1000);
         code_tools.register(registrar)
         output = registrar.captured["code_dead_code"].function("test_fw_repo")
         assert "Unused (component)" in output and "useUnused (hook)" in output
+        assert "uncertainHandler" not in output
         assert "tested" not in output and "Child" not in output and "View" not in output
     finally:
         try:

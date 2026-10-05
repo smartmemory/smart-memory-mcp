@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased - framework R3 fix
+
+- Verify unknown framework callbacks remain excluded from local Lite and FalkorDB dead-code tools.
+
 ## Unreleased
 
 - Verify local MCP dead-code analysis against real scoped FalkorDB code publication, including component, hook and test reachability, with fixture graph cleanup (CODE-FRAMEWORK-SEMANTICS-1, R-fw-4).
