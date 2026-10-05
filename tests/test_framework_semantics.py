@@ -100,6 +100,10 @@ const Child = () => <span/>;
 const Unused = () => <div/>;
 function useUnused() { return 1; }
 function tested() { return 1; }
+// R6: passed by value only, a REFERENCES edge keeps it out of dead code on FalkorDB.
+function passedByValue() { return 2; }
+const registry = [passedByValue];
+registry.length;
 export const View = () => <Child/>;
 test('target', () => tested(), 1000);
 """)

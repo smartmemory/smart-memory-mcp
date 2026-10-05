@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased - framework R6 fix
+
+- FalkorDB local dead-code test pins that a function used only by value (REFERENCES) is not dead (CODE-FRAMEWORK-SEMANTICS-1, R6-fw).
+
 ## Unreleased - framework R5 fix
 
 - Framework test keeps its unknown registration in a separate file: since R5 an unknown registration excludes every function in its file from dead code (CODE-FRAMEWORK-SEMANTICS-1, R5-fw).
