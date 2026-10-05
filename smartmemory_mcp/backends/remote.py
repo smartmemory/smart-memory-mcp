@@ -113,7 +113,15 @@ class RemoteBackend(BackendCapabilities):
             self._on_http_error(e.response)
             if e.response.status_code == 401:
                 self._on_unauthorized(e.response)
-            return {"error": f"API error {e.response.status_code}: {e.response.text}"}
+            try:
+                body = e.response.json()
+            except ValueError:
+                body = {"detail": e.response.text}
+            return {
+                "error": f"API error {e.response.status_code}: {e.response.text}",
+                "status_code": e.response.status_code,
+                "body": body,
+            }
         except Exception as e:
             return {"error": f"Request failed: {e}"}
 
@@ -262,12 +270,23 @@ class RemoteBackend(BackendCapabilities):
         )
         if not isinstance(response, dict) or not response.get("replaced"):
             message = f"{notice}\nError indexing via API: {response}".lstrip()
+            body = response.get("body", response) if isinstance(response, dict) else {}
+            server_summary = {
+                key: body[key]
+                for key in summary
+                if isinstance(body, dict) and key in body
+            }
+            if "publication" not in server_summary:
+                message += (
+                    "\nServer publication outcome unconfirmed. No retry was attempted."
+                )
+            logger.warning("%s", message)
             return CodeIngestResult(
                 errors=[str(response)],
                 files_parsed=files_parsed,
                 notice=notice,
                 error_message=message,
-                **{**summary, "publication": "failed", "staging": "failed"},
+                **{**summary, **server_summary, "g16_complete": False},
             )
         return CodeIngestResult(
             replaced=True,
