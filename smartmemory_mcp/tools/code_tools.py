@@ -136,10 +136,7 @@ def register(mcp):
                     "Code indexing refused: local backend lacks core ingest_code, code edges would be lost"
                 )
                 return "Error: active backend does not support core code indexing"
-            # This guarded local capability is outside the shared backend API.
-            # Remote indexing uses the bundle upload above, so it stays available.
-            ingest_code = getattr(backend, "ingest_code")
-            result = ingest_code(
+            result = backend.ingest_code(
                 directory=abs_dir,
                 repo=repo,
                 exclude_dirs=exclusions,
