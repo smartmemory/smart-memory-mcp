@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- CODE-INGEST-SURFACES-1: local code_index delegates to core for Python, JavaScript, TypeScript, JSX and TSX. Hosted code_upload accepts bounded parsed bundles without reading server checkout paths.
+
+
 ## Unreleased
 
 ## 1.5.20 — 2026-10-04

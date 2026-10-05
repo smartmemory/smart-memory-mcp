@@ -260,7 +260,7 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
     advertised = {tool.name for tool in asyncio.run(mcp.list_tools())}
 
     assert advertised == set(HOSTED_TOOLS)
-    assert len(advertised) == 25
+    assert len(advertised) == 26
 
 
 @pytest.mark.parametrize("name", EXCLUDED_TOOLS)
@@ -334,6 +334,24 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ("memory_policy_bundle", {"workflow": "deploy"}),
     ("memory_feedback", {"search_session_id": "search:ws:abc", "result_used": []}),
     ("read_around", {"item_id": "mem-1"}),
+    (
+        "code_upload",
+        {
+            "bundle": {
+                "repo": "test_ingest_repo",
+                "entities": [
+                    {
+                        "name": "main",
+                        "entity_type": "function",
+                        "file_path": "main.py",
+                        "line_number": 1,
+                    }
+                ],
+                "relations": [],
+                "commit_hash": "test_ingest_commit",
+            }
+        },
+    ),
     ("code_search", {"query": "def main"}),
     ("code_search", {"query": "def main", "repo": "smart-memory-mcp", "limit": 5}),
     ("code_dead_code", {"repo": "smart-memory-mcp"}),
@@ -573,3 +591,27 @@ def test_a_missing_core_origin_filter_is_logged_not_swallowed(
     message = warnings[0].getMessage()
     assert "NOT" in message and "origin tier" in message
     assert "speculative" in message
+
+
+@pytest.mark.parametrize("key", ["directory", "path", "source_path"])
+def test_code_upload_refuses_server_checkout_keys(key):
+    from fastmcp import FastMCP
+
+    from smartmemory_mcp.hosted.tools import _CapturingRegistrar, register_upload_tool
+
+    registrar = _CapturingRegistrar(FastMCP("test_ingest_upload_paths"))
+    register_upload_tool(registrar)
+    bundle = {
+        "repo": "test_ingest_repo",
+        "entities": [
+            {
+                "name": "main",
+                "entity_type": "function",
+                "file_path": "main.py",
+                "line_number": 1,
+            }
+        ],
+        key: "/server/private/checkout",
+    }
+    with pytest.raises(ValueError, match="parsed bundle envelope"):
+        registrar.captured["code_upload"].function(bundle)

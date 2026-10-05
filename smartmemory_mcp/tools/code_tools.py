@@ -53,97 +53,64 @@ def register(mcp):
         repo_name: Optional[str] = None,
         exclude_dirs: Optional[str] = None,
     ) -> str:
-        """Index a Python codebase into SmartMemory's knowledge graph."""
-        from smartmemory_mcp.code_parser import (
-            CodeParser,
-            collect_python_files,
-            DEFAULT_EXCLUDE_DIRS,
-        )
+        """Index Python and TS/JS/TSX/JSX through the shared core CodeIndexer."""
+        from smartmemory.code.indexer import CodeIndexer
 
         abs_dir = os.path.abspath(directory)
         if not os.path.isdir(abs_dir):
             return f"Error: directory not found: {abs_dir}"
-
         repo = repo_name or os.path.basename(abs_dir)
-
-        if exclude_dirs:
-            excl = set(d.strip() for d in exclude_dirs.split(",") if d.strip())
-        else:
-            excl = DEFAULT_EXCLUDE_DIRS
-
-        py_files = collect_python_files(abs_dir, exclude_dirs=excl)
-        if not py_files:
-            return f"No Python files found in {abs_dir}"
-
-        parser = CodeParser(repo=repo, repo_root=abs_dir)
-        all_entities = []
-        all_relations = []
-        all_errors = []
-
-        for fpath in py_files:
-            pr = parser.parse_file(fpath)
-            all_entities.extend(pr.entities)
-            all_relations.extend(pr.relations)
-            all_errors.extend(pr.errors)
-
+        exclusions = (
+            [d.strip() for d in exclude_dirs.split(",") if d.strip()]
+            if exclude_dirs
+            else None
+        )
         backend = get_backend()
-
-        # Try REST endpoint first (RemoteBackend)
         if backend.supports("request"):
-            payload = {
-                "repo": repo,
-                "entities": [e.to_dict() for e in all_entities],
-                "relations": [r.to_dict() for r in all_relations],
-            }
-            timeout = max(60, len(all_entities) // 50)
-            result = backend.request(
-                "POST", "/memory/code/index", timeout=timeout, json=payload
+            indexer = CodeIndexer(
+                None, repo, abs_dir, set(exclusions) if exclusions is not None else None
             )
-            if isinstance(result, dict) and "error" not in result:
-                entities_stored = result.get("entities_created", len(all_entities))
-                edges_stored = result.get("edges_created", len(all_relations))
-            else:
-                return f"Error indexing via API: {result}"
+            payload, parsed = indexer.prepare_bundle(["python", "typescript"])
+            response = backend.request(
+                "POST",
+                "/memory/code/index",
+                timeout=max(60, len(parsed.entities) // 50),
+                json=payload,
+            )
+            if not isinstance(response, dict) or not response.get("replaced"):
+                return f"Error indexing via API: {response}"
+            entities_stored = response["entities_created"]
+            edges_stored = response["edges_created"]
+            files_parsed = parsed.files_parsed
+            errors = parsed.errors
         else:
-            # Local backend: store each entity as a memory item
-            entities_stored = 0
-            edges_stored = 0
-            for entity in all_entities:
-                try:
-                    content = f"Code entity: {entity.name} ({entity.entity_type}) in {entity.file_path}:{entity.line_number}"
-                    if entity.docstring:
-                        content += f"\n{entity.docstring}"
-                    backend.add(
-                        content=content,
-                        memory_type="code",
-                        metadata={
-                            "entity_type": entity.entity_type,
-                            "name": entity.name,
-                            "file_path": entity.file_path,
-                            "line_number": entity.line_number,
-                            "repo": repo,
-                            "item_id": entity.item_id,
-                            "decorators": entity.decorators,
-                            "http_method": entity.http_method,
-                            "http_path": entity.http_path,
-                        },
-                    )
-                    entities_stored += 1
-                except Exception as e:
-                    logger.warning(f"Failed to store entity {entity.name}: {e}")
-
+            if not backend.supports("ingest_code"):
+                logger.warning(
+                    "Code indexing refused: local backend lacks core ingest_code, code edges would be lost"
+                )
+                return "Error: active backend does not support core code indexing"
+            result = backend.ingest_code(
+                directory=abs_dir,
+                repo=repo,
+                exclude_dirs=exclusions,
+                languages=["python", "typescript"],
+            )
+            if not result.replaced:
+                return f"Error indexing: {result.errors}"
+            entities_stored, edges_stored = (
+                result.entities_created,
+                result.edges_created,
+            )
+            files_parsed, errors = result.files_parsed, result.errors
         lines = [
             f"Indexed repo '{repo}' successfully.",
-            f"  Files parsed: {len(py_files)}",
+            f"  Files parsed: {files_parsed}",
             f"  Entities: {entities_stored}",
             f"  Edges: {edges_stored}",
         ]
-        if all_errors:
-            lines.append(f"  Parse errors: {len(all_errors)}")
-            for e in all_errors[:5]:
-                lines.append(f"    - {e}")
-            if len(all_errors) > 5:
-                lines.append(f"    ... and {len(all_errors) - 5} more")
+        if errors:
+            lines.append(f"  Parse errors: {len(errors)}")
+            lines.extend(f"    - {e}" for e in errors[:5])
         return "\n".join(lines)
 
     @mcp.tool(

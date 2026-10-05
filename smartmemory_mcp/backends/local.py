@@ -78,6 +78,10 @@ class LocalBackend(BackendCapabilities):
         """Allow explicit memory injection by existing adapters and tests."""
         self._memory = memory
 
+    def ingest_code(self, **kwargs: Any) -> Any:
+        """Delegate checkout indexing to core's shared parse/resolve/publish seam."""
+        return self._mem.ingest_code(**kwargs)
+
     # -- Core CRUD --
 
     def export_okf(self, bundle_path: str) -> int:
