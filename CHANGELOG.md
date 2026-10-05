@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Resolve the guarded local code indexing capability explicitly so backend conformance retains remote bundle upload and local core delegation (CODE-INGEST-SURFACES-1).
+
 - Code search output includes stored identity, source ranges and call resolution evidence for local and hosted backends (CODE-EDGE-CONFIDENCE-1).
 
 - Retain the prior code index when bundled source collection or decoding fails, reporting the affected path before upload.
