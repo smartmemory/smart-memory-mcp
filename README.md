@@ -95,7 +95,7 @@ every token already issued.
 
 ### Tools
 
-Local `code_index` indexes Python, JavaScript, TypeScript, JSX and TSX through core CodeIndexer. Hosted `code_upload` publishes a client-parsed bundle containing `repo`, `entities`, `relations` and optional `commit_hash`. It accepts up to 10,000 source files and 64 MiB per bundle. Destination workspace comes from the authenticated session. The hosted tool accepts no checkout path.
+Local `code_index` indexes Python, JavaScript, TypeScript, JSX and TSX through core CodeIndexer. Standalone remote installations without core use the bundled Python parser and report a warning that TS/JS/TSX/JSX indexing and shared cross-file resolution require `pip install smartmemory-core`. A parse error refuses replacement and retains the prior index. Hosted `code_upload` publishes a client-parsed bundle containing `repo`, `entities`, `relations` and optional `commit_hash`. It accepts up to 10,000 source files and 64 MiB per bundle. Destination workspace comes from the authenticated session. The hosted tool accepts no checkout path.
 
 Hosted mode advertises 25 tools, an explicit allowlist rather than a tier:
 
