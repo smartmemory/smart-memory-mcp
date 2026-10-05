@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Code search output includes stored identity, source ranges and call resolution evidence for local and hosted backends (CODE-EDGE-CONFIDENCE-1).
+
 ## 1.5.20 — 2026-10-04
 
 - Standalone Windows MCP selects the canonical credential file and lock without importing the wrapper. Legacy credentials are migration sources only, and a newer legacy write is preserved through protected migration.

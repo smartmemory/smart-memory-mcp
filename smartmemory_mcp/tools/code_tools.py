@@ -1,5 +1,6 @@
 """Code indexing and search MCP tools."""
 
+import json
 import logging
 import os
 from typing import Any, Optional
@@ -188,6 +189,21 @@ def register(mcp):
                     continue
                 items.append(
                     {
+                        **{
+                            key: meta.get(key)
+                            for key in (
+                                "item_id",
+                                "qualified_name",
+                                "end_line_number",
+                                "byte_start",
+                                "byte_end",
+                                "content_hash",
+                                "source_snapshot",
+                                "call_evidence",
+                            )
+                            if key in meta
+                        },
+                        "item_id": item.get("item_id", meta.get("item_id", "")),
                         "name": meta.get("name", "?"),
                         "entity_type": meta.get("entity_type", "?"),
                         "file_path": meta.get("file_path", "?"),
@@ -219,6 +235,27 @@ def register(mcp):
             docstring = item.get("docstring", "")
             if docstring:
                 line += f"\n   {docstring}"
+            if not item.get("content_hash") or "call_evidence" not in item:
+                logger.warning(
+                    "Code entity %s lacks source spans and call confidence; re-index to restore source grounding",
+                    item.get("item_id", name),
+                )
+            evidence = {
+                key: item[key]
+                for key in (
+                    "item_id",
+                    "qualified_name",
+                    "end_line_number",
+                    "byte_start",
+                    "byte_end",
+                    "content_hash",
+                    "source_snapshot",
+                    "call_evidence",
+                )
+                if key in item
+            }
+            if evidence:
+                line += "\n   Evidence: " + json.dumps(evidence, ensure_ascii=False)
             lines.append(line)
         return "\n".join(lines)
 
