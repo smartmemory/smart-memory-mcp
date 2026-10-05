@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- MAYA-WORK-1 team build (not deployed or accepted): decode hosted Team membership from the service team_id field, preserving per-session selection and local behavior.
+
 ## 1.5.20 — 2026-10-04
 
 - Standalone Windows MCP selects the canonical credential file and lock without importing the wrapper. Legacy credentials are migration sources only, and a newer legacy write is preserved through protected migration.

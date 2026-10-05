@@ -175,3 +175,7 @@ Search uses `lexical` with default weight 0.8. Replace removed `contains` and `k
 Local tools, hosted search and the remote backend validate the same names. Failed search returns an MCP error result, including connection failure.
 
 Quiesce old writers before first-open indexing. Verify the engine capability pin and use `sm rebuild --lexical` for recovery. [Migration, targets and measured limitations](https://github.com/smartmemory/smart-memory-docs/blob/main/docs/features/CORE-LEXICAL-INDEX-1/migration.md).
+
+### Company project alongside local memory
+
+Keep your existing local `smartmemory` connection. Add `claude mcp add --transport http smartmemory-company https://mcp.smartmemory.ai/mcp` and authenticate with your own company-org login. Check `whoami` for the expected tenant, use `switch_team` with the project's paired Workspace ID, then check again. Recheck after reconnect because selection is session-scoped. The owner and Kyle authenticate separately. No local-memory upload or local backend switch is needed. Hosted Team responses use `team_id`. Independent Workspace selection is outside this change. Live OAuth and two-user access acceptance remain required.
