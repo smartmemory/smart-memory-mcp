@@ -150,6 +150,15 @@ class RemoteBackend(BackendCapabilities):
         """Public request method for tools that need REST calls not in the protocol."""
         return self._request(method, path, **kwargs)
 
+    def code_dead_code(
+        self, repo: str, exclude_decorators: str | None = None, limit: int = 50
+    ) -> dict[str, Any]:
+        """Delegate framework-aware dead-code analysis to the hosted service."""
+        params: dict[str, Any] = {"repo": repo, "limit": limit}
+        if exclude_decorators:
+            params["exclude_decorators"] = exclude_decorators
+        return self.request("GET", "/memory/code/dead-code", params=params)
+
     def ingest_code(
         self,
         directory: str,

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Analyze component and hook dead-code candidates in local Lite stores. Remote and hosted tools preserve callable kinds and use the service framework evidence (CODE-FRAMEWORK-SEMANTICS-1).
+
 - Code indexing now delegates to ingest_code on every backend. Remote backends retain the existing bundle upload, limits and Python-only fallback warning.
 
 - Code search output includes stored identity, source ranges and call resolution evidence for local and hosted backends (CODE-EDGE-CONFIDENCE-1).
