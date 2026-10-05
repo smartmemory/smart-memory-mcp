@@ -1,0 +1,294 @@
+{
+  "True": {
+    "method": "POST",
+    "path": "/memory/code/index",
+    "timeout": 60,
+    "json": {
+      "repo": "test_int_a_fix2_repo",
+      "entities": [
+        {
+          "name": "helper",
+          "entity_type": "module",
+          "file_path": "helper.py",
+          "line_number": 1,
+          "repo": "test_int_a_fix2_repo",
+          "docstring": "",
+          "decorators": [],
+          "bases": [],
+          "http_method": "",
+          "http_path": "",
+          "is_default_export": false,
+          "commit_hash": "",
+          "indexed_at": "",
+          "workspace_id": "",
+          "qualified_name": "helper",
+          "end_line_number": 1,
+          "byte_start": 0,
+          "byte_end": 23,
+          "content_hash": "5bdd1496e410831079d57688ed04125ae01494e294a870bb34c3dcb7f60680d2",
+          "source_snapshot": "sha256:5bdd1496e410831079d57688ed04125ae01494e294a870bb34c3dcb7f60680d2",
+          "call_evidence": [],
+          "lexical_owner": null
+        },
+        {
+          "name": "helper",
+          "entity_type": "function",
+          "file_path": "helper.py",
+          "line_number": 1,
+          "repo": "test_int_a_fix2_repo",
+          "docstring": "",
+          "decorators": [],
+          "bases": [],
+          "http_method": "",
+          "http_path": "",
+          "is_default_export": false,
+          "commit_hash": "",
+          "indexed_at": "",
+          "workspace_id": "",
+          "qualified_name": "helper@byte:0",
+          "end_line_number": 1,
+          "byte_start": 0,
+          "byte_end": 22,
+          "content_hash": "5bdd1496e410831079d57688ed04125ae01494e294a870bb34c3dcb7f60680d2",
+          "source_snapshot": "sha256:5bdd1496e410831079d57688ed04125ae01494e294a870bb34c3dcb7f60680d2",
+          "call_evidence": [],
+          "lexical_owner": ""
+        },
+        {
+          "name": "use",
+          "entity_type": "module",
+          "file_path": "use.py",
+          "line_number": 1,
+          "repo": "test_int_a_fix2_repo",
+          "docstring": "",
+          "decorators": [],
+          "bases": [],
+          "http_method": "",
+          "http_path": "",
+          "is_default_export": false,
+          "commit_hash": "",
+          "indexed_at": "",
+          "workspace_id": "",
+          "qualified_name": "use",
+          "end_line_number": 2,
+          "byte_start": 0,
+          "byte_end": 53,
+          "content_hash": "30e3efbb2ae2f17093ff2fb363a2d0f2bb884c6e5cdb762c76b42cbc9b864c8c",
+          "source_snapshot": "sha256:30e3efbb2ae2f17093ff2fb363a2d0f2bb884c6e5cdb762c76b42cbc9b864c8c",
+          "call_evidence": [],
+          "lexical_owner": null
+        },
+        {
+          "name": "use",
+          "entity_type": "function",
+          "file_path": "use.py",
+          "line_number": 2,
+          "repo": "test_int_a_fix2_repo",
+          "docstring": "",
+          "decorators": [],
+          "bases": [],
+          "http_method": "",
+          "http_path": "",
+          "is_default_export": false,
+          "commit_hash": "",
+          "indexed_at": "",
+          "workspace_id": "",
+          "qualified_name": "use@byte:26",
+          "end_line_number": 2,
+          "byte_start": 26,
+          "byte_end": 52,
+          "content_hash": "30e3efbb2ae2f17093ff2fb363a2d0f2bb884c6e5cdb762c76b42cbc9b864c8c",
+          "source_snapshot": "sha256:30e3efbb2ae2f17093ff2fb363a2d0f2bb884c6e5cdb762c76b42cbc9b864c8c",
+          "call_evidence": [
+            {
+              "source_id": "code::test_int_a_fix2_repo::use.py::use@byte:26",
+              "target_id": "code::test_int_a_fix2_repo::helper.py::helper@byte:0",
+              "relation_type": "CALLS",
+              "properties": {
+                "line": 2,
+                "callee": "helper",
+                "resolution": "name_only",
+                "basis": "import name binding, runtime shadowing not proven",
+                "candidates": [
+                  "code::test_int_a_fix2_repo::helper.py::helper@byte:0"
+                ],
+                "unresolved": false,
+                "confidence": 0.5
+              }
+            }
+          ],
+          "lexical_owner": ""
+        },
+        {
+          "name": "view.ts",
+          "entity_type": "module",
+          "file_path": "view.ts",
+          "line_number": 1,
+          "repo": "test_int_a_fix2_repo",
+          "docstring": "",
+          "decorators": [],
+          "bases": [],
+          "http_method": "",
+          "http_path": "",
+          "is_default_export": false,
+          "commit_hash": "",
+          "indexed_at": "",
+          "workspace_id": "",
+          "qualified_name": "view.ts",
+          "end_line_number": 1,
+          "byte_start": 0,
+          "byte_end": 37,
+          "content_hash": "61989ae5e4985420897be92182898d1009c227cabcd39a1eba9d4e522072a24a",
+          "source_snapshot": "sha256:61989ae5e4985420897be92182898d1009c227cabcd39a1eba9d4e522072a24a",
+          "call_evidence": [],
+          "lexical_owner": null
+        },
+        {
+          "name": "View",
+          "entity_type": "function",
+          "file_path": "view.ts",
+          "line_number": 1,
+          "repo": "test_int_a_fix2_repo",
+          "docstring": "",
+          "decorators": [],
+          "bases": [],
+          "http_method": "",
+          "http_path": "",
+          "is_default_export": false,
+          "commit_hash": "",
+          "indexed_at": "",
+          "workspace_id": "",
+          "qualified_name": "View",
+          "end_line_number": 1,
+          "byte_start": 7,
+          "byte_end": 36,
+          "content_hash": "61989ae5e4985420897be92182898d1009c227cabcd39a1eba9d4e522072a24a",
+          "source_snapshot": "sha256:61989ae5e4985420897be92182898d1009c227cabcd39a1eba9d4e522072a24a",
+          "call_evidence": [],
+          "lexical_owner": ""
+        }
+      ],
+      "relations": [
+        {
+          "source_id": "code::test_int_a_fix2_repo::helper.py::helper",
+          "target_id": "code::test_int_a_fix2_repo::helper.py::helper@byte:0",
+          "relation_type": "DEFINES",
+          "properties": {}
+        },
+        {
+          "source_id": "code::test_int_a_fix2_repo::use.py::use",
+          "target_id": "code::test_int_a_fix2_repo::use.py::use@byte:26",
+          "relation_type": "DEFINES",
+          "properties": {}
+        },
+        {
+          "source_id": "code::test_int_a_fix2_repo::use.py::use@byte:26",
+          "target_id": "code::test_int_a_fix2_repo::helper.py::helper@byte:0",
+          "relation_type": "CALLS",
+          "properties": {
+            "line": 2,
+            "callee": "helper",
+            "resolution": "name_only",
+            "basis": "import name binding, runtime shadowing not proven",
+            "candidates": [
+              "code::test_int_a_fix2_repo::helper.py::helper@byte:0"
+            ],
+            "unresolved": false,
+            "confidence": 0.5
+          }
+        },
+        {
+          "source_id": "code::test_int_a_fix2_repo::use.py::use",
+          "target_id": "code::test_int_a_fix2_repo::helper.py::helper",
+          "relation_type": "IMPORTS",
+          "properties": {
+            "names": "helper"
+          }
+        },
+        {
+          "source_id": "code::test_int_a_fix2_repo::view.ts::view.ts",
+          "target_id": "code::test_int_a_fix2_repo::view.ts::View",
+          "relation_type": "DEFINES",
+          "properties": {}
+        }
+      ],
+      "commit_hash": ""
+    }
+  },
+  "False": {
+    "method": "POST",
+    "path": "/memory/code/index",
+    "timeout": 60,
+    "json": {
+      "repo": "test_int_a_fix2_repo",
+      "entities": [
+        {
+          "name": "helper",
+          "entity_type": "module",
+          "file_path": "helper.py",
+          "line_number": 1,
+          "docstring": "",
+          "decorators": [],
+          "bases": [],
+          "http_method": "",
+          "http_path": ""
+        },
+        {
+          "name": "helper",
+          "entity_type": "function",
+          "file_path": "helper.py",
+          "line_number": 1,
+          "docstring": "",
+          "decorators": [],
+          "bases": [],
+          "http_method": "",
+          "http_path": ""
+        },
+        {
+          "name": "use",
+          "entity_type": "module",
+          "file_path": "use.py",
+          "line_number": 1,
+          "docstring": "",
+          "decorators": [],
+          "bases": [],
+          "http_method": "",
+          "http_path": ""
+        },
+        {
+          "name": "use",
+          "entity_type": "function",
+          "file_path": "use.py",
+          "line_number": 2,
+          "docstring": "",
+          "decorators": [],
+          "bases": [],
+          "http_method": "",
+          "http_path": ""
+        }
+      ],
+      "relations": [
+        {
+          "source_id": "code::test_int_a_fix2_repo::helper.py::helper",
+          "target_id": "code::test_int_a_fix2_repo::helper.py::helper",
+          "relation_type": "DEFINES",
+          "properties": {}
+        },
+        {
+          "source_id": "code::test_int_a_fix2_repo::use.py::use",
+          "target_id": "code::test_int_a_fix2_repo::helper.py::helper",
+          "relation_type": "IMPORTS",
+          "properties": {
+            "names": "helper"
+          }
+        },
+        {
+          "source_id": "code::test_int_a_fix2_repo::use.py::use",
+          "target_id": "code::test_int_a_fix2_repo::use.py::use",
+          "relation_type": "DEFINES",
+          "properties": {}
+        }
+      ]
+    }
+  }
+}

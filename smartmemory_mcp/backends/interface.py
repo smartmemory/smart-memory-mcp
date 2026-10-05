@@ -83,6 +83,16 @@ class MemoryBackend(Protocol):
 
     # --- Pipeline ----------------------------------------------------------------
 
+    def ingest_code(
+        self,
+        directory: str,
+        repo: str,
+        exclude_dirs: list[str] | None = None,
+        languages: list[str] | None = None,
+    ) -> Any:
+        """Index a client checkout and return the core IndexResult summary fields."""
+        ...
+
     def ingest(
         self, content: str, memory_type: str = "semantic", **kwargs: Any
     ) -> dict[str, Any] | str:

@@ -17,7 +17,7 @@ from typing import Any
 import httpx
 
 from .interface import BackendCapabilities
-from .models import MemoryResult, normalize_item, normalize_items
+from .models import CodeIngestResult, MemoryResult, normalize_item, normalize_items
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +149,104 @@ class RemoteBackend(BackendCapabilities):
     def request(self, method: str, path: str, **kwargs: Any) -> Any:
         """Public request method for tools that need REST calls not in the protocol."""
         return self._request(method, path, **kwargs)
+
+    def ingest_code(
+        self,
+        directory: str,
+        repo: str,
+        exclude_dirs: list[str] | None = None,
+        languages: list[str] | None = None,
+    ) -> CodeIngestResult:
+        """Prepare a complete client-side code bundle and publish it through REST."""
+        notice = ""
+        try:
+            from smartmemory.code.indexer import CodeIndexer
+        except ModuleNotFoundError as exc:
+            if exc.name != "smartmemory":
+                raise
+            from smartmemory_mcp.code_parser import CodeParser, collect_python_files
+
+            notice = (
+                "WARNING: Python-only indexing. TS/JS/TSX/JSX indexing and shared cross-file "
+                "resolution require smartmemory-core. Install with: pip install smartmemory-core"
+            )
+            logger.warning("%s", notice)
+            parser = CodeParser(repo, directory)
+            entities, relations, errors = [], [], []
+            files = collect_python_files(directory, exclude_dirs, errors=errors)
+            for path in files:
+                parsed_file = parser.parse_file(path)
+                entities.extend(parsed_file.entities)
+                relations.extend(parsed_file.relations)
+                errors.extend(parsed_file.errors)
+            if errors:
+                return CodeIngestResult(
+                    errors=errors,
+                    files_parsed=len(files),
+                    notice=notice,
+                    error_message=(
+                        f"{notice}\nError indexing: replacement refused. Prior index was not changed. "
+                        f"Failed files: {'; '.join(errors)}"
+                    ),
+                )
+            if not entities:
+                return CodeIngestResult(
+                    files_parsed=len(files),
+                    notice=notice,
+                    error_message=f"{notice}\nError indexing: 0 entities. Prior index was not changed.",
+                )
+            ids = {entity.item_id for entity in entities}
+            payload = {
+                "repo": repo,
+                "entities": [entity.to_dict() for entity in entities],
+                "relations": [
+                    relation.to_dict()
+                    for relation in relations
+                    if relation.source_id in ids and relation.target_id in ids
+                ],
+            }
+            if (
+                len(files) > 10000
+                or len(json.dumps(payload, ensure_ascii=False).encode())
+                > 64 * 1024 * 1024
+            ):
+                return CodeIngestResult(
+                    files_parsed=len(files),
+                    notice=notice,
+                    error_message=f"{notice}\nError indexing: code bundle exceeds 10,000 files or 64 MiB",
+                )
+            files_parsed = len(files)
+        else:
+            indexer = CodeIndexer(
+                None,
+                repo,
+                directory,
+                set(exclude_dirs) if exclude_dirs is not None else None,
+            )
+            payload, parsed = indexer.prepare_bundle(languages)
+            files_parsed, errors = parsed.files_parsed, parsed.errors
+        response = self.request(
+            "POST",
+            "/memory/code/index",
+            timeout=max(60, len(payload["entities"]) // 50),
+            json=payload,
+        )
+        if not isinstance(response, dict) or not response.get("replaced"):
+            message = f"{notice}\nError indexing via API: {response}".lstrip()
+            return CodeIngestResult(
+                errors=[str(response)],
+                files_parsed=files_parsed,
+                notice=notice,
+                error_message=message,
+            )
+        return CodeIngestResult(
+            replaced=True,
+            entities_created=response["entities_created"],
+            edges_created=response["edges_created"],
+            errors=errors,
+            files_parsed=files_parsed,
+            notice=notice,
+        )
 
     @property
     def active_workspace_id(self) -> str:

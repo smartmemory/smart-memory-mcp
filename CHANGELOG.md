@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Code indexing now delegates to ingest_code on every backend. Remote backends retain the existing bundle upload, limits and Python-only fallback warning.
+
 - Code search output includes stored identity, source ranges and call resolution evidence for local and hosted backends (CODE-EDGE-CONFIDENCE-1).
 
 - Retain the prior code index when bundled source collection or decoding fails, reporting the affected path before upload.

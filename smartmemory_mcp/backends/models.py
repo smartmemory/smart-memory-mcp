@@ -9,7 +9,21 @@ See: docs/features/PLAT-MCP-MODELS-1/design.md
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any, Optional, TypedDict
+
+
+@dataclass
+class CodeIngestResult:
+    """Remote summary matching core IndexResult, with standalone client notices."""
+
+    replaced: bool = False
+    entities_created: int = 0
+    edges_created: int = 0
+    errors: list[str] = field(default_factory=list)
+    files_parsed: int = 0
+    notice: str = ""
+    error_message: str = ""
 
 
 class MemoryResult(TypedDict, total=False):

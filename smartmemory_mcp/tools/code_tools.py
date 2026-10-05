@@ -65,90 +65,25 @@ def register(mcp):
             else None
         )
         backend = get_backend()
-        notice = ""
-        if backend.supports("request"):
-            try:
-                from smartmemory.code.indexer import CodeIndexer
-            except ModuleNotFoundError as exc:
-                if exc.name != "smartmemory":
-                    raise
-                from smartmemory_mcp.code_parser import CodeParser, collect_python_files
-
-                notice = (
-                    "WARNING: Python-only indexing. TS/JS/TSX/JSX indexing and shared cross-file "
-                    "resolution require smartmemory-core. Install with: pip install smartmemory-core"
-                )
-                logger.warning("%s", notice)
-                parser = CodeParser(repo, abs_dir)
-                entities, relations, errors = [], [], []
-                files = collect_python_files(abs_dir, exclusions, errors=errors)
-                for path in files:
-                    parsed_file = parser.parse_file(path)
-                    entities.extend(parsed_file.entities)
-                    relations.extend(parsed_file.relations)
-                    errors.extend(parsed_file.errors)
-                if errors:
-                    return (
-                        f"{notice}\nError indexing: replacement refused. Prior index was not changed. "
-                        f"Failed files: {'; '.join(errors)}"
-                    )
-                if not entities:
-                    return f"{notice}\nError indexing: 0 entities. Prior index was not changed."
-                ids = {entity.item_id for entity in entities}
-                payload = {
-                    "repo": repo,
-                    "entities": [entity.to_dict() for entity in entities],
-                    "relations": [
-                        relation.to_dict()
-                        for relation in relations
-                        if relation.source_id in ids and relation.target_id in ids
-                    ],
-                }
-                if (
-                    len(files) > 10000
-                    or len(json.dumps(payload, ensure_ascii=False).encode())
-                    > 64 * 1024 * 1024
-                ):
-                    return f"{notice}\nError indexing: code bundle exceeds 10,000 files or 64 MiB"
-                files_parsed = len(files)
-            else:
-                indexer = CodeIndexer(
-                    None,
-                    repo,
-                    abs_dir,
-                    set(exclusions) if exclusions is not None else None,
-                )
-                payload, parsed = indexer.prepare_bundle(["python", "typescript"])
-                files_parsed, errors = parsed.files_parsed, parsed.errors
-            response = backend.request(
-                "POST",
-                "/memory/code/index",
-                timeout=max(60, len(payload["entities"]) // 50),
-                json=payload,
+        if not backend.supports("ingest_code"):
+            logger.warning(
+                "Code indexing refused: local backend lacks core ingest_code, code edges would be lost"
             )
-            if not isinstance(response, dict) or not response.get("replaced"):
-                return f"{notice}\nError indexing via API: {response}".lstrip()
-            entities_stored = response["entities_created"]
-            edges_stored = response["edges_created"]
-        else:
-            if not backend.supports("ingest_code"):
-                logger.warning(
-                    "Code indexing refused: local backend lacks core ingest_code, code edges would be lost"
-                )
-                return "Error: active backend does not support core code indexing"
-            result = backend.ingest_code(
-                directory=abs_dir,
-                repo=repo,
-                exclude_dirs=exclusions,
-                languages=["python", "typescript"],
+            return "Error: active backend does not support core code indexing"
+        result = backend.ingest_code(
+            directory=abs_dir,
+            repo=repo,
+            exclude_dirs=exclusions,
+            languages=["python", "typescript"],
+        )
+        notice = getattr(result, "notice", "")
+        if not result.replaced:
+            return (
+                getattr(result, "error_message", "")
+                or f"Error indexing: {result.errors}"
             )
-            if not result.replaced:
-                return f"Error indexing: {result.errors}"
-            entities_stored, edges_stored = (
-                result.entities_created,
-                result.edges_created,
-            )
-            files_parsed, errors = result.files_parsed, result.errors
+        entities_stored, edges_stored = result.entities_created, result.edges_created
+        files_parsed, errors = result.files_parsed, result.errors
         lines = [
             f"Indexed repo '{repo}' successfully.",
             f"  Files parsed: {files_parsed}",
