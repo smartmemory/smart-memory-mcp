@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Retain the prior code index when bundled source collection or decoding fails, reporting the affected path before upload.
+
 - CODE-INGEST-SURFACES-1 review fixes: retain prior local symbols on parse failure and support standalone remote indexing with the bundled Python parser. Warn when TS/JS indexing requires smartmemory-core.
 
 - CODE-INGEST-SURFACES-1: local code_index delegates to core for Python, JavaScript, TypeScript, JSX and TSX. Hosted code_upload accepts bounded parsed bundles without reading server checkout paths.

@@ -81,7 +81,7 @@ def register(mcp):
                 logger.warning("%s", notice)
                 parser = CodeParser(repo, abs_dir)
                 entities, relations, errors = [], [], []
-                files = collect_python_files(abs_dir, exclusions)
+                files = collect_python_files(abs_dir, exclusions, errors=errors)
                 for path in files:
                     parsed_file = parser.parse_file(path)
                     entities.extend(parsed_file.entities)
