@@ -113,7 +113,15 @@ class RemoteBackend(BackendCapabilities):
             self._on_http_error(e.response)
             if e.response.status_code == 401:
                 self._on_unauthorized(e.response)
-            return {"error": f"API error {e.response.status_code}: {e.response.text}"}
+            try:
+                body = e.response.json()
+            except ValueError:
+                body = {"detail": e.response.text}
+            return {
+                "error": f"API error {e.response.status_code}: {e.response.text}",
+                "status_code": e.response.status_code,
+                "body": body,
+            }
         except Exception as e:
             return {"error": f"Request failed: {e}"}
 
@@ -159,6 +167,7 @@ class RemoteBackend(BackendCapabilities):
     ) -> CodeIngestResult:
         """Prepare a complete client-side code bundle and publish it through REST."""
         notice = ""
+        summary = {}
         try:
             from smartmemory.code.indexer import CodeIndexer
         except ModuleNotFoundError as exc:
@@ -168,20 +177,26 @@ class RemoteBackend(BackendCapabilities):
 
             notice = (
                 "WARNING: Python-only indexing. TS/JS/TSX/JSX indexing and shared cross-file "
-                "resolution require smartmemory-core. Install with: pip install smartmemory-core"
+                "resolution require smartmemory-core. Grammar coverage diagnostics and persistent file checkpoints "
+                "are unavailable in the bundled parser. Install with: pip install smartmemory-core"
             )
             logger.warning("%s", notice)
             parser = CodeParser(repo, directory)
             entities, relations, errors = [], [], []
             files = collect_python_files(directory, exclude_dirs, errors=errors)
+            parsed_files = []
             for path in files:
                 parsed_file = parser.parse_file(path)
+                parsed_files.append(parsed_file)
                 entities.extend(parsed_file.entities)
                 relations.extend(parsed_file.relations)
                 errors.extend(parsed_file.errors)
             if errors:
                 return CodeIngestResult(
                     errors=errors,
+                    files_clean=sum(not item.errors for item in parsed_files),
+                    files_failed=len(errors),
+                    publication="refused",
                     files_parsed=len(files),
                     notice=notice,
                     error_message=(
@@ -216,6 +231,16 @@ class RemoteBackend(BackendCapabilities):
                     error_message=f"{notice}\nError indexing: code bundle exceeds 10,000 files or 64 MiB",
                 )
             files_parsed = len(files)
+            summary = dict(
+                files_clean=files_parsed,
+                files_partial=0,
+                files_failed=0,
+                diagnostics=[],
+                acceptance="accepted",
+                staging="prepared",
+                publication="not_attempted",
+                g16_complete=False,
+            )
         else:
             indexer = CodeIndexer(
                 None,
@@ -223,8 +248,20 @@ class RemoteBackend(BackendCapabilities):
                 directory,
                 set(exclude_dirs) if exclude_dirs is not None else None,
             )
-            payload, parsed = indexer.prepare_bundle(languages)
+            try:
+                payload, parsed = indexer.prepare_bundle(languages)
+            except ValueError as exc:
+                if not hasattr(exc, "result"):
+                    raise
+                parsed = exc.result
+                return CodeIngestResult(
+                    files_parsed=parsed.files_parsed,
+                    errors=parsed.errors,
+                    error_message=str(exc),
+                    **parsed.parse_summary(),
+                )
             files_parsed, errors = parsed.files_parsed, parsed.errors
+            summary = parsed.parse_summary()
         response = self.request(
             "POST",
             "/memory/code/index",
@@ -233,11 +270,34 @@ class RemoteBackend(BackendCapabilities):
         )
         if not isinstance(response, dict) or not response.get("replaced"):
             message = f"{notice}\nError indexing via API: {response}".lstrip()
+            body = response.get("body", response) if isinstance(response, dict) else {}
+            body = body if isinstance(body, dict) else {}
+            server_summary = {
+                key: body.get(
+                    key,
+                    []
+                    if key == "diagnostics"
+                    else False
+                    if key == "g16_complete"
+                    else "unknown",
+                )
+                for key in summary
+            }
+            if server_summary.get("publication", "unknown") == "unknown":
+                message += (
+                    "\nServer publication outcome unconfirmed. No retry was attempted."
+                )
+            logger.warning("%s", message)
             return CodeIngestResult(
                 errors=[str(response)],
                 files_parsed=files_parsed,
                 notice=notice,
                 error_message=message,
+                **{**summary, **server_summary, "g16_complete": False},
+            )
+        if any(key not in response for key in summary):
+            logger.warning(
+                "Server omitted code diagnostic evidence; missing counts/outcomes reported as unknown"
             )
         return CodeIngestResult(
             replaced=True,
@@ -246,6 +306,13 @@ class RemoteBackend(BackendCapabilities):
             errors=errors,
             files_parsed=files_parsed,
             notice=notice,
+            **{
+                **{
+                    key: response.get(key, [] if key == "diagnostics" else "unknown")
+                    for key in summary
+                },
+                "g16_complete": False,
+            },
         )
 
     @property

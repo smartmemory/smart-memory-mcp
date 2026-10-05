@@ -134,10 +134,16 @@ def register_upload_tool(mcp: Any) -> None:
     def code_upload(bundle: dict[str, Any]) -> dict[str, Any]:
         """Publish a client-parsed/resolved CODE-INGEST-SURFACES-1 bundle.
 
-        Supply repo, entities, relations and optional commit_hash. No server
+        Supply repo, entities, relations and optional commit_hash/parse_summary. No server
         checkout is read. Workspace is selected by the authenticated session.
         """
-        if set(bundle) - {"repo", "entities", "relations", "commit_hash"}:
+        if set(bundle) - {
+            "repo",
+            "entities",
+            "relations",
+            "commit_hash",
+            "parse_summary",
+        }:
             raise ValueError("Code upload accepts only the parsed bundle envelope")
         if (
             not isinstance(bundle.get("repo"), str)

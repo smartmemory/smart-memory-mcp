@@ -77,10 +77,18 @@ def register(mcp):
             languages=["python", "typescript"],
         )
         notice = getattr(result, "notice", "")
+        summary_lines = [
+            f"  Clean: {result.files_clean}, partial: {result.files_partial}, failed: {result.files_failed}",
+            f"  Acceptance: {result.acceptance}, staging: {result.staging}, Publication: {result.publication}",
+            "  G16 complete-generation publication is not proven by 1.x acceptance.",
+        ]
         if not result.replaced:
-            return (
-                getattr(result, "error_message", "")
-                or f"Error indexing: {result.errors}"
+            return "\n".join(
+                summary_lines
+                + [
+                    getattr(result, "error_message", "")
+                    or f"Error indexing: {result.errors}"
+                ]
             )
         entities_stored, edges_stored = result.entities_created, result.edges_created
         files_parsed, errors = result.files_parsed, result.errors
@@ -89,10 +97,17 @@ def register(mcp):
             f"  Files parsed: {files_parsed}",
             f"  Entities: {entities_stored}",
             f"  Edges: {edges_stored}",
+            *summary_lines,
         ]
         if errors:
             lines.append(f"  Parse errors: {len(errors)}")
             lines.extend(f"    - {e}" for e in errors[:5])
+        for diagnostic in result.diagnostics:
+            if diagnostic["status"] != "clean":
+                lines.append(
+                    f"  {diagnostic['file_path']}: {diagnostic['status']} coverage={diagnostic['coverage']}"
+                )
+                lines.extend(f"    {span}" for span in diagnostic.get("spans", [])[:5])
         if notice:
             lines.append(notice)
         return "\n".join(lines)

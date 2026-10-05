@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Show only server-computed hosted code counts and outcomes after upload. Missing server diagnostics and lost transport report unknown (CODE-PARSE-DIAGNOSTICS-1).
+
+- Preserve structured code-upload HTTP failure bodies, including server staging and cleanup failure outcomes. Report transport loss as unconfirmed (CODE-PARSE-DIAGNOSTICS-1).
+
+- Code indexing and hosted uploads carry grammar diagnostics, file counts and explicit publication outcomes. Recoverable partials are visible and hard failures retain the prior index (CODE-PARSE-DIAGNOSTICS-1).
+
 - Code indexing now delegates to ingest_code on every backend. Remote backends retain the existing bundle upload, limits and Python-only fallback warning.
 
 - Code search output includes stored identity, source ranges and call resolution evidence for local and hosted backends (CODE-EDGE-CONFIDENCE-1).
