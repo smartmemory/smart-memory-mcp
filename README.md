@@ -99,13 +99,15 @@ Local `code_index` indexes Python, JavaScript, TypeScript, JSX and TSX through c
 
 Code indexing reports clean, partial and failed file counts plus acceptance, staging and publication outcomes. Every hosted response derives counts from uploaded file evidence. Uncomputable evidence and missing server counts are displayed as `unknown`. Localized grammar partials with usable extraction can publish with visible spans and byte coverage. Hard collection or parse failures retain the prior index. Partial 1.x acceptance does not prove G16 complete-generation publication. Successful file extraction checkpoints are stored under `SMARTMEMORY_CODE_CHECKPOINT_DIR` (default `~/.cache/smartmemory/code-parse`) and reused when source, configuration and parser versions match. Remote code indexing preserves the server diagnostic counts and publication outcome on HTTP failures. Transport loss reports an unconfirmed server outcome.
 
-Hosted mode advertises 25 tools, an explicit allowlist rather than a tier:
+Local `code_effects(directory, repo_name=None)` scans Python effects through the shared engine without opening a memory store. Hosted `code_effects(repo, source_snapshot, limit=20, offset=0)` reads uploaded `fa_snapshot` records in the selected workspace. It accepts no filesystem path. Upload the engine's `snapshot_record` payload through existing declared-record ingestion first. Repository rules belong in the scanned checkout's `.smartmemory-effects.json`.
+
+Hosted mode advertises 27 tools, an explicit allowlist rather than a tier:
 
 `memory_ingest` `memory_search` `memory_recall` `read_around` `memory_get`
 `memory_explain` `memory_recall_pack` `memory_policy_bundle` `memory_add`
 `memory_update` `memory_delete` `memory_list` `memory_stats` `memory_distill`
 `memory_ingest_conversation` `memory_search_by_metadata` `memory_feedback`
-`code_search` `code_dead_code` `code_dependencies`
+`code_search` `code_dead_code` `code_dependencies` `code_upload` `code_effects`
 `agent_set_recall_profile` `agent_get_recall_profile` `reasoning_query_traces`
 `whoami` `switch_team`
 

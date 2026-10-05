@@ -139,11 +139,11 @@ class TestToolRegistration:
         assert data["names"] == FREE_TOOLS
 
     def test_pro_tier_tool_count(self):
-        """PRO tier registers exactly 67 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
+        """PRO tier registers exactly 68 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
         data = _run_snippet(env)
-        assert data["count"] == 67, (
-            f"Expected 67 remote PRO tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 68, (
+            f"Expected 68 remote PRO tools, got {data['count']}: {data['names']}"
         )
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]
@@ -154,13 +154,13 @@ class TestToolRegistration:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
 
     def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 98 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
+        """PRO_PLUS tier registers exactly 99 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
         env = _clean_env(
             SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true"
         )
         data = _run_snippet(env)
-        assert data["count"] == 98, (
-            f"Expected 98 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 99, (
+            f"Expected 99 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
         )
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]

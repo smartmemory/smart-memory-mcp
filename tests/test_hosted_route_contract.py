@@ -10,6 +10,7 @@ that class of drift fails here instead of at runtime.
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -17,7 +18,12 @@ import pytest
 
 from smartmemory_mcp.hosted.tools import HOSTED_TOOLS
 
-SERVICE_REPO = Path(__file__).resolve().parents[2] / "smart-memory-service"
+SERVICE_REPO = Path(
+    os.environ.get(
+        "SMARTMEMORY_SERVICE_CHECKOUT",
+        Path(__file__).resolve().parents[2] / "smart-memory-service",
+    )
+)
 SNAPSHOT = SERVICE_REPO / "tests" / "contracts" / "snapshots" / "openapi_schema.json"
 
 # The route each hosted tool reaches, read off the backend method it calls.
@@ -41,6 +47,7 @@ TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
     "memory_ingest_conversation": ("post", "/memory/ingest/conversation"),
     "memory_search_by_metadata": ("get", "/memory/by-metadata"),
     "memory_feedback": ("post", "/memory/result-feedback"),
+    "code_effects": ("get", "/memory/list"),
     "code_upload": ("post", "/memory/code/index"),
     "code_search": ("get", "/memory/code/search"),
     "code_dead_code": ("get", "/memory/code/dead-code"),
