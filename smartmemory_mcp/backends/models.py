@@ -24,9 +24,9 @@ class CodeIngestResult:
     files_parsed: int = 0
     notice: str = ""
     error_message: str = ""
-    files_clean: int = 0
-    files_partial: int = 0
-    files_failed: int = 0
+    files_clean: int | str = 0
+    files_partial: int | str = 0
+    files_failed: int | str = 0
     diagnostics: list[dict[str, Any]] = field(default_factory=list)
     acceptance: str = "refused"
     staging: str = "not_started"

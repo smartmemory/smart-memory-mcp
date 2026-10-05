@@ -271,12 +271,19 @@ class RemoteBackend(BackendCapabilities):
         if not isinstance(response, dict) or not response.get("replaced"):
             message = f"{notice}\nError indexing via API: {response}".lstrip()
             body = response.get("body", response) if isinstance(response, dict) else {}
+            body = body if isinstance(body, dict) else {}
             server_summary = {
-                key: body[key]
+                key: body.get(
+                    key,
+                    []
+                    if key == "diagnostics"
+                    else False
+                    if key == "g16_complete"
+                    else "unknown",
+                )
                 for key in summary
-                if isinstance(body, dict) and key in body
             }
-            if "publication" not in server_summary:
+            if server_summary.get("publication", "unknown") == "unknown":
                 message += (
                     "\nServer publication outcome unconfirmed. No retry was attempted."
                 )
@@ -288,6 +295,10 @@ class RemoteBackend(BackendCapabilities):
                 error_message=message,
                 **{**summary, **server_summary, "g16_complete": False},
             )
+        if any(key not in response for key in summary):
+            logger.warning(
+                "Server omitted code diagnostic evidence; missing counts/outcomes reported as unknown"
+            )
         return CodeIngestResult(
             replaced=True,
             entities_created=response["entities_created"],
@@ -296,12 +307,10 @@ class RemoteBackend(BackendCapabilities):
             files_parsed=files_parsed,
             notice=notice,
             **{
-                **summary,
-                "staging": "written",
-                "publication": "published_partial"
-                if summary.get("files_partial")
-                else "published",
-                **{key: response[key] for key in summary if key in response},
+                **{
+                    key: response.get(key, [] if key == "diagnostics" else "unknown")
+                    for key in summary
+                },
                 "g16_complete": False,
             },
         )
