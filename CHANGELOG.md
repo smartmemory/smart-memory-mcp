@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased - framework R7 fix
+
+- FalkorDB dead-code test pins the R7 rule: members of a live class are not dead, members of an unreferenced class are (CODE-FRAMEWORK-SEMANTICS-1, R7-fw).
+
 ## Unreleased - framework R6 fix
 
 - FalkorDB local dead-code test pins that a function used only by value (REFERENCES) is not dead (CODE-FRAMEWORK-SEMANTICS-1, R6-fw).

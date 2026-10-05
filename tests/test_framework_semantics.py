@@ -104,6 +104,11 @@ function tested() { return 1; }
 function passedByValue() { return 2; }
 const registry = [passedByValue];
 registry.length;
+// R7: a live class keeps its members out of dead code; members of an unreferenced class stay dead.
+class Service { handle() { return 1; } }
+const service = new Service();
+service.toString();
+class Orphan { stale() { return 3; } }
 export const View = () => <Child/>;
 test('target', () => tested(), 1000);
 """)
@@ -148,7 +153,7 @@ test('target', () => tested(), 1000);
         local = LocalBackend()
         local._mem = memory
         result = local.code_dead_code(repo="test_fw_repo")
-        assert {n["name"] for n in result["dead_functions"]} == {"Unused", "useUnused"}
+        assert {n["name"] for n in result["dead_functions"]} == {"Unused", "useUnused", "stale"}
         assert local.code_dead_code(repo="test_fw_other")["count"] == 0
         monkeypatch.setattr(common, "_backend", local)
         registrar = _CapturingRegistrar(FastMCP("test_fw_falkor"))
@@ -157,6 +162,7 @@ test('target', () => tested(), 1000);
         assert "Unused (component)" in output and "useUnused (hook)" in output
         assert "uncertainHandler" not in output
         assert "tested" not in output and "Child" not in output and "View" not in output
+        assert "stale" in output and "handle" not in output
     finally:
         try:
             if memory is not None:
