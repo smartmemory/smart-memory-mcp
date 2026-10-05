@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased - framework R5 fix
+
+- Framework test keeps its unknown registration in a separate file: since R5 an unknown registration excludes every function in its file from dead code (CODE-FRAMEWORK-SEMANTICS-1, R5-fw).
+
 ## Unreleased - framework R3 fix
 
 - Verify unknown framework callbacks remain excluded from local Lite and FalkorDB dead-code tools.

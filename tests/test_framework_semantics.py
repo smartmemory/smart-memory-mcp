@@ -15,12 +15,13 @@ def test_local_dead_code_preserves_components_hooks_and_jsx(tmp_path, monkeypatc
     root = tmp_path / "test_fw_checkout"
     data = tmp_path / "test_fw_store"
     root.mkdir()
+    # R5: an unknown registration excludes every function in its file, so it lives in its own file here.
+    (root / "uncertain.ts").write_text(
+        "import express from 'express';\nconst {request: app} = express();\n"
+        "function uncertainHandler() {}\napp.get('header', uncertainHandler);\n"
+    )
     (root / "view.tsx").write_text("""
 
-import express from 'express';
-const {request: app} = express();
-function uncertainHandler() {}
-app.get('header', uncertainHandler);
 
 const Child = () => <span/>;
 const Unused = () => <div/>;
@@ -86,13 +87,14 @@ def test_local_falkordb_dead_code_selects_indexed_memory_type(tmp_path, monkeypa
     memory = None
     root = tmp_path / "test_fw_checkout"
     root.mkdir()
+    # R5: an unknown registration excludes every function in its file, so it lives in its own file here.
+    (root / "uncertain.ts").write_text(
+        "import express from 'express';\nconst {request: app} = express();\n"
+        "function uncertainHandler() {}\napp.get('header', uncertainHandler);\n"
+    )
     (root / "view.test.tsx").write_text("""
 import { test } from 'vitest';
 
-import express from 'express';
-const {request: app} = express();
-function uncertainHandler() {}
-app.get('header', uncertainHandler);
 
 const Child = () => <span/>;
 const Unused = () => <div/>;
