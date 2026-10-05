@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- CODE-EFFECTS-ENGINE-1 R-fx: Align uploaded-effects lookup JSON hashing with core for non-ASCII repository identifiers. Verify declared record conversion through scoped SQLite and HTTP.
+
 - Add local Python code_effects scanning and an explicit hosted allowlisted reader for scoped uploaded effects snapshots (CODE-EFFECTS-ENGINE-1).
 
 - Code indexing now delegates to ingest_code on every backend. Remote backends retain the existing bundle upload, limits and Python-only fallback warning.

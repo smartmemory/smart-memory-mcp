@@ -47,7 +47,19 @@ def test_local_effects_uses_real_parser_without_backend(tmp_path):
     assert any(a["kind"] == "write" for a in result["atoms"])
 
 
-def test_hosted_effects_scoped_http_sqlite(tmp_path, monkeypatch, caplog):
+@pytest.fixture
+def sqlite_backend():
+    backend = SQLiteBackend()
+    try:
+        yield backend
+    finally:
+        backend.close()
+
+
+@pytest.mark.parametrize("repo", ["test_fx_repo", "仓库-é"])
+def test_hosted_effects_scoped_http_sqlite(
+    tmp_path, monkeypatch, caplog, repo, sqlite_backend
+):
     from memory_service.api.routes import crud
     from service_common.repositories.scopes import RequestScope
     from service_common.security.scope_provider import MemoryScopeProvider
@@ -56,23 +68,31 @@ def test_hosted_effects_scoped_http_sqlite(tmp_path, monkeypatch, caplog):
     root = tmp_path / "test_fx_repo"
     root.mkdir()
     (root / "app.py").write_text('def write():\n    open("test_fx_file", "w")\n')
-    output = scan_effects(root, "test_fx_repo")
+    output = scan_effects(root, repo)
     record = snapshot_record(output)
-    key = record["metadata"]["effects_key"]
-    backend = SQLiteBackend()
-    from smartmemory.models.memory_item import MemoryItem
+    key = record["effects_key"]
+    backend = sqlite_backend
+    from smartmemory.memory.ingestion.handlers.generic_record import (
+        GenericRecordHandler,
+    )
+    from smartmemory.ontology_types import OntologyType
     from smartmemory.utils.serialization import MemoryItemSerializer
 
     for iid, workspace in [
         (record["item_id"], "test_fx_own"),
         ("test_fx_foreign", "test_fx_foreign"),
     ]:
-        item = MemoryItem(
-            item_id=iid,
-            content=record["content"],
-            memory_type="fa_snapshot",
-            metadata={**record["metadata"], "workspace_id": workspace},
+        handler = GenericRecordHandler(
+            OntologyType(name="fa_snapshot", kind="record", storage_strategy="append")
         )
+        assert handler.validate(record)
+        item = handler.to_memory_item(record)
+        item.item_id = (
+            iid  # ingest_structured preserves the supplied ID after conversion.
+        )
+        item.metadata["workspace_id"] = workspace
+        assert "metadata" not in item.metadata
+        assert item.metadata["effects_key"] == key
         backend.add_node(
             iid, MemoryItemSerializer.to_storage(item), memory_type="fa_snapshot"
         )
@@ -116,13 +136,11 @@ def test_hosted_effects_scoped_http_sqlite(tmp_path, monkeypatch, caplog):
                     return response.json()
 
             monkeypatch.setattr(common, "get_backend", lambda: HttpBackend())
-            result = tool(
-                repo="test_fx_repo", source_snapshot=output["source_snapshot"]
-            )
+            result = tool(repo=repo, source_snapshot=output["source_snapshot"])
             assert result["total"] == 1
             assert result["items"][0]["item_id"] == record["item_id"]
             assert result["items"][0]["metadata"]["effects_bundle"] == output
-            missing = tool(repo="test_fx_repo", source_snapshot="sha256:" + "0" * 64)
+            missing = tool(repo=repo, source_snapshot="sha256:" + "0" * 64)
             assert missing["total"] == 0
             assert "Uploaded effects evidence unavailable" in caplog.text
             assert (
