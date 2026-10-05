@@ -97,13 +97,15 @@ every token already issued.
 
 Local `code_index` indexes Python, JavaScript, TypeScript, JSX and TSX through core CodeIndexer. Standalone remote installations without core use the bundled Python parser and report a warning that TS/JS/TSX/JSX indexing and shared cross-file resolution require `pip install smartmemory-core`. A parse error refuses replacement and retains the prior index. Hosted `code_upload` publishes a client-parsed bundle containing `repo`, `entities`, `relations` and optional `commit_hash`. It accepts up to 10,000 source files and 64 MiB per bundle. Destination workspace comes from the authenticated session. The hosted tool accepts no checkout path.
 
-Hosted mode advertises 25 tools, an explicit allowlist rather than a tier:
+Local `code_effects(directory, repo_name=None)` scans Python effects through the shared engine without opening a memory store. Hosted `code_effects(repo, source_snapshot, limit=20, offset=0)` reads uploaded `fa_snapshot` records in the selected workspace. It accepts no filesystem path. Upload the engine's `snapshot_record` payload through existing declared-record ingestion first. Repository rules belong in the scanned checkout's `.smartmemory-effects.json`.
+
+Hosted mode advertises 27 tools, an explicit allowlist rather than a tier:
 
 `memory_ingest` `memory_search` `memory_recall` `read_around` `memory_get`
 `memory_explain` `memory_recall_pack` `memory_policy_bundle` `memory_add`
 `memory_update` `memory_delete` `memory_list` `memory_stats` `memory_distill`
 `memory_ingest_conversation` `memory_search_by_metadata` `memory_feedback`
-`code_search` `code_dead_code` `code_dependencies`
+`code_search` `code_dead_code` `code_dependencies` `code_upload` `code_effects`
 `agent_set_recall_profile` `agent_get_recall_profile` `reasoning_query_traces`
 `whoami` `switch_team`
 

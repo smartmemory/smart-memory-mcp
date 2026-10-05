@@ -38,7 +38,13 @@ MEMORY_TOOLS = (
     "memory_search_by_metadata",
     "memory_feedback",
 )
-CODE_TOOLS = ("code_search", "code_dead_code", "code_dependencies", "code_upload")
+CODE_TOOLS = (
+    "code_search",
+    "code_dead_code",
+    "code_dependencies",
+    "code_upload",
+    "code_effects",
+)
 AGENT_TOOLS = ("agent_set_recall_profile", "agent_get_recall_profile")
 REASONING_TOOLS = ("reasoning_query_traces",)
 # Registered by the hosted server itself; session-scoped, no backend route of
@@ -182,6 +188,9 @@ def register_module_tools(mcp: Any) -> dict[str, CapturedTool]:
     memory_tools.register_pro(registrar)
     memory_tools.register_feedback(registrar)
     code_tools.register(registrar)
+    from . import effects
+
+    effects.register(registrar)
     agent_tools.register(registrar)
     reasoning_tools.register(registrar)
     return registrar.captured

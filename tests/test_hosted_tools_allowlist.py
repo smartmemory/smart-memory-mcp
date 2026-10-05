@@ -260,7 +260,7 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
     advertised = {tool.name for tool in asyncio.run(mcp.list_tools())}
 
     assert advertised == set(HOSTED_TOOLS)
-    assert len(advertised) == 26
+    assert len(advertised) == 27
 
 
 @pytest.mark.parametrize("name", EXCLUDED_TOOLS)
@@ -350,6 +350,16 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
                 "relations": [],
                 "commit_hash": "test_ingest_commit",
             }
+        },
+    ),
+    ("code_effects", {"repo": "test_fx_repo", "source_snapshot": "sha256:test"}),
+    (
+        "code_effects",
+        {
+            "repo": "test_fx_repo",
+            "source_snapshot": "sha256:test",
+            "limit": 5,
+            "offset": 2,
         },
     ),
     ("code_search", {"query": "def main"}),

@@ -38,6 +38,9 @@ def _render_read_call(rh: dict) -> str:
 
 def register(mcp):
     """Register code indexing and search tools with the MCP server."""
+    from . import effects_tools
+
+    effects_tools.register(mcp)
 
     @mcp.tool(
         title="Index a codebase",
