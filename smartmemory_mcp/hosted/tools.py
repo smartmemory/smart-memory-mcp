@@ -11,6 +11,7 @@ work through `RemoteBackend` alone, touch no local filesystem path, and need no
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -37,7 +38,7 @@ MEMORY_TOOLS = (
     "memory_search_by_metadata",
     "memory_feedback",
 )
-CODE_TOOLS = ("code_search", "code_dead_code", "code_dependencies")
+CODE_TOOLS = ("code_search", "code_dead_code", "code_dependencies", "code_upload")
 AGENT_TOOLS = ("agent_set_recall_profile", "agent_get_recall_profile")
 REASONING_TOOLS = ("reasoning_query_traces",)
 # Registered by the hosted server itself; session-scoped, no backend route of
@@ -116,6 +117,52 @@ class _CapturingRegistrar:
         return getattr(self._mcp, name)
 
 
+def register_upload_tool(mcp: Any) -> None:
+    """Register the bounded parsed-bundle tool, with no core or filesystem access."""
+    from smartmemory_mcp.tools.common import get_backend, graceful
+
+    @mcp.tool(
+        title="Upload a parsed code index",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def code_upload(bundle: dict[str, Any]) -> dict[str, Any]:
+        """Publish a client-parsed/resolved CODE-INGEST-SURFACES-1 bundle.
+
+        Supply repo, entities, relations and optional commit_hash. No server
+        checkout is read. Workspace is selected by the authenticated session.
+        """
+        if set(bundle) - {"repo", "entities", "relations", "commit_hash"}:
+            raise ValueError("Code upload accepts only the parsed bundle envelope")
+        if (
+            not isinstance(bundle.get("repo"), str)
+            or not bundle["repo"].strip()
+            or not bundle.get("entities")
+        ):
+            raise ValueError("Code upload requires repo and non-empty entities")
+        if (
+            len(json.dumps(bundle, ensure_ascii=False, separators=(",", ":")).encode())
+            > 64 * 1024 * 1024
+        ):
+            raise ValueError("Code upload exceeds MAX_REQUEST_BODY_BYTES=67108864")
+        if len({e["file_path"] for e in bundle["entities"]}) > 10000:
+            raise ValueError("Code upload exceeds max_files=10000")
+        backend = get_backend()
+        if not backend.supports("request"):
+            raise ValueError("Hosted upload requires the authenticated remote backend")
+        return backend.request(
+            "POST",
+            "/memory/code/index",
+            json=bundle,
+            timeout=max(60, len(bundle["entities"]) // 50),
+        )
+
+
 def register_module_tools(mcp: Any) -> dict[str, CapturedTool]:
     """Register every module that CONTAINS an allowlisted tool.
 
@@ -130,6 +177,7 @@ def register_module_tools(mcp: Any) -> dict[str, CapturedTool]:
     )
 
     registrar = _CapturingRegistrar(mcp)
+    register_upload_tool(registrar)
     memory_tools.register_free(registrar)
     memory_tools.register_pro(registrar)
     memory_tools.register_feedback(registrar)

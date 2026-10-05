@@ -99,7 +99,7 @@ class CodeParser:
         rel_path = os.path.relpath(abs_path, self.repo_root)
         result = ParseResult(file_path=rel_path)
         try:
-            with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(abs_path, "r", encoding="utf-8") as f:
                 source = f.read()
             tree = ast.parse(source, filename=file_path)
         except SyntaxError as e:
@@ -333,11 +333,17 @@ class CodeParser:
         return module_name.replace(".", "/") + ".py"
 
 
-def collect_python_files(directory, exclude_dirs=None):
+def collect_python_files(directory, exclude_dirs=None, *, errors=None):
     if exclude_dirs is None:
         exclude_dirs = DEFAULT_EXCLUDE_DIRS
+
+    def onerror(error):
+        if errors is None:
+            raise error
+        errors.append(f"Error collecting {error.filename}: {error}")
+
     py_files = []
-    for root, dirs, files in os.walk(directory):
+    for root, dirs, files in os.walk(directory, onerror=onerror):
         dirs[:] = [
             d for d in dirs if d not in exclude_dirs and not d.endswith(".egg-info")
         ]

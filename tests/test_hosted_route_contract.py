@@ -41,6 +41,7 @@ TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
     "memory_ingest_conversation": ("post", "/memory/ingest/conversation"),
     "memory_search_by_metadata": ("get", "/memory/by-metadata"),
     "memory_feedback": ("post", "/memory/result-feedback"),
+    "code_upload": ("post", "/memory/code/index"),
     "code_search": ("get", "/memory/code/search"),
     "code_dead_code": ("get", "/memory/code/dead-code"),
     "code_dependencies": ("get", "/memory/code/dependencies"),
