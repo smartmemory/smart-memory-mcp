@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Verify local MCP dead-code analysis against real scoped FalkorDB code publication, including component, hook and test reachability, with fixture graph cleanup (CODE-FRAMEWORK-SEMANTICS-1, R-fw-4).
+
 - Analyze component and hook dead-code candidates in local Lite stores. Remote and hosted tools preserve callable kinds and use the service framework evidence (CODE-FRAMEWORK-SEMANTICS-1).
 
 - Code indexing now delegates to ingest_code on every backend. Remote backends retain the existing bundle upload, limits and Python-only fallback warning.
