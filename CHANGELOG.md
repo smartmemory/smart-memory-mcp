@@ -1,5 +1,23 @@
 # Changelog
 
+- Integrated FRAMEWORK with Wave B, preserving scoped liveness and diagnostic evidence.
+
+## Unreleased - framework R7 fix
+
+- FalkorDB dead-code test pins the R7 rule: members of a live class are not dead, members of an unreferenced class are (CODE-FRAMEWORK-SEMANTICS-1, R7-fw).
+
+## Unreleased - framework R6 fix
+
+- FalkorDB local dead-code test pins that a function used only by value (REFERENCES) is not dead (CODE-FRAMEWORK-SEMANTICS-1, R6-fw).
+
+## Unreleased - framework R5 fix
+
+- Framework test keeps its unknown registration in a separate file: since R5 an unknown registration excludes every function in its file from dead code (CODE-FRAMEWORK-SEMANTICS-1, R5-fw).
+
+## Unreleased - framework R3 fix
+
+- Verify unknown framework callbacks remain excluded from local Lite and FalkorDB dead-code tools.
+
 ## Unreleased
 
 - Show only server-computed hosted code counts and outcomes after upload. Missing server diagnostics and lost transport report unknown (CODE-PARSE-DIAGNOSTICS-1).
@@ -12,6 +30,9 @@
 - CODE-EFFECTS-ENGINE-1 R-fx: Align uploaded-effects lookup JSON hashing with core for non-ASCII repository identifiers. Verify declared record conversion through scoped SQLite and HTTP.
 
 - Add local Python code_effects scanning and an explicit hosted allowlisted reader for scoped uploaded effects snapshots (CODE-EFFECTS-ENGINE-1).
+- Verify local MCP dead-code analysis against real scoped FalkorDB code publication, including component, hook and test reachability, with fixture graph cleanup (CODE-FRAMEWORK-SEMANTICS-1, R-fw-4).
+
+- Analyze component and hook dead-code candidates in local Lite stores. Remote and hosted tools preserve callable kinds and use the service framework evidence (CODE-FRAMEWORK-SEMANTICS-1).
 
 - Code indexing now delegates to ingest_code on every backend. Remote backends retain the existing bundle upload, limits and Python-only fallback warning.
 

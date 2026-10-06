@@ -82,6 +82,14 @@ class LocalBackend(BackendCapabilities):
         """Delegate checkout indexing to core's shared parse/resolve/publish seam."""
         return self._mem.ingest_code(**kwargs)
 
+    def code_dead_code(self, **kwargs: Any) -> dict[str, Any]:
+        """Analyze stored callable kinds with the shared core candidate policy."""
+        from smartmemory.code.dead_code import local_dead_code
+
+        memory = self._mem
+        with memory._di_context():
+            return local_dead_code(memory._graph.backend, **kwargs)
+
     # -- Core CRUD --
 
     def export_okf(self, bundle_path: str) -> int:

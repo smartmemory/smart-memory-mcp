@@ -28,7 +28,11 @@
           "content_hash": "5bdd1496e410831079d57688ed04125ae01494e294a870bb34c3dcb7f60680d2",
           "source_snapshot": "sha256:5bdd1496e410831079d57688ed04125ae01494e294a870bb34c3dcb7f60680d2",
           "call_evidence": [],
-          "lexical_owner": null
+          "lexical_owner": null,
+          "is_exported": false,
+          "is_entry_point": false,
+          "framework_evidence": [],
+          "test_evidence": []
         },
         {
           "name": "helper",
@@ -52,7 +56,11 @@
           "content_hash": "5bdd1496e410831079d57688ed04125ae01494e294a870bb34c3dcb7f60680d2",
           "source_snapshot": "sha256:5bdd1496e410831079d57688ed04125ae01494e294a870bb34c3dcb7f60680d2",
           "call_evidence": [],
-          "lexical_owner": ""
+          "lexical_owner": "",
+          "is_exported": false,
+          "is_entry_point": false,
+          "framework_evidence": [],
+          "test_evidence": []
         },
         {
           "name": "use",
@@ -76,7 +84,11 @@
           "content_hash": "30e3efbb2ae2f17093ff2fb363a2d0f2bb884c6e5cdb762c76b42cbc9b864c8c",
           "source_snapshot": "sha256:30e3efbb2ae2f17093ff2fb363a2d0f2bb884c6e5cdb762c76b42cbc9b864c8c",
           "call_evidence": [],
-          "lexical_owner": null
+          "lexical_owner": null,
+          "is_exported": false,
+          "is_entry_point": false,
+          "framework_evidence": [],
+          "test_evidence": []
         },
         {
           "name": "use",
@@ -117,7 +129,11 @@
               }
             }
           ],
-          "lexical_owner": ""
+          "lexical_owner": "",
+          "is_exported": false,
+          "is_entry_point": false,
+          "framework_evidence": [],
+          "test_evidence": []
         },
         {
           "name": "view.ts",
@@ -141,7 +157,11 @@
           "content_hash": "61989ae5e4985420897be92182898d1009c227cabcd39a1eba9d4e522072a24a",
           "source_snapshot": "sha256:61989ae5e4985420897be92182898d1009c227cabcd39a1eba9d4e522072a24a",
           "call_evidence": [],
-          "lexical_owner": null
+          "lexical_owner": null,
+          "is_exported": false,
+          "is_entry_point": false,
+          "framework_evidence": [],
+          "test_evidence": []
         },
         {
           "name": "View",
@@ -165,7 +185,21 @@
           "content_hash": "61989ae5e4985420897be92182898d1009c227cabcd39a1eba9d4e522072a24a",
           "source_snapshot": "sha256:61989ae5e4985420897be92182898d1009c227cabcd39a1eba9d4e522072a24a",
           "call_evidence": [],
-          "lexical_owner": ""
+          "lexical_owner": "",
+          "is_exported": true,
+          "is_entry_point": false,
+          "framework_evidence": [
+            {
+              "kind": "export",
+              "basis": "explicit local export syntax",
+              "line": 1,
+              "byte_start": 0,
+              "byte_end": 36,
+              "source_snapshot": "sha256:61989ae5e4985420897be92182898d1009c227cabcd39a1eba9d4e522072a24a",
+              "content_hash": "61989ae5e4985420897be92182898d1009c227cabcd39a1eba9d4e522072a24a"
+            }
+          ],
+          "test_evidence": []
         }
       ],
       "relations": [

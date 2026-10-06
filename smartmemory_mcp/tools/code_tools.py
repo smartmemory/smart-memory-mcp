@@ -397,7 +397,7 @@ def register(mcp):
         exclude_decorators: Optional[str] = None,
         limit: int = 50,
     ) -> str:
-        """Find potentially dead (unreferenced) functions in an indexed codebase."""
+        """Find potentially dead callable entities, components and hooks in an indexed codebase."""
         backend = get_backend()
 
         if backend.supports("request"):
@@ -412,22 +412,27 @@ def register(mcp):
             dead = result.get("dead_functions", [])
             count = result.get("count", len(dead))
         else:
-            return "Dead code analysis requires the remote backend (REST API). Use code_search to find entities locally."
+            result = backend.code_dead_code(
+                repo=repo, exclude_decorators=exclude_decorators, limit=limit
+            )
+            dead = result.get("dead_functions", [])
+            count = result.get("count", len(dead))
 
         if not dead:
             return f"No dead code found in repo '{repo}'."
 
-        lines = [f"Found {count} potentially unused functions in '{repo}':\n"]
+        lines = [f"Found {count} potentially unused callable entities in '{repo}':\n"]
         for i, item in enumerate(dead, 1):
             name = item.get("name", "?")
             fpath = item.get("file_path", "?")
             lineno = item.get("line_number", "?")
             dec = item.get("decorators", "")
-            line = f"{i}. {name}  ({fpath}:{lineno})"
+            kind = item.get("entity_type", "function")
+            line = f"{i}. {name} ({kind})  ({fpath}:{lineno})"
             if dec:
                 line += f"  [{dec}]"
             lines.append(line)
-        lines.append(f"\nTotal: {count} potentially dead functions")
+        lines.append(f"\nTotal: {count} potentially dead callable entities")
         return "\n".join(lines)
 
     @mcp.tool(
