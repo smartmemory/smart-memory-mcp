@@ -153,7 +153,11 @@ test('target', () => tested(), 1000);
         local = LocalBackend()
         local._mem = memory
         result = local.code_dead_code(repo="test_fw_repo")
-        assert {n["name"] for n in result["dead_functions"]} == {"Unused", "useUnused", "stale"}
+        assert {n["name"] for n in result["dead_functions"]} == {
+            "Unused",
+            "useUnused",
+            "stale",
+        }
         assert local.code_dead_code(repo="test_fw_other")["count"] == 0
         monkeypatch.setattr(common, "_backend", local)
         registrar = _CapturingRegistrar(FastMCP("test_fw_falkor"))

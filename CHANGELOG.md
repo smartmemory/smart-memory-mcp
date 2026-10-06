@@ -1,5 +1,7 @@
 # Changelog
 
+- Format the integrated framework regression file to satisfy the Wave B lint gate.
+
 - Integrated FRAMEWORK with Wave B, preserving scoped liveness and diagnostic evidence.
 
 ## Unreleased - framework R7 fix
