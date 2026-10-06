@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased - CODE-CALLSITE-COVERAGE-1 build
+
+- Carry shared code source-site counts through remote ingestion and show extraction status separately from resolved edges in code-index summaries.
+
 - Format the integrated framework regression file to satisfy the Wave B lint gate.
 
 - Integrated FRAMEWORK with Wave B, preserving scoped liveness and diagnostic evidence.

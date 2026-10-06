@@ -80,7 +80,18 @@ def register(mcp):
             languages=["python", "typescript"],
         )
         notice = getattr(result, "notice", "")
+        sites = getattr(result, "call_sites", "unknown")
+        site_summary = (
+            ", ".join(
+                f"{key}={sites[key]}"
+                for key in ("extracted", "unresolved", "name_only", "exact")
+            )
+            if isinstance(sites, dict)
+            else "unknown"
+        )
         summary_lines = [
+            f"  Source call sites: {site_summary}",
+            f"  Resolved call edges: {getattr(result, 'resolved_call_edges', 'unknown')} (not recall)",
             f"  Clean: {result.files_clean}, partial: {result.files_partial}, failed: {result.files_failed}",
             f"  Acceptance: {result.acceptance}, staging: {result.staging}, Publication: {result.publication}",
             "  G16 complete-generation publication is not proven by 1.x acceptance.",

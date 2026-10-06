@@ -32,6 +32,8 @@ class CodeIngestResult:
     staging: str = "not_started"
     publication: str = "refused"
     g16_complete: bool = False
+    call_sites: dict[str, int] | str = "unknown"
+    resolved_call_edges: int | str = "unknown"
 
 
 class MemoryResult(TypedDict, total=False):

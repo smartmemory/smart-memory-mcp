@@ -249,6 +249,8 @@ class RemoteBackend(BackendCapabilities):
                 staging="prepared",
                 publication="not_attempted",
                 g16_complete=False,
+                call_sites="unknown",
+                resolved_call_edges="unknown",
             )
         else:
             indexer = CodeIndexer(
