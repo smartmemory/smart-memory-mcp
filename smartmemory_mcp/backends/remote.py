@@ -436,8 +436,10 @@ class RemoteBackend(BackendCapabilities):
 
     # --- MemoryBackend protocol: implemented (have REST routes) ------------------
 
-    def add(self, content: str, memory_type: str = "semantic", **kwargs: Any) -> str:
-        """POST /memory/add. Returns item_id string."""
+    def add(
+        self, content: str, memory_type: str = "semantic", **kwargs: Any
+    ) -> str | dict:
+        """POST /memory/add. Return an item_id or a terminal held receipt."""
         body: dict[str, Any] = {"content": content, "memory_type": memory_type}
         if metadata := kwargs.get("metadata"):
             body["metadata"] = (
@@ -447,6 +449,8 @@ class RemoteBackend(BackendCapabilities):
             body["use_pipeline"] = True
         result = self._request("POST", "/memory/add", json=body) or {}
         if isinstance(result, dict):
+            if result.get("status") == "held":
+                return result
             # Surface the failure. The `str(result)` fallback below used to swallow
             # an {"error": ...} response and hand back "{'error': 'API error 500:
             # ...'}" AS THE NEW ITEM ID — reporting a failed write as a successful

@@ -2,6 +2,8 @@
 
 ## Unreleased - CODE-CALLSITE-COVERAGE-1 build
 
+- CORE-HOLD-RECEIPT-1 round 2: Preserve held receipts in hosted adds and report memory, conversation, decision, pattern, session and friction holds with the policy reason.
+
 - Carry shared code source-site counts through remote ingestion and show extraction status separately from resolved edges in code-index summaries.
 
 - Format the integrated framework regression file to satisfy the Wave B lint gate.

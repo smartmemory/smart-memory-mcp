@@ -284,6 +284,8 @@ def register_free(mcp):
         backend = get_backend()
         result = backend.ingest(content, memory_type=memory_type)
         if isinstance(result, dict):
+            if result.get("status") == "held":
+                return f"Memory held: {result.get('reason')}. Details: {result.get('reasons', [])}"
             if "error" in result:
                 return f"Ingest failed: {result['error']}"
             item_id = result.get("item_id", "unknown")
@@ -807,6 +809,8 @@ def register_pro(mcp):
         if tags:
             item_metadata["tags"] = tags
         item_id = backend.add(content, memory_type=memory_type, metadata=item_metadata)
+        if isinstance(item_id, dict) and item_id.get("status") == "held":
+            return f"Memory held: {item_id.get('reason')}. Details: {item_id.get('reasons', [])}"
         return f"Memory added (direct). Item ID: {item_id}"
 
     @mcp.tool(
@@ -1076,6 +1080,8 @@ def register_pro(mcp):
         if session_id:
             meta["conversation_id"] = session_id
         item_id = backend.add(content, memory_type="pending", metadata=meta)
+        if isinstance(item_id, dict) and item_id.get("status") == "held":
+            return f"Turn held: {item_id.get('reason')}. Details: {item_id.get('reasons', [])}"
         return f"Turn stored: {item_id}"
 
     @mcp.tool(
@@ -1119,17 +1125,24 @@ def register_pro(mcp):
             turns_per_chunk=turns_per_chunk,
             max_chunk_chars=max_chunk_chars,
         )
-        if isinstance(response, dict):
-            ingested = response.get("chunks_ingested", 0)
-            failed = response.get("chunks_failed", 0)
-            conv_id = response.get("conversation_id", "")
-            return (
-                f"Conversation {conv_id}: {ingested} chunks ingested, {failed} failed."
-            )
         from dataclasses import asdict
 
         r = asdict(response) if hasattr(response, "__dataclass_fields__") else response
-        return f"Conversation ingested: {r}"
+        if isinstance(r, dict):
+            held_chunks = [
+                chunk
+                for chunk in r.get("chunk_results", [])
+                if chunk.get("status") == "held"
+            ]
+            ingested = r.get("chunks_ingested", 0)
+            failed = r.get("chunks_failed", 0) - len(held_chunks)
+            message = f"Conversation {r.get('conversation_id', '')}: {ingested} chunks ingested, {failed} failed."
+            if held_chunks:
+                message += f" {len(held_chunks)} held: " + ", ".join(
+                    str(chunk.get("reason")) for chunk in held_chunks
+                )
+            return message
+        return f"Conversation ingest result: {r}"
 
     @mcp.tool(
         title="Search memories with graph traversal",

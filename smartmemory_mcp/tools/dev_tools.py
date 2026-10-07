@@ -71,6 +71,8 @@ def register(mcp):
         item_metadata["tags"] = all_tags
 
         item_id = backend.add(content, memory_type="decision", metadata=item_metadata)
+        if isinstance(item_id, dict) and item_id.get("status") == "held":
+            return f"Decision held: {item_id.get('reason')}. Details: {item_id.get('reasons', [])}"
 
         return (
             f"Decision recorded: {item_id}\n"
@@ -206,6 +208,8 @@ def register(mcp):
 
         result = backend.ingest(content, memory_type="episodic")
         if isinstance(result, dict):
+            if result.get("status") == "held":
+                return f"Session held: {result.get('reason')}. Details: {result.get('reasons', [])}"
             session_id = result.get("item_id", str(result))
         else:
             session_id = str(result)
@@ -333,6 +337,8 @@ def register(mcp):
             content, memory_type="procedural", metadata=item_metadata
         )
 
+        if isinstance(pattern_id, dict) and pattern_id.get("status") == "held":
+            return f"Pattern held: {pattern_id.get('reason')}. Details: {pattern_id.get('reasons', [])}"
         return f"Pattern recorded: {pattern_id}\nName: {name}"
 
     @mcp.tool(
@@ -383,6 +389,8 @@ def register(mcp):
 
         result = backend.ingest(content, memory_type="observation")
         if isinstance(result, dict):
+            if result.get("status") == "held":
+                return f"Friction held: {result.get('reason')}. Details: {result.get('reasons', [])}"
             friction_id = result.get("item_id", str(result))
         else:
             friction_id = str(result)
