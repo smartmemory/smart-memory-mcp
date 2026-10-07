@@ -50,6 +50,7 @@
 
 - CODE-INGEST-SURFACES-1: local code_index delegates to core for Python, JavaScript, TypeScript, JSX and TSX. Hosted code_upload accepts bounded parsed bundles without reading server checkout paths.
 
+- MAYA-WORK-1 team build (not deployed or accepted): decode hosted Team membership from the service team_id field, preserving per-session selection and local behavior.
 
 ## 1.5.20 — 2026-10-04
 
