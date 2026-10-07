@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased - CODE-CALLSITE-COVERAGE-1 build
+## Unreleased
+
+## 1.5.21 — 2026-10-08
+
+- Format three files that drifted from `ruff format` after 1.5.20 (no behavior change).
 
 - CORE-HOLD-RECEIPT-1 round 2: Preserve held receipts in hosted adds and report memory, conversation, decision, pattern, session and friction holds with the policy reason.
 
@@ -10,23 +14,13 @@
 
 - Integrated FRAMEWORK with Wave B, preserving scoped liveness and diagnostic evidence.
 
-## Unreleased - framework R7 fix
-
 - FalkorDB dead-code test pins the R7 rule: members of a live class are not dead, members of an unreferenced class are (CODE-FRAMEWORK-SEMANTICS-1, R7-fw).
-
-## Unreleased - framework R6 fix
 
 - FalkorDB local dead-code test pins that a function used only by value (REFERENCES) is not dead (CODE-FRAMEWORK-SEMANTICS-1, R6-fw).
 
-## Unreleased - framework R5 fix
-
 - Framework test keeps its unknown registration in a separate file: since R5 an unknown registration excludes every function in its file from dead code (CODE-FRAMEWORK-SEMANTICS-1, R5-fw).
 
-## Unreleased - framework R3 fix
-
 - Verify unknown framework callbacks remain excluded from local Lite and FalkorDB dead-code tools.
-
-## Unreleased
 
 - Show only server-computed hosted code counts and outcomes after upload. Missing server diagnostics and lost transport report unknown (CODE-PARSE-DIAGNOSTICS-1).
 
