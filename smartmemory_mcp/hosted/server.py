@@ -248,7 +248,9 @@ def _list_team_ids() -> set[str] | None:
         logger.warning("Workspace lookup returned an unexpected shape: %r", type(rows))
         return None
     ids = {
-        str(row.get("team_id")) for row in rows if isinstance(row, dict) and row.get("team_id")
+        str(row.get("team_id"))
+        for row in rows
+        if isinstance(row, dict) and row.get("team_id")
     }
     return ids
 

@@ -147,7 +147,12 @@ def fake_svc_api(seen: list[tuple[str, str]] | None = None):
         if path == "/memory/result-feedback":
             return ok({"result_used_count": 1, "result_shown_count": 1})
         if path == "/memory/teams":
-            return ok([{"team_id": "team-personal", "name": "Personal"}, {"team_id": "team-B"}])
+            return ok(
+                [
+                    {"team_id": "team-personal", "name": "Personal"},
+                    {"team_id": "team-B"},
+                ]
+            )
         if path.startswith("/memory/code/"):
             return ok({"results": [], "total": 0, "files": [], "symbols": []})
         if "/recall-profile" in path:
