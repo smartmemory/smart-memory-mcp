@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `code_index` no longer turns the default into an explicit `["python", "typescript"]` request: it passes `languages=None`, so a TS/JS file that fails to extract is skipped with a warning instead of refusing the index (CODE-INDEXER-HARDEN-1 F32). Needs a smartmemory-core release that contains CODE-INDEXER-HARDEN-1 U3; against an older core the default indexes Python only.
+- Release ordering: requires a smartmemory-core release containing CODE-INDEXER-HARDEN-1 U3. Against an older core it falls back to Python-only indexing. Do not release MCP before that core.
+
 ## 1.5.21 — 2026-10-08
 
 - Format three files that drifted from `ruff format` after 1.5.20 (no behavior change).

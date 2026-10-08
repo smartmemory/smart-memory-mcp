@@ -77,7 +77,10 @@ def register(mcp):
             directory=abs_dir,
             repo=repo,
             exclude_dirs=exclusions,
-            languages=["python", "typescript"],
+            # No language choice from the caller: core's default (every supported language present; a TS/JS file that
+            # fails to extract is skipped, not refused). An explicit list would make every failure refuse
+            # (CODE-INDEXER-HARDEN-1 F32). Requires a core with the F32 default; older cores index Python only.
+            languages=None,
         )
         notice = getattr(result, "notice", "")
         sites = getattr(result, "call_sites", "unknown")

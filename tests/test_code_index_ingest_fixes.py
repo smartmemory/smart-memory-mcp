@@ -161,3 +161,41 @@ def test_remote_parser_dependency_arms(tmp_path, monkeypatch, caplog, core_insta
     finally:
         store.close()
         shutil.rmtree(root, ignore_errors=True)
+
+
+def test_default_code_index_skips_a_failing_js_file_instead_of_refusing(
+    tmp_path, monkeypatch, caplog
+):
+    """CODE-INDEXER-HARDEN-1 F32: no caller language choice means core's default, not an explicit request."""
+    root = tmp_path / "test_ingest_default_languages"
+    root.mkdir()
+    (root / "ok.py").write_text("def ok():\n    return 1\n")
+    (root / "bad.js").write_bytes(b"export const x = '\xff\xfe';\n")
+    memory = create_lite_memory(
+        str(tmp_path / "test_ingest_default_store"),
+        pipeline_profile=PipelineConfig.lite_hermetic(),
+        spawn_worker=False,
+    )
+    seen = []
+    try:
+        local = LocalBackend()
+        local._mem = memory
+        original = local.ingest_code
+
+        def recording(**kwargs):
+            seen.append(kwargs.get("languages", "absent"))
+            return original(**kwargs)
+
+        monkeypatch.setattr(local, "ingest_code", recording)
+        monkeypatch.setattr(common, "_backend", local)
+        output = _tool()(str(root), "test_ingest_default_languages")
+        assert seen == [None]
+        assert "successfully" in output, output
+        nodes = memory._graph.backend.search_nodes_by_type_or_tag("code")
+        assert any(node["name"] == "ok" for node in nodes)
+        assert not any(node.get("file_path") == "bad.js" for node in nodes)
+        assert "Code file skipped for bad.js" in caplog.text
+    finally:
+        memory.close()
+        shutil.rmtree(root, ignore_errors=True)
+        shutil.rmtree(tmp_path / "test_ingest_default_store", ignore_errors=True)
