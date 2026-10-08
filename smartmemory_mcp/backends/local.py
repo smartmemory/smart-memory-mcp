@@ -90,6 +90,23 @@ class LocalBackend(BackendCapabilities):
         with memory._di_context():
             return local_dead_code(memory._graph.backend, **kwargs)
 
+    def code_dependencies(
+        self,
+        entity_name: str,
+        direction: str = "both",
+        repo: str | None = None,
+        file_path: str | None = None,
+        item_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Resolve dependencies through scoped graph primitives, including Lite."""
+        from .code_dependencies import local_code_dependencies
+
+        memory = self._mem
+        with memory._di_context():
+            return local_code_dependencies(
+                memory._graph, entity_name, direction, repo, file_path, item_id
+            )
+
     # -- Core CRUD --
 
     def export_okf(self, bundle_path: str) -> int:

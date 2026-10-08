@@ -27,6 +27,7 @@ from smartmemory_mcp.hosted.server import build_hosted_server, hosted_asgi_app
 from smartmemory_mcp.hosted.tools import (
     HOSTED_TOOLS,
     PATH_PARAMETER_NAMES,
+    STORED_SELECTOR_PARAMETERS,
 )
 
 from ._hosted_fixtures import (
@@ -290,12 +291,17 @@ def test_no_hosted_tool_takes_a_filesystem_path() -> None:
     )
 
     offenders: list[str] = []
+    observed_selectors = set()
+    assert STORED_SELECTOR_PARAMETERS == frozenset({("code_dependencies", "file_path")})
     for tool in asyncio.run(mcp.list_tools()):
         properties = (tool.parameters or {}).get("properties") or {}
         for parameter in properties:
-            if parameter.lower() in PATH_PARAMETER_NAMES:
+            if (tool.name, parameter) in STORED_SELECTOR_PARAMETERS:
+                observed_selectors.add((tool.name, parameter))
+            elif parameter.lower() in PATH_PARAMETER_NAMES:
                 offenders.append(f"{tool.name}({parameter})")
 
+    assert observed_selectors == set(STORED_SELECTOR_PARAMETERS)
     assert offenders == [], (
         "hosted tools must not accept filesystem paths; the container disk is "
         f"shared by every tenant: {offenders}"
@@ -638,3 +644,45 @@ def test_code_upload_refuses_server_checkout_keys(key):
     }
     with pytest.raises(ValueError, match="parsed bundle envelope"):
         registrar.captured["code_upload"].function(bundle)
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        {"file_path": "a.py"},
+        {"file_path": "../test_harden_u5_secret"},
+        {"file_path": "/test_harden_u5_secret"},
+        {"item_id": "code::r::a.py::a.helper"},
+    ],
+)
+def test_hosted_code_selectors_are_forwarded_as_literal_service_filters(
+    monkeypatch, selector
+):
+    harness = _Harness()
+    calls = []
+    svc = fake_svc_api()
+
+    def handler(method, url, **kwargs):
+        calls.append((method, httpx.URL(url).path, kwargs.get("params")))
+        return svc(method, url, **kwargs)
+
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", handler)
+
+    async def body(client):
+        session = await harness.session(client)
+        return await harness.call(
+            client,
+            session,
+            "code_dependencies",
+            {"entity_name": "a.helper", "repo": "r", **selector},
+        )
+
+    result = harness.run(body)
+    _assert_usable("code_dependencies", selector, result)
+    assert calls == [
+        (
+            "GET",
+            "/memory/code/dependencies",
+            {"entity_name": "a.helper", "direction": "both", "repo": "r", **selector},
+        )
+    ]

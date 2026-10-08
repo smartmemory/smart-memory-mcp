@@ -263,11 +263,24 @@ class RemoteBackend(BackendCapabilities):
                 resolved_call_edges="unknown",
             )
         else:
+            # CODE-INDEXER-HARDEN-1 fix round 1 (finding 8): the same dirty-aware provenance
+            # and checkout identity the hosted CLI sends (smartmemory_app.hosted_code).
+            from smartmemory.code.repo_key import derive_repo_identity
+            from smartmemory.code.source_revision import detect_source_revision
+
+            revision = detect_source_revision(directory)
+            if revision.dirty:
+                logger.warning(
+                    "Hosted code index of %s includes uncommitted changes; stamped %s",
+                    directory,
+                    revision.commit_hash,
+                )
             indexer = CodeIndexer(
                 None,
                 repo,
                 directory,
                 set(exclude_dirs) if exclude_dirs is not None else None,
+                commit_hash=revision.commit_hash,
             )
             try:
                 payload, parsed = indexer.prepare_bundle(languages)
@@ -281,6 +294,7 @@ class RemoteBackend(BackendCapabilities):
                     error_message=str(exc),
                     **parsed.parse_summary(),
                 )
+            payload["repo_identity"] = derive_repo_identity(directory).identity
             files_parsed, errors = parsed.files_parsed, parsed.errors
             summary = parsed.parse_summary()
         response = self.request(

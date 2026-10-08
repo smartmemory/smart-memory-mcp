@@ -57,11 +57,40 @@ def register(mcp):
         repo_name: Optional[str] = None,
         exclude_dirs: Optional[str] = None,
     ) -> str:
-        """Index Python and TS/JS/TSX/JSX through the shared core CodeIndexer."""
+        """Index Python and TS/JS/TSX/JSX through the shared core CodeIndexer.
+
+        Without ``repo_name`` the repo key is the checkout's normalized git remote URL,
+        or a hash of its absolute path when it has no remote (CODE-INDEXER-HARDEN-1 F28).
+        A name that already belongs to a different checkout is refused, never overwritten.
+        """
         abs_dir = os.path.abspath(directory)
         if not os.path.isdir(abs_dir):
             return f"Error: directory not found: {abs_dir}"
-        repo = repo_name or os.path.basename(abs_dir)
+        key_note = ""
+        if repo_name:
+            repo = repo_name
+        else:
+            try:
+                from smartmemory.code.repo_key import derive_repo_identity
+            except ImportError as exc:
+                # The bare directory name used to be the default; two checkouts named
+                # "api" then replaced each other's index. Refuse rather than guess.
+                logger.warning(
+                    "code_index refused without repo_name: repo key derivation needs smartmemory-core (%s)",
+                    exc,
+                )
+                return (
+                    "Error: repo_name is required when smartmemory-core is not installed "
+                    "(the repo key is derived from the git remote by core). "
+                    "Pass repo_name, or install smartmemory-core."
+                )
+            derived = derive_repo_identity(abs_dir)
+            repo = derived.key
+            source = {
+                "remote": "git remote",
+                "local_remote": "local git remote (path hash)",
+            }.get(derived.kind, "checkout path hash (no usable git remote)")
+            key_note = f"  Repo key derived from {source}. Pass repo_name to choose a different name."
         exclusions = (
             [d.strip() for d in exclude_dirs.split(",") if d.strip()]
             if exclude_dirs
@@ -111,6 +140,7 @@ def register(mcp):
         files_parsed, errors = result.files_parsed, result.errors
         lines = [
             f"Indexed repo '{repo}' successfully.",
+            *([key_note] if key_note else []),
             f"  Files parsed: {files_parsed}",
             f"  Entities: {entities_stored}",
             f"  Edges: {edges_stored}",
@@ -486,8 +516,14 @@ def register(mcp):
         entity_name: str,
         direction: str = "both",
         repo: Optional[str] = None,
+        file_path: Optional[str] = None,
+        item_id: Optional[str] = None,
     ) -> str:
-        """Trace code dependencies -- what calls/imports/inherits what."""
+        """Trace calls, imports and inheritance. Select an ambiguous name with file_path or item_id.
+
+        file_path is the stored repo-relative code path, compared literally in the index.
+        It never reads a path on the MCP server filesystem.
+        """
         backend = get_backend()
 
         if backend.supports("request"):
@@ -497,13 +533,25 @@ def register(mcp):
             }
             if repo:
                 params["repo"] = repo
+            if file_path:
+                params["file_path"] = file_path
+            if item_id:
+                params["item_id"] = item_id
             result = backend.request("GET", "/memory/code/dependencies", params=params)
-            if isinstance(result, dict) and "error" in result:
-                return f"Error: {result['error']}"
-            if not isinstance(result, dict):
-                return "Unexpected response from API"
+        elif backend.supports("code_dependencies"):
+            result = backend.code_dependencies(
+                entity_name=entity_name,
+                direction=direction,
+                repo=repo,
+                file_path=file_path,
+                item_id=item_id,
+            )
         else:
-            return "Dependency analysis requires the remote backend (REST API). Use code_search to find entities locally."
+            return "Dependency analysis is unavailable on this backend."
+        if isinstance(result, dict) and "error" in result:
+            return f"Error: {result['error']}"
+        if not isinstance(result, dict):
+            return "Unexpected response from backend"
 
         root = result.get("root", {})
         dependents = result.get("dependents", [])

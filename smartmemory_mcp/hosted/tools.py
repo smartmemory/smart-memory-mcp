@@ -73,6 +73,14 @@ PATH_PARAMETER_NAMES: frozenset[str] = frozenset(
 )
 
 
+# Exact stored-field selectors, not filesystem capabilities. code_dependencies forwards
+# file_path as a bound service query value and never opens it. Keep the name blacklist
+# intact for every other tool/parameter pair. The wire and real-route tests prove this distinction.
+STORED_SELECTOR_PARAMETERS: frozenset[tuple[str, str]] = frozenset(
+    {("code_dependencies", "file_path")}
+)
+
+
 @dataclass(frozen=True)
 class CapturedTool:
     """A registered callable and the metadata its hosted replacement must retain."""
@@ -140,8 +148,10 @@ def register_upload_tool(mcp: Any) -> None:
     def code_upload(bundle: dict[str, Any]) -> dict[str, Any]:
         """Publish a client-parsed/resolved CODE-INGEST-SURFACES-1 bundle.
 
-        Supply repo, entities, relations and optional commit_hash/parse_summary. No server
-        checkout is read. Workspace is selected by the authenticated session.
+        Supply repo, entities, relations and optional commit_hash/parse_summary/repo_identity.
+        No server checkout is read. Workspace is selected by the authenticated session. A repo
+        name already claimed by a checkout identity requires the matching repo_identity
+        (CODE-INDEXER-HARDEN-1).
         """
         if set(bundle) - {
             "repo",
@@ -149,6 +159,7 @@ def register_upload_tool(mcp: Any) -> None:
             "relations",
             "commit_hash",
             "parse_summary",
+            "repo_identity",
         }:
             raise ValueError("Code upload accepts only the parsed bundle envelope")
         if (

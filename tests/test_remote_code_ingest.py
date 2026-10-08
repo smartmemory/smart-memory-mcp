@@ -60,6 +60,9 @@ def test_remote_ingest_code_preserves_upload_payload(
             summary["files_partial"],
             summary["files_failed"],
         ) == (3, 0, 0)
+        # CODE-INDEXER-HARDEN-1 F8: the only intended change to the pre-move upload is the checkout
+        # identity (a non-git temp dir hashes its real path); everything else stays byte-identical.
+        assert actual["json"].pop("repo_identity").startswith("path:")
         assert summary["publication"] == "not_attempted"
         assert summary["g16_complete"] is False
         assert {d["file_path"] for d in summary["diagnostics"]} == {
