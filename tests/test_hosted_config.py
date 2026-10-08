@@ -56,7 +56,7 @@ def test_defaults_when_optional_vars_absent(monkeypatch) -> None:
 
     assert cfg.hosted_port == 8012
     assert cfg.trust_proxy is False
-    assert cfg.web_url == "https://app.smartmemory.ai"
+    assert cfg.web_url == "https://www.smartmemory.ai"
     assert cfg.allowed_client_redirects == list(DEFAULT_ALLOWED_CLIENT_REDIRECTS)
     assert "https://claude.ai/api/mcp/auth_callback" in cfg.allowed_client_redirects
     assert "http://localhost:*" in cfg.allowed_client_redirects

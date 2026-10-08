@@ -22,7 +22,7 @@ DEFAULT_ALLOWED_CLIENT_REDIRECTS: tuple[str, ...] = (
 )
 
 DEFAULT_HOSTED_PORT = 8012
-DEFAULT_SMARTMEMORY_WEB_URL = "https://app.smartmemory.ai"
+DEFAULT_SMARTMEMORY_WEB_URL = "https://www.smartmemory.ai"
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 

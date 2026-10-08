@@ -547,7 +547,7 @@ def test_svc_api_nda_gate_inside_a_tool_gives_the_web_acceptance_url(
     assert result["isError"] is True
     assert _text(result) == (
         "Accept the beta agreement in the SmartMemory web app at "
-        "https://app.smartmemory.ai."
+        "https://www.smartmemory.ai."
     )
 
 
