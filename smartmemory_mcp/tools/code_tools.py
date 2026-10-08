@@ -410,14 +410,34 @@ def register(mcp):
         repo: str,
         exclude_decorators: Optional[str] = None,
         limit: int = 50,
+        include_exported: bool = False,
+        production_only: bool = False,
     ) -> str:
-        """Find potentially dead callable entities, components and hooks in an indexed codebase."""
+        """Find potentially dead callable entities, components and hooks in an indexed codebase.
+
+        include_exported also reports exported functions with no counted caller (entry points, unknown
+        reachability and members of live classes stay excluded). production_only counts only callers in
+        non-test files (a test file is one that defines a test). Both default to false.
+        The flags are independent: include_exported reports exported functions with no counted caller, and
+        test callers count unless production_only is on, so an exported function used only by tests is
+        reported only when BOTH flags are on.
+        """
         backend = get_backend()
+        # CODE-INDEXER-HARDEN-1 U6: options are sent only when set, so a default call is unchanged.
+        options = {
+            key: value
+            for key, value in (
+                ("include_exported", include_exported),
+                ("production_only", production_only),
+            )
+            if value
+        }
 
         if backend.supports("request"):
             params: dict[str, Any] = {"repo": repo, "limit": limit}
             if exclude_decorators:
                 params["exclude_decorators"] = exclude_decorators
+            params.update({key: "true" for key in options})
             result = backend.request("GET", "/memory/code/dead-code", params=params)
             if isinstance(result, dict) and "error" in result:
                 return f"Error: {result['error']}"
@@ -427,15 +447,18 @@ def register(mcp):
             count = result.get("count", len(dead))
         else:
             result = backend.code_dead_code(
-                repo=repo, exclude_decorators=exclude_decorators, limit=limit
+                repo=repo, exclude_decorators=exclude_decorators, limit=limit, **options
             )
             dead = result.get("dead_functions", [])
             count = result.get("count", len(dead))
 
+        note = f" (options: {', '.join(sorted(options))})" if options else ""
         if not dead:
-            return f"No dead code found in repo '{repo}'."
+            return f"No dead code found in repo '{repo}'{note}."
 
-        lines = [f"Found {count} potentially unused callable entities in '{repo}':\n"]
+        lines = [
+            f"Found {count} potentially unused callable entities in '{repo}'{note}:\n"
+        ]
         for i, item in enumerate(dead, 1):
             name = item.get("name", "?")
             fpath = item.get("file_path", "?")

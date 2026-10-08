@@ -371,6 +371,14 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ("code_search", {"query": "def main", "repo": "smart-memory-mcp", "limit": 5}),
     ("code_dead_code", {"repo": "smart-memory-mcp"}),
     ("code_dead_code", {"repo": "smart-memory-mcp", "exclude_decorators": "tool"}),
+    (
+        "code_dead_code",
+        {
+            "repo": "smart-memory-mcp",
+            "include_exported": True,
+            "production_only": True,
+        },
+    ),
     ("code_dependencies", {"entity_name": "main"}),
     ("code_dependencies", {"entity_name": "main", "direction": "in"}),
     ("agent_get_recall_profile", {"agent_id": "agent-1"}),

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- CODE-INDEXER-HARDEN-1 U6: `code_dead_code` takes opt-in `include_exported` and `production_only` (default false; a default call sends the same request and prints the same text). Remote and hosted send them to `GET /memory/code/dead-code` only when set, the local backend passes them to core `local_dead_code`. Release ordering: the options need a smartmemory-core and smart-memory-service release containing U6.
 - `code_index` no longer turns the default into an explicit `["python", "typescript"]` request: it passes `languages=None`, so a TS/JS file that fails to extract is skipped with a warning instead of refusing the index (CODE-INDEXER-HARDEN-1 F32). Needs a smartmemory-core release that contains CODE-INDEXER-HARDEN-1 U3; against an older core the default indexes Python only.
 - Release ordering: requires a smartmemory-core release containing CODE-INDEXER-HARDEN-1 U3. Against an older core it falls back to Python-only indexing. Do not release MCP before that core.
 

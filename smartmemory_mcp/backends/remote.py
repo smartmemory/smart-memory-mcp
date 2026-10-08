@@ -159,12 +159,22 @@ class RemoteBackend(BackendCapabilities):
         return self._request(method, path, **kwargs)
 
     def code_dead_code(
-        self, repo: str, exclude_decorators: str | None = None, limit: int = 50
+        self,
+        repo: str,
+        exclude_decorators: str | None = None,
+        limit: int = 50,
+        include_exported: bool = False,
+        production_only: bool = False,
     ) -> dict[str, Any]:
         """Delegate framework-aware dead-code analysis to the hosted service."""
         params: dict[str, Any] = {"repo": repo, "limit": limit}
         if exclude_decorators:
             params["exclude_decorators"] = exclude_decorators
+        # CODE-INDEXER-HARDEN-1 U6 opt-in options: sent only when set, so a default request is unchanged.
+        if include_exported:
+            params["include_exported"] = "true"
+        if production_only:
+            params["production_only"] = "true"
         return self.request("GET", "/memory/code/dead-code", params=params)
 
     def ingest_code(
