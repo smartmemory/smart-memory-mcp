@@ -1,3 +1,4 @@
+# Manual only (workflow_dispatch). Prod deploys and releases use the scripts in the repo/runbook. Owner decision 2026-10-09.
 name: Sync to core release
 
 # The standalone MCP package follows the unified product version. Core is the
@@ -5,8 +6,6 @@ name: Sync to core release
 # pyproject.toml, commits it, and creates a GitHub Release. The release triggers
 # publish.yml, which ships smartmemory-mcp to PyPI.
 on:
-  repository_dispatch:
-    types: [core-released]
   workflow_dispatch:
     inputs:
       version:
