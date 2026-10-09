@@ -220,7 +220,7 @@ def test_long_explanation_is_truncated(monkeypatch):
         ]
     }
     out = _memory_get(monkeypatch, _item(meta))("item-1")
-    line = next(l for l in out.splitlines() if l.startswith("conflicts with z"))
+    line = next(ln for ln in out.splitlines() if ln.startswith("conflicts with z"))
     assert len(line) < 220 and line.endswith("...")
 
 
@@ -289,8 +289,6 @@ def _restore_hosted_mode():
 
 
 def test_hosted_and_local_servers_expose_include_metadata(_restore_hosted_mode):
-    from smartmemory_mcp.server import mcp as local
-
     server = build_hosted_server(
         hosted_config(), redis_store=memory_store(), exchange_cache=ExchangeCache()
     )
