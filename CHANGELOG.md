@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- MCP-MEMGET-META-1: `memory_get` now returns id, type, content and a compact allowlisted summary (conflicts one line each, dates, source/provenance, tags) instead of the raw metadata dict. New `include_metadata=True` restores the full dump (unchanged format). Tenant/owner/security IDs, activation, retrieval stats and raw conflict fact bodies are no longer shown by default. Local and hosted servers share the one function. Measured on a real memory-eval A3 note (8f64f81f): 34,128 chars before, 5,969 after (-82.5%, the rest is the note itself). REST API and SDKs unchanged.
 - Default `SMARTMEMORY_WEB_URL` is now https://www.smartmemory.ai (app.smartmemory.ai has no DNS). Filed as PLAT-APP-SUBDOMAIN-1.
 - CODE-INDEXER-HARDEN-1 U6: `code_dead_code` takes opt-in `include_exported` and `production_only` (default false; a default call sends the same request and prints the same text). Remote and hosted send them to `GET /memory/code/dead-code` only when set, the local backend passes them to core `local_dead_code`. Release ordering: the options need a smartmemory-core and smart-memory-service release containing U6.
 - `code_index` no longer turns the default into an explicit `["python", "typescript"]` request: it passes `languages=None`, so a TS/JS file that fails to extract is skipped with a warning instead of refusing the index (CODE-INDEXER-HARDEN-1 F32). Needs a smartmemory-core release that contains CODE-INDEXER-HARDEN-1 U3; against an older core the default indexes Python only.

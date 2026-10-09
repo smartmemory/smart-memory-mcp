@@ -10,6 +10,7 @@ from smartmemory_mcp.tools.search_window import with_search_window
 
 from .common import get_backend, graceful
 from .lexical_contract import validate_channel_weights
+from .metadata_summary import summarize_item_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -640,8 +641,14 @@ def register_free(mcp):
         ),
     )
     @graceful
-    def memory_get(item_id: str) -> str:
-        """Retrieve a memory item by ID with full content and metadata."""
+    def memory_get(item_id: str, include_metadata: bool = False) -> str:
+        """Retrieve a memory item by ID: id, type, content and a compact summary.
+
+        The summary lists conflicts (one line each), dates, source and tags.
+        Pass ``include_metadata=True`` for the full raw metadata dump (large:
+        tenant/security IDs, activation, retrieval stats, full conflict facts).
+        Use ``memory_explain`` for the memory's full history and provenance.
+        """
         backend = get_backend()
         item = backend.get(item_id)
 
@@ -657,8 +664,15 @@ def register_free(mcp):
             f"Type: {mtype}",
             f"Content: {content}",
         ]
-        if meta:
-            parts.append(f"Metadata: {meta}")
+        if include_metadata:
+            if meta:
+                parts.append(f"Metadata: {meta}")
+        else:
+            parts.extend(summarize_item_metadata(item))
+            parts.append(
+                "(Metadata trimmed. include_metadata=True gives the full dump; "
+                "memory_explain gives full history.)"
+            )
         return "\n".join(parts)
 
     @mcp.tool(
