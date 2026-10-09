@@ -180,7 +180,7 @@ def test_include_metadata_with_empty_metadata_has_no_metadata_line(monkeypatch):
         ({"challenge_result": {"conflicts": "garbage"}}, [], ["conflicts with"]),
         ({"challenge_result": {"conflicts": [1, "x", None]}}, [], ["conflicts with"]),
         ({"challenge_result": "garbage"}, [], ["conflicts with"]),
-        ({"conflicts": [{"conflict_type": None}]}, ["conflicts with ?: unknown"], []),
+        ({"conflicts": [{"conflict_type": None}]}, [], ["conflicts with"]),
         (
             {"resolved_dates": ["2026-01-02"]},
             ["Resolved dates: 2026-01-02"],
@@ -195,7 +195,7 @@ def test_include_metadata_with_empty_metadata_has_no_metadata_line(monkeypatch):
             ["Resolved dates: 2026-01-04"],
             ["absolute"],
         ),
-        ({"resolved_date": "2026-01-03"}, ["Resolved date: 2026-01-03"], ["Created"]),
+        ({"resolved_date": "2026-01-03"}, ["Resolved dates: 2026-01-03"], ["Created"]),
         (
             {"origin": "user", "provenance": "import"},
             ["Origin: user", "Provenance: import"],

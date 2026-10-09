@@ -10,7 +10,10 @@ from smartmemory_mcp.tools.search_window import with_search_window
 
 from .common import get_backend, graceful
 from .lexical_contract import validate_channel_weights
-from .metadata_summary import summarize_item_metadata
+from .metadata_summary import (
+    compact_item,
+    summarize_item_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,24 +52,13 @@ def _warn_origin_filter_unavailable(exc: Exception) -> None:
     )
 
 
-_IDENTITY_METADATA_KEYS = frozenset(
-    {"tenant_id", "workspace_id", "team_id", "user_id", "run_id"}
-)
-
-
 def _strip_identity_metadata(item: Dict[str, Any]) -> Dict[str, Any]:
-    """Return an item copy without server-only tenant and execution identity."""
-    sanitized = {
-        key: value for key, value in item.items() if key not in _IDENTITY_METADATA_KEYS
-    }
-    metadata = item.get("metadata")
-    if isinstance(metadata, dict):
-        sanitized["metadata"] = {
-            key: value
-            for key, value in metadata.items()
-            if key not in _IDENTITY_METADATA_KEYS
-        }
-    return sanitized
+    """Item copy without server-only identity and with allowlisted metadata only.
+
+    ``metadata`` goes through the shared summary helper (MCP-MEMGET-META-1), so
+    structured payloads carry dates, source, tags and conflicts, not bookkeeping.
+    """
+    return compact_item(item)
 
 
 def _estimate_tokens(text: str) -> int:
@@ -547,7 +539,7 @@ def register_free(mcp):
 
             citations = [c.to_dict() for c in build_citations(final)]
             return {
-                "items": final,
+                "items": [_strip_identity_metadata(item) for item in final],
                 "citations": citations,
                 "footnote_block": build_footnote_block(final),
                 "session_id": session_id,
@@ -623,13 +615,22 @@ def register_free(mcp):
         back as ``cursor`` to page further in one direction without overlap.
         """
         backend = get_backend()
-        return backend.read_around(
+        result = backend.read_around(
             item_id,
             char_budget=char_budget,
             before_ratio=before_ratio,
             after_ratio=after_ratio,
             cursor=cursor,
         )
+        if isinstance(result, dict) and isinstance(result.get("window_items"), list):
+            result = {
+                **result,
+                "window_items": [
+                    _strip_identity_metadata(row) if isinstance(row, dict) else row
+                    for row in result["window_items"]
+                ],
+            }
+        return result
 
     @mcp.tool(
         title="Get a memory",

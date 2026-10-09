@@ -103,7 +103,7 @@ class TestMemorySearchCite:
             out = fn(query="anything", cite=True)
 
         returned = out["items"][0]
-        assert returned["metadata"] == {"legitimate": "kept"}
+        assert returned["metadata"] == {"origin": "test"}
         assert returned["origin"] == "test"
         assert (
             not {"tenant_id", "workspace_id", "team_id", "user_id", "run_id"}

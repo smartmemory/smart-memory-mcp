@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 def register(mcp):
     """Replace the local scanner with an authenticated uploaded-snapshot reader."""
     from smartmemory_mcp.tools import common
+    from smartmemory_mcp.tools.metadata_summary import compact_item
 
     @mcp.tool(
         title="Read uploaded Python effects",
@@ -91,4 +92,14 @@ def register(mcp):
                 repo,
                 source_snapshot,
             )
+        # Keep the contract envelope; items carry the effects bundle plus the
+        # allowlisted summary, not unrelated bookkeeping or identity.
+        if isinstance(result.get("items"), list):
+            result = {
+                **result,
+                "items": [
+                    compact_item(item, keep_metadata_keys=("effects_bundle",))
+                    for item in result["items"]
+                ],
+            }
         return result
