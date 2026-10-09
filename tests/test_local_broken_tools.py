@@ -43,6 +43,15 @@ BROKEN = (
     "memory_log_failure",
 )
 
+# The audited non-reproducer: it returns the contract's cold-start None, not an error,
+# so it stays advertised in every mode.
+STAYS = ("agent_evaluation_get",)
+
+# All 15 audited tools as (name, expected to be advertised locally). Remote advertises all 15.
+AUDITED = tuple((tool, False) for tool in BROKEN) + tuple(
+    (tool, True) for tool in STAYS
+)
+
 
 @pytest.fixture(autouse=True)
 def reset_backends():
@@ -92,10 +101,12 @@ def test_table_is_the_audited_set():
     assert all(TOOL_CAPABILITIES[tool] == tool for tool in BROKEN)
 
 
-@pytest.mark.parametrize("tool", BROKEN)
-def test_each_tool_is_absent_locally_and_present_remotely(monkeypatch, tool):
+@pytest.mark.parametrize(("tool", "present_locally"), AUDITED)
+def test_each_audited_tool_listing_locally_and_remotely(
+    monkeypatch, tool, present_locally
+):
     assert tool in _names(_server(monkeypatch, _remote()))
-    assert tool not in _names(_server(monkeypatch, _local()))
+    assert (tool in _names(_server(monkeypatch, _local()))) is present_locally
 
 
 def test_local_list_differs_from_the_unfiltered_list_by_exactly_the_broken_tools(
@@ -105,9 +116,14 @@ def test_local_list_differs_from_the_unfiltered_list_by_exactly_the_broken_tools
     local = _names(_server(monkeypatch, _local()))
     assert everything - local == set(BROKEN)
     assert local <= everything
+    # Literal names, not derived from this branch's registration: a tool dropped from
+    # both the unfiltered and the local registry would pass the subtraction above.
+    assert set(STAYS) <= everything
+    assert set(STAYS) <= local
     # Remote hides only its own pre-existing gates, none of the 14.
     remote = _names(_server(monkeypatch, _remote()))
     assert everything - remote == {"code_blame", "code_read_transcript", "peer_chat"}
+    assert set(BROKEN) | set(STAYS) <= remote
 
 
 @pytest.mark.parametrize("tool", BROKEN)
