@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 def register(mcp):
     """Replace the local scanner with an authenticated uploaded-snapshot reader."""
     from smartmemory_mcp.tools import common
-    from smartmemory_mcp.tools.metadata_summary import compact_item
+    from smartmemory_mcp.tools.metadata_summary import compact_items
 
     @mcp.tool(
         title="Read uploaded Python effects",
@@ -76,7 +76,11 @@ def register(mcp):
             )
             raise ValueError(result["error"])
         for item in result.get("items", []):
-            metadata = item.get("metadata") or {}
+            # Malformed items or metadata degrade through compact_items (WARNING),
+            # they never raise here; only a corrupt bundle is rejected.
+            metadata = item.get("metadata") if isinstance(item, dict) else None
+            if not isinstance(metadata, dict):
+                continue
             bundle = metadata.get("effects_bundle")
             if isinstance(bundle, str):
                 try:
@@ -97,9 +101,8 @@ def register(mcp):
         if isinstance(result.get("items"), list):
             result = {
                 **result,
-                "items": [
-                    compact_item(item, keep_metadata_keys=("effects_bundle",))
-                    for item in result["items"]
-                ],
+                "items": compact_items(
+                    result["items"], keep_metadata_keys=("effects_bundle",)
+                ),
             }
         return result

@@ -12,6 +12,8 @@ from .common import get_backend, graceful
 from .lexical_contract import validate_channel_weights
 from .metadata_summary import (
     compact_item,
+    compact_items,
+    safe_memory_type,
     summarize_item_metadata,
 )
 
@@ -52,11 +54,11 @@ def _warn_origin_filter_unavailable(exc: Exception) -> None:
     )
 
 
-def _strip_identity_metadata(item: Dict[str, Any]) -> Dict[str, Any]:
-    """Item copy without server-only identity and with allowlisted metadata only.
+def _strip_identity_metadata(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Model-facing item built from allowlisted, validated fields only.
 
-    ``metadata`` goes through the shared summary helper (MCP-MEMGET-META-1), so
-    structured payloads carry dates, source, tags and conflicts, not bookkeeping.
+    Delegates to the shared output-boundary helper (MCP-MEMGET-META-1). Call it
+    once, where a tool returns; internal filtering reads the raw items.
     """
     return compact_item(item)
 
@@ -75,8 +77,14 @@ def _build_working_context(
     k: int,
     max_tokens: Optional[int],
     strategy: Optional[str],
+    compact: bool = True,
 ) -> Dict[str, Any]:
     """Build a contract-shaped surfacing response against the backend.
+
+    ``compact=True`` (the tool output) builds items through the shared
+    allowlist helper. ``compact=False`` returns the raw projection for internal
+    filtering (``memory_recall`` session selectors); its caller compacts what
+    it returns, so items are compacted exactly once.
 
     Standalone MCP has no SmartMemory instance — we compose the response
     from ``backend.search`` directly.  Mirrors
@@ -106,23 +114,26 @@ def _build_working_context(
             break
         activation_score = compute_activation_score(row)
         items.append(
-            _strip_identity_metadata(
-                {
-                    "item_id": row.get("item_id"),
-                    "content": content,
-                    "memory_type": row.get("memory_type"),
-                    "metadata": row.get("metadata") or {},
-                    "score_breakdown": {
-                        "activation": activation_score,
-                        "relevance": float(row.get("score") or 0.0),
-                        "recency": 1.0,
-                        "centrality": 1.0,
-                        "anchor_forced": False,
-                        "session_pin_boost": 0.0,
-                        "freshness_boost": 0.0,
-                    },
-                }
-            )
+            {
+                "item_id": row.get("item_id"),
+                "content": content,
+                "memory_type": row.get("memory_type"),
+                "metadata": row.get("metadata") or {},
+                # Folded into metadata (validated) by the output helper.
+                "created_at": row.get("created_at"),
+                "valid_start_time": row.get("valid_start_time"),
+                "valid_end_time": row.get("valid_end_time"),
+                "origin": row.get("origin"),
+                "score_breakdown": {
+                    "activation": activation_score,
+                    "relevance": float(row.get("score") or 0.0),
+                    "recency": 1.0,
+                    "centrality": 1.0,
+                    "anchor_forced": False,
+                    "session_pin_boost": 0.0,
+                    "freshness_boost": 0.0,
+                },
+            }
         )
         tokens_used += item_tokens
 
@@ -134,7 +145,7 @@ def _build_working_context(
 
     return {
         "decision_id": decision_id,
-        "items": items,
+        "items": compact_items(items) if compact else items,
         "drift_warnings": [],
         "strategy_used": "fast:recency",
         "tokens_used": tokens_used,
@@ -402,7 +413,7 @@ def register_free(mcp):
             citations = [c.to_dict() for c in build_citations(results)]
             footnote_block = build_footnote_block(results)
             return {
-                "items": [_strip_identity_metadata(item) for item in results],
+                "items": compact_items(results),
                 "citations": citations,
                 "footnote_block": footnote_block,
             }
@@ -506,6 +517,7 @@ def register_free(mcp):
             k=min(max(top_k * 10, top_k), 100),
             max_tokens=None,
             strategy=None,
+            compact=False,
         )
 
         filtered: List[dict] = []
@@ -539,7 +551,7 @@ def register_free(mcp):
 
             citations = [c.to_dict() for c in build_citations(final)]
             return {
-                "items": [_strip_identity_metadata(item) for item in final],
+                "items": compact_items(final),
                 "citations": citations,
                 "footnote_block": build_footnote_block(final),
                 "session_id": session_id,
@@ -625,10 +637,7 @@ def register_free(mcp):
         if isinstance(result, dict) and isinstance(result.get("window_items"), list):
             result = {
                 **result,
-                "window_items": [
-                    _strip_identity_metadata(row) if isinstance(row, dict) else row
-                    for row in result["window_items"]
-                ],
+                "window_items": compact_items(result["window_items"]),
             }
         return result
 
@@ -657,8 +666,8 @@ def register_free(mcp):
             return f"Memory item not found: {item_id}"
 
         content = item["content"]
-        mtype = item["memory_type"]
         meta = item["metadata"]
+        mtype = item["memory_type"] if include_metadata else safe_memory_type(item)
 
         parts = [
             f"Memory Item: {item_id}",

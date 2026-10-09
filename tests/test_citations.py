@@ -103,8 +103,9 @@ class TestMemorySearchCite:
             out = fn(query="anything", cite=True)
 
         returned = out["items"][0]
+        # Top-level origin is folded into the validated metadata, never copied raw.
         assert returned["metadata"] == {"origin": "test"}
-        assert returned["origin"] == "test"
+        assert "origin" not in returned
         assert (
             not {"tenant_id", "workspace_id", "team_id", "user_id", "run_id"}
             & returned.keys()
