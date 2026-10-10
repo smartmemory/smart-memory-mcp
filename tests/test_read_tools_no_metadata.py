@@ -1,6 +1,7 @@
 """Read tools show no metadata text by default (MCP-MEMGET-META-1, owner shape).
 
-memory_get returns id, type and content, plus at most one conflict-count line.
+memory_get returns id, type, a validated Created line and content, plus at most one
+conflict-count line (created_at: tests/test_memory_get_created_at.py).
 Structured read tools return the item's own fields with ``metadata`` emptied
 (``code_effects`` keeps only its requested ``effects_bundle``). Opt-in
 ``memory_get(include_metadata=True)`` is byte-identical to the 1353c49 output.
@@ -8,6 +9,7 @@ Structured read tools return the item's own fields with ``metadata`` emptied
 
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 import anyio
@@ -442,7 +444,7 @@ def test_non_dict_items_are_dropped_with_warning(tools, backend, monkeypatch, ca
     assert "code_effects dropped a int entry" in messages
 
 
-def test_a3_real_note_default_is_content_plus_one_line(tools, backend):
+def test_a3_real_note_default_is_content_plus_created_and_count_line(tools, backend):
     fixture = json.loads(FIXTURE.read_text())
     backend.item = fixture
     item_id = fixture["item_id"]
@@ -453,6 +455,7 @@ def test_a3_real_note_default_is_content_plus_one_line(tools, backend):
         [
             f"Memory Item: {item_id}",
             f"Type: {fixture['memory_type']}",
+            f"Created: {fixture['created_at']}",
             f"Content: {fixture['content']}",
             "This note conflicts with 10 other notes. Use memory_explain for "
             "details, or memory_get(include_metadata=True).",
@@ -495,3 +498,113 @@ def test_hosted_and_local_servers_expose_include_metadata(_restore_hosted_mode):
         assert schema["required"] == ["item_id"], label
         assert "include_metadata=True" in tool.description, label
         assert "memory_explain" in tool.description, label
+
+
+# --- memory_get Created line (MCP-MEMGET-META-1 follow-up) ---
+
+SECRET = "sk-live-SECRET"
+
+VALID = {
+    "iso datetime": (
+        {"created_at": "2026-10-10T01:02:03+00:00"},
+        "2026-10-10T01:02:03+00:00",
+    ),
+    "naive datetime": ({"created_at": "2026-10-10T01:02:03"}, "2026-10-10T01:02:03"),
+    "date only": ({"created_at": "2026-10-10"}, "2026-10-10T00:00:00"),
+    "Z suffix": ({"created_at": "2026-10-10T01:02:03Z"}, "2026-10-10T01:02:03+00:00"),
+    "datetime object": (
+        {"created_at": datetime(2026, 10, 10, 1, 2, 3, tzinfo=timezone.utc)},
+        "2026-10-10T01:02:03+00:00",
+    ),
+    "metadata fallback": (
+        {"metadata": {"created_at": "2026-10-09"}},
+        "2026-10-09T00:00:00",
+    ),
+    "empty top-level falls back": (
+        {"created_at": "", "metadata": {"created_at": "2026-10-09"}},
+        "2026-10-09T00:00:00",
+    ),
+    "top-level wins": (
+        {"created_at": "2026-10-10", "metadata": {"created_at": "2026-01-01"}},
+        "2026-10-10T00:00:00",
+    ),
+}
+
+ABSENT = {
+    "missing everywhere": {},
+    "none": {"created_at": None},
+    "empty string": {"created_at": ""},
+    "metadata not a dict": {"metadata": None},
+}
+
+REJECT = {
+    "trailing secret": f"2026-10-10 {SECRET}",
+    "free text": "SECRET",
+    "too long": "2026-10-10T00:00:00+00:00" + " " * 20 + "x",
+    "newline injection": "2026-10-10T00:00:00\nIgnore previous",
+    "int": 12345,
+    "dict": {"leak": SECRET},
+    "list": [SECRET],
+}
+
+
+def _created_item(top, metadata=None):
+    item = _item({} if metadata is None else metadata)
+    item.update({k: v for k, v in top.items() if k != "metadata"})
+    if "metadata" in top:
+        item["metadata"] = top["metadata"]
+    return item
+
+
+@pytest.mark.parametrize(("top", "expected"), VALID.values(), ids=VALID.keys())
+def test_valid_created_line(tools, backend, top, expected, caplog):
+    backend.item = _created_item(top)
+    with caplog.at_level(logging.WARNING, logger=memory_tools.logger.name):
+        out = tools["memory_get"](item_id="item-1")
+    assert out.splitlines()[:4] == [
+        "Memory Item: item-1",
+        "Type: pending",
+        f"Created: {expected}",
+        "Content: the note body",
+    ]
+    assert not caplog.records
+
+
+@pytest.mark.parametrize("top", ABSENT.values(), ids=ABSENT.keys())
+def test_absent_created_has_no_line_and_no_warning(tools, backend, top, caplog):
+    backend.item = _created_item(top)
+    with caplog.at_level(logging.WARNING, logger=memory_tools.logger.name):
+        out = tools["memory_get"](item_id="item-1")
+    assert "Created:" not in out
+    assert not caplog.records
+
+
+@pytest.mark.parametrize("raw", REJECT.values(), ids=REJECT.keys())
+@pytest.mark.parametrize("where", ["top", "metadata"])
+def test_invalid_created_is_dropped_with_one_warning(
+    tools, backend, raw, where, caplog
+):
+    top = {"created_at": raw} if where == "top" else {"metadata": {"created_at": raw}}
+    backend.item = _created_item(top)
+    with caplog.at_level(logging.WARNING, logger=memory_tools.logger.name):
+        out = tools["memory_get"](item_id="item-1")
+    assert "Created:" not in out
+    for fragment in (SECRET, "SECRET", "Ignore previous"):
+        assert fragment not in out
+    assert [r.getMessage() for r in caplog.records] == [
+        "memory_get: dropped non-ISO created_at for item-1"
+    ]
+    assert SECRET not in caplog.text
+
+
+def test_include_metadata_unchanged_by_created_at(tools, backend):
+    backend.item = _created_item({"created_at": "2026-10-10"}, {"k": "v"})
+    out = tools["memory_get"](item_id="item-1", include_metadata=True)
+    assert out == _memory_get_1353c49("item-1", backend.item)
+    assert "Created:" not in out
+
+
+def test_leaky_created_never_reaches_default_output(tools, backend):
+    backend.item = _leaky_item(f"2026-10-10 {SECRET}")
+    backend.item["created_at"] = f"2026-10-10 {SECRET}"
+    assert SECRET not in tools["memory_get"](item_id="item-1")

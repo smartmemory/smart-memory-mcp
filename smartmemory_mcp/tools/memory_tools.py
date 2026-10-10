@@ -2,6 +2,7 @@
 
 import logging
 import uuid as _uuid
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
@@ -12,6 +13,41 @@ from .common import get_backend, graceful
 from .lexical_contract import validate_channel_weights
 
 logger = logging.getLogger(__name__)
+
+
+_CREATED_AT_MAX_LEN = 40
+
+
+def _iso_created_line(item: Dict[str, Any], item_id: str) -> Optional[str]:
+    """``Created: <iso>`` for the default memory_get output, or None.
+
+    The value comes from metadata-derived fields, so it is only shown when it
+    parses as an ISO-8601 date/datetime, and the PARSED value is re-emitted so no
+    free text can ride along. Missing/empty: no line. Present but invalid: no
+    line plus a WARNING (never the raw value).
+    """
+    meta = item.get("metadata")
+    candidates = (
+        item.get("created_at"),
+        item.get("transaction_time"),
+        meta.get("created_at") if isinstance(meta, dict) else None,
+    )
+    raw = next((c for c in candidates if c not in (None, "")), None)
+    if raw is None:
+        return None
+    parsed = None
+    if isinstance(raw, datetime):
+        parsed = raw
+    elif isinstance(raw, str) and len(raw) <= _CREATED_AT_MAX_LEN:
+        text = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError:
+            parsed = None
+    if parsed is None:
+        logger.warning("memory_get: dropped non-ISO created_at for %s", item_id)
+        return None
+    return f"Created: {parsed.isoformat()}"
 
 
 # CORE-MEMORY-DYNAMICS-1 M1a — legacy memory_recall() scope for the standalone MCP.
@@ -800,7 +836,7 @@ def register_free(mcp):
     )
     @graceful
     def memory_get(item_id: str, include_metadata: bool = False) -> str:
-        """Retrieve a memory item by ID: its id, type and content.
+        """Retrieve a memory item by ID: its id, type, created date and content.
 
         If the note conflicts with other notes, one line gives the count. No
         metadata text is shown by default. Pass ``include_metadata=True`` for the
@@ -818,8 +854,11 @@ def register_free(mcp):
             parts = [
                 f"Memory Item: {item_id}",
                 f"Type: {item['memory_type']}",
-                f"Content: {item['content']}",
             ]
+            created = _iso_created_line(item, item_id)
+            if created:
+                parts.append(created)
+            parts.append(f"Content: {item['content']}")
             count = _conflict_count(item_id, item.get("metadata"))
             if count:
                 parts.append(_conflict_line(count))
