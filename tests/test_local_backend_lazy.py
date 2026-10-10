@@ -12,6 +12,7 @@ import pytest
 from fastmcp import Client, FastMCP
 
 from smartmemory_mcp.backends import dispatch
+from smartmemory_mcp.backends.interface import LOCAL_BROKEN_TOOLS
 from smartmemory_mcp.backends.local import LocalBackend
 from smartmemory_mcp.capabilities import BackendCapabilityMiddleware, TOOL_CAPABILITIES
 from smartmemory_mcp.hosted.identity import current_identity
@@ -38,7 +39,13 @@ def test_constructor_and_capabilities_do_not_import_storage(monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", checked_import)
     backend = LocalBackend()
-    assert all(backend.supports(method) for method in TOOL_CAPABILITIES.values())
+    broken = set(LOCAL_BROKEN_TOOLS)  # MCP-LOCAL-BROKEN-TOOLS-1: hidden locally
+    assert all(
+        backend.supports(method)
+        for method in TOOL_CAPABILITIES.values()
+        if method not in broken
+    )
+    assert not any(backend.supports(method) for method in broken)
     assert not backend.supports("request")
     assert backend.whoami() == "Local mode — single user."
     assert backend._memory is None

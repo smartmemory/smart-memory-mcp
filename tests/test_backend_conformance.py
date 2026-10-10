@@ -9,6 +9,7 @@ import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 
+from smartmemory_mcp.backends.interface import LOCAL_BROKEN_TOOLS
 from smartmemory_mcp.backends.local import LocalBackend
 from smartmemory_mcp.backends.remote import RemoteBackend
 from smartmemory_mcp.capabilities import BackendCapabilityMiddleware, TOOL_CAPABILITIES
@@ -70,6 +71,8 @@ def test_capabilities_filter_listings_and_reject_unsupported_calls(
             names = {tool.name for tool in await client.list_tools()}
             assert "code_search" in names  # REST has a local fallback.
             for tool, capability in TOOL_CAPABILITIES.items():
+                if tool in LOCAL_BROKEN_TOOLS:
+                    continue  # registered by other modules, see test_local_broken_tools.py
                 assert (tool in names) == backend.supports(capability)
                 if not backend.supports(capability):
                     with pytest.raises(

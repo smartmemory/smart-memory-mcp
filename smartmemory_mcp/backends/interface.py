@@ -7,6 +7,29 @@ from typing import Any, Protocol, runtime_checkable
 from .models import MemoryResult
 
 
+# MCP-LOCAL-BROKEN-TOOLS-1: tools that register but only error in local mode.
+# tool name -> the bug that breaks it. Each tool is its own capability (named after
+# the tool, not a backend method): LocalBackend declares them unsupported, remote and
+# hosted backends keep them. Delete a row here when its bug is fixed; the tool comes
+# back in local mode with no other change. Tool names in capabilities.TOOL_CAPABILITIES.
+LOCAL_BROKEN_TOOLS: dict[str, str] = {
+    "memory_search_advanced": "CORE-GRAPHCONFIG-1: no graph name configured for main",
+    "memory_policy_bundle": "Policy compilation requires a scoped workspace_id (needs hosted)",
+    "pattern_list": "'LocalBackend' object has no attribute '_graph'",
+    "pattern_query": "'LocalBackend' object has no attribute '_graph'",
+    "memory_plan_active": "'LocalBackend' object has no attribute '_graph'",
+    "memory_anchor_list": "'LocalBackend' object has no attribute '_graph'",
+    "memory_anchor_check_drift": "'LocalBackend' object has no attribute '_graph'",
+    "dev_load_context": "object of type 'NoneType' has no len() (decision with no rationale)",
+    "zettel_clusters": "ZettelMemory.__init__() got an unexpected keyword argument 'memory'",
+    "zettel_backlinks": "ZettelMemory.__init__() got an unexpected keyword argument 'memory'",
+    "zettel_connections": "ZettelMemory.__init__() got an unexpected keyword argument 'memory'",
+    "zettel_discover": "ZettelMemory.__init__() got an unexpected keyword argument 'memory'",
+    "memory_plan_create": "'LocalBackend' object has no attribute 'update_properties' (with tasks)",
+    "memory_log_failure": "object of type 'MemoryItem' has no len()",
+}
+
+
 class BackendCapabilities:
     """Central capability check, including explicitly unsupported operations."""
 
@@ -14,8 +37,9 @@ class BackendCapabilities:
 
     @classmethod
     def supports(cls, method: str) -> bool:
-        return method not in cls.unsupported_capabilities and callable(
-            getattr(cls, method, None)
+        # Tool-level capabilities (LOCAL_BROKEN_TOOLS) have no backend method.
+        return method not in cls.unsupported_capabilities and (
+            method in LOCAL_BROKEN_TOOLS or callable(getattr(cls, method, None))
         )
 
 

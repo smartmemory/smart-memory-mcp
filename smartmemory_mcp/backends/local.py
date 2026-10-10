@@ -6,7 +6,7 @@ import logging
 import threading
 from typing import Any
 
-from .interface import BackendCapabilities
+from .interface import LOCAL_BROKEN_TOOLS, BackendCapabilities
 from .models import MemoryResult, normalize_item, normalize_items
 
 log = logging.getLogger(__name__)
@@ -47,8 +47,9 @@ def _decision_dict(decision: Any) -> dict[str, Any]:
 class LocalBackend(BackendCapabilities):
     """Wraps smartmemory package for local-mode operations."""
 
-    # Tools using REST have a separate local implementation.
-    unsupported_capabilities = frozenset({"request"})
+    # Tools using REST have a separate local implementation. The rest are tools
+    # that only error here (MCP-LOCAL-BROKEN-TOOLS-1, bug per tool in LOCAL_BROKEN_TOOLS).
+    unsupported_capabilities = frozenset({"request"}) | frozenset(LOCAL_BROKEN_TOOLS)
 
     def __init__(self) -> None:
         self._memory: Any = None
