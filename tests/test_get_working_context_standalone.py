@@ -149,7 +149,7 @@ def test_strip_identity_metadata_removes_exact_identity_fields():
 
     assert sanitized == {
         "content": "kept",
-        "metadata": {"tags": ["kept"]},
+        "metadata": {"session_id": "legitimate-session", "tags": ["kept"]},
     }
     assert item["workspace_id"] == "top-workspace"
     assert item["metadata"]["tenant_id"] == "tenant"
@@ -163,19 +163,16 @@ def test_get_working_context_strips_identity_metadata():
             "w1",
             "hello",
             "pending",
-            metadata={
-                "workspace_id": "secret",
-                "team_id": "secret",
-                "topic": "dropped",
-                "tags": ["kept"],
-            },
+            metadata={"workspace_id": "secret", "team_id": "secret", "topic": "kept"},
         )
     ]
 
     with patch("smartmemory_mcp.tools.memory_tools.get_backend", return_value=backend):
         response = tools["get_working_context"](session_id="s1", query="hello")
 
-    assert response["items"][0]["metadata"] == {"tags": ["kept"]}
+    # MCP-MEMGET-META-1: items carry no metadata text at all.
+    assert response["items"][0]["metadata"] == {}
+    assert response["items"][0]["content"] == "hello"
 
 
 def test_get_working_context_tool_rejects_bad_k():

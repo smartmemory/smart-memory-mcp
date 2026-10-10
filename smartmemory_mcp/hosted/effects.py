@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 def register(mcp):
     """Replace the local scanner with an authenticated uploaded-snapshot reader."""
     from smartmemory_mcp.tools import common
-    from smartmemory_mcp.tools.metadata_summary import compact_items
+    from smartmemory_mcp.tools.memory_tools import model_item
 
     @mcp.tool(
         title="Read uploaded Python effects",
@@ -75,34 +75,45 @@ def register(mcp):
                 "Uploaded effects evidence could not be read: %s", result["error"]
             )
             raise ValueError(result["error"])
-        for item in result.get("items", []):
-            # Malformed items or metadata degrade through compact_items (WARNING),
-            # they never raise here; only a corrupt bundle is rejected.
-            metadata = item.get("metadata") if isinstance(item, dict) else None
-            if not isinstance(metadata, dict):
+        # Items carry their own fields plus the requested effects bundle, never
+        # other metadata (MCP-MEMGET-META-1).
+        raw_items = result.get("items")
+        items = []
+        for item in raw_items if isinstance(raw_items, list) else []:
+            if not isinstance(item, dict):
+                log.warning(
+                    "code_effects dropped a %s entry from its items: not a record dict",
+                    type(item).__name__,
+                )
                 continue
+            metadata = item.get("metadata") or {}
+            if not isinstance(metadata, dict):
+                log.warning(
+                    "code_effects item %s has %s metadata, not a dict; its effects "
+                    "bundle was not read",
+                    item.get("item_id"),
+                    type(metadata).__name__,
+                )
+                metadata = {}
             bundle = metadata.get("effects_bundle")
             if isinstance(bundle, str):
                 try:
-                    metadata["effects_bundle"] = json.loads(bundle)
+                    bundle = json.loads(bundle)
                 except ValueError as exc:
                     log.warning(
                         "Uploaded effects evidence corrupt, bundle could not be decoded"
                     )
                     raise ValueError("Corrupt uploaded effects bundle") from exc
+            out = model_item(item)
+            if bundle is not None:
+                out["metadata"] = {"effects_bundle": bundle}
+            items.append(out)
+        if isinstance(raw_items, list):
+            result = {**result, "items": items}
         if not result.get("items"):
             log.warning(
                 "Uploaded effects evidence unavailable for %s at %s, no source scan was performed",
                 repo,
                 source_snapshot,
             )
-        # Keep the contract envelope; items carry the effects bundle plus the
-        # allowlisted summary, not unrelated bookkeeping or identity.
-        if isinstance(result.get("items"), list):
-            result = {
-                **result,
-                "items": compact_items(
-                    result["items"], keep_metadata_keys=("effects_bundle",)
-                ),
-            }
         return result

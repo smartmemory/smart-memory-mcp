@@ -10,12 +10,6 @@ from smartmemory_mcp.tools.search_window import with_search_window
 
 from .common import get_backend, graceful
 from .lexical_contract import validate_channel_weights
-from .metadata_summary import (
-    compact_item,
-    compact_items,
-    safe_memory_type,
-    summarize_item_metadata,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -54,13 +48,159 @@ def _warn_origin_filter_unavailable(exc: Exception) -> None:
     )
 
 
-def _strip_identity_metadata(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Model-facing item built from allowlisted, validated fields only.
+_IDENTITY_METADATA_KEYS = frozenset(
+    {"tenant_id", "workspace_id", "team_id", "user_id", "run_id"}
+)
 
-    Delegates to the shared output-boundary helper (MCP-MEMGET-META-1). Call it
-    once, where a tool returns; internal filtering reads the raw items.
+
+def _strip_identity_metadata(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Return an item copy without server-only tenant and execution identity."""
+    sanitized = {
+        key: value for key, value in item.items() if key not in _IDENTITY_METADATA_KEYS
+    }
+    metadata = item.get("metadata")
+    if isinstance(metadata, dict):
+        sanitized["metadata"] = {
+            key: value
+            for key, value in metadata.items()
+            if key not in _IDENTITY_METADATA_KEYS
+        }
+    return sanitized
+
+
+# MCP-MEMGET-META-1: items returned by read tools carry the item's own fields and
+# no metadata. Free text stored in metadata (sources, tags, dates, conflict
+# explanations) is never copied to the model; memory_get(include_metadata=True)
+# and memory_explain give the full record. Fields not named here (properties,
+# origin, date strings, anything unknown) are not copied either.
+_MODEL_ITEM_FIELDS = frozenset(
+    {
+        "item_id",
+        "memory_type",
+        "content",
+        "score",
+        "confidence",
+        "stale",
+        "superseded",
+        "superseded_by",
+        "derived_from",
+        "reference",
+        "as_of_resolution",
+        "score_breakdown",
+    }
+)
+
+
+def model_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Model-facing copy of a read-tool item: its own fields, ``metadata`` emptied."""
+    return {
+        key: {} if key == "metadata" else value
+        for key, value in item.items()
+        if key == "metadata" or key in _MODEL_ITEM_FIELDS
+    }
+
+
+def model_items(items: List[Any], tool: str) -> List[Dict[str, Any]]:
+    """``model_item`` over a list; a non-dict entry is dropped with a WARNING."""
+    out = []
+    for item in items:
+        if isinstance(item, dict):
+            out.append(model_item(item))
+        else:
+            logger.warning(
+                "%s dropped a %s entry from its items: not a memory item dict",
+                tool,
+                type(item).__name__,
+            )
+    return out
+
+
+# Values above this are not a real conflict count; the line is omitted.
+_MAX_CONFLICT_COUNT = 1_000_000
+# A dict carrying any of these keys is one conflict (core Conflict.to_dict()).
+_CONFLICT_KEYS = frozenset(
+    {
+        "existing_item_id",
+        "conflicting_item_id",
+        "conflict_type",
+        "explanation",
+        "existing_fact",
+    }
+)
+
+
+def _conflict_count(item_id: str, metadata: Any) -> Optional[int]:
+    """How many notes this item conflicts with, or None when there is no count.
+
+    Core's auto-challenge writes ``metadata["challenge_result"]`` with
+    ``conflict_count`` and the first few ``conflicts``; older items may carry a
+    bare ``metadata["conflicts"]``: a list of conflict dicts, one conflict dict,
+    ``{id: conflict}`` or a ``{"conflicts": [...]}`` wrapper. Only the integer is
+    ever shown. A malformed value logs a WARNING naming the item and the field,
+    and gives None.
     """
-    return compact_item(item)
+
+    def malformed(field: str, why: str) -> None:
+        logger.warning(
+            "memory_get omitted the conflict count for item %s: %s %s; "
+            "use memory_get(include_metadata=True) for the raw value",
+            item_id,
+            field,
+            why,
+        )
+        return None
+
+    def entries(field: str, conflicts: Any) -> Optional[int]:
+        if conflicts is None:
+            return None
+        if isinstance(conflicts, list):
+            if all(isinstance(entry, dict) for entry in conflicts):
+                return len(conflicts)
+            return malformed(field, "has entries that are not conflict dicts")
+        if not isinstance(conflicts, dict):
+            return malformed(
+                field, f"is {type(conflicts).__name__}, not a list or dict"
+            )
+        if "conflicts" in conflicts:
+            return entries(f"{field}.conflicts", conflicts["conflicts"])
+        if not conflicts or _CONFLICT_KEYS & conflicts.keys():
+            return 1 if conflicts else 0
+        if all(isinstance(entry, dict) for entry in conflicts.values()):
+            return len(conflicts)
+        return malformed(
+            field, "is a dict that is neither a conflict nor {id: conflict}"
+        )
+
+    if not metadata:
+        return None
+    if not isinstance(metadata, dict):
+        return malformed("metadata", f"is {type(metadata).__name__}, not a dict")
+    if "challenge_result" in metadata:
+        field = "metadata.challenge_result"
+        holder = metadata["challenge_result"]
+        if not isinstance(holder, dict):
+            return malformed(field, f"is {type(holder).__name__}, not a dict")
+        if "conflict_count" in holder:
+            count = holder["conflict_count"]
+            if type(count) is not int or not 0 <= count <= _MAX_CONFLICT_COUNT:
+                return malformed(
+                    f"{field}.conflict_count",
+                    f"is not an integer in 0..{_MAX_CONFLICT_COUNT} "
+                    f"({type(count).__name__})",
+                )
+            return count
+        return entries(f"{field}.conflicts", holder.get("conflicts"))
+    if "conflicts" in metadata:
+        return entries("metadata.conflicts", metadata["conflicts"])
+    return None
+
+
+def _conflict_line(count: int) -> str:
+    notes = "note" if count == 1 else "notes"
+    return (
+        f"This note conflicts with {count} other {notes}. Use memory_explain for "
+        "details, or memory_get(include_metadata=True)."
+    )
 
 
 def _estimate_tokens(text: str) -> int:
@@ -77,14 +217,13 @@ def _build_working_context(
     k: int,
     max_tokens: Optional[int],
     strategy: Optional[str],
-    compact: bool = True,
+    model_facing: bool = True,
 ) -> Dict[str, Any]:
     """Build a contract-shaped surfacing response against the backend.
 
-    ``compact=True`` (the tool output) builds items through the shared
-    allowlist helper. ``compact=False`` returns the raw projection for internal
-    filtering (``memory_recall`` session selectors); its caller compacts what
-    it returns, so items are compacted exactly once.
+    ``model_facing=False`` keeps each item's metadata for internal filtering
+    (``memory_recall`` session selectors); that caller applies ``model_item``
+    to what it returns.
 
     Standalone MCP has no SmartMemory instance — we compose the response
     from ``backend.search`` directly.  Mirrors
@@ -114,26 +253,23 @@ def _build_working_context(
             break
         activation_score = compute_activation_score(row)
         items.append(
-            {
-                "item_id": row.get("item_id"),
-                "content": content,
-                "memory_type": row.get("memory_type"),
-                "metadata": row.get("metadata") or {},
-                # Folded into metadata (validated) by the output helper.
-                "created_at": row.get("created_at"),
-                "valid_start_time": row.get("valid_start_time"),
-                "valid_end_time": row.get("valid_end_time"),
-                "origin": row.get("origin"),
-                "score_breakdown": {
-                    "activation": activation_score,
-                    "relevance": float(row.get("score") or 0.0),
-                    "recency": 1.0,
-                    "centrality": 1.0,
-                    "anchor_forced": False,
-                    "session_pin_boost": 0.0,
-                    "freshness_boost": 0.0,
-                },
-            }
+            _strip_identity_metadata(
+                {
+                    "item_id": row.get("item_id"),
+                    "content": content,
+                    "memory_type": row.get("memory_type"),
+                    "metadata": row.get("metadata") or {},
+                    "score_breakdown": {
+                        "activation": activation_score,
+                        "relevance": float(row.get("score") or 0.0),
+                        "recency": 1.0,
+                        "centrality": 1.0,
+                        "anchor_forced": False,
+                        "session_pin_boost": 0.0,
+                        "freshness_boost": 0.0,
+                    },
+                }
+            )
         )
         tokens_used += item_tokens
 
@@ -145,7 +281,7 @@ def _build_working_context(
 
     return {
         "decision_id": decision_id,
-        "items": compact_items(items) if compact else items,
+        "items": [model_item(item) for item in items] if model_facing else items,
         "drift_warnings": [],
         "strategy_used": "fast:recency",
         "tokens_used": tokens_used,
@@ -193,10 +329,9 @@ def _format_catalog(query: str, results: list) -> str:
     for i, item in enumerate(results, 1):
         meta = item["metadata"] or {}
 
+        # Content only: metadata text (title) is not copied (MCP-MEMGET-META-1).
         content = str(item["content"]).replace("\n", " ")
-        title = str(meta.get("title", "")).replace("\n", " ")
-        snippet_src = title if title else content
-        snippet = (snippet_src[:100] + "...") if len(snippet_src) > 100 else snippet_src
+        snippet = (content[:100] + "...") if len(content) > 100 else content
 
         item_id = item["item_id"]
         mtype = item["memory_type"]
@@ -413,7 +548,9 @@ def register_free(mcp):
             citations = [c.to_dict() for c in build_citations(results)]
             footnote_block = build_footnote_block(results)
             return {
-                "items": compact_items(results),
+                "items": [
+                    model_item(_strip_identity_metadata(item)) for item in results
+                ],
                 "citations": citations,
                 "footnote_block": footnote_block,
             }
@@ -517,7 +654,7 @@ def register_free(mcp):
             k=min(max(top_k * 10, top_k), 100),
             max_tokens=None,
             strategy=None,
-            compact=False,
+            model_facing=False,
         )
 
         filtered: List[dict] = []
@@ -531,12 +668,23 @@ def register_free(mcp):
 
         # Additional session_id filter preserved from pre-shim behavior.
         if session_id:
-            filtered = [
-                r
-                for r in filtered
-                if (r.get("metadata") or {}).get("conversation_id", "") == session_id
-                or (r.get("metadata") or {}).get("session_id", "") == session_id
-            ]
+            scoped = []
+            for r in filtered:
+                meta = r.get("metadata") or {}
+                if not isinstance(meta, dict):
+                    logger.warning(
+                        "memory_recall skipped item %s: its metadata is %s, not a "
+                        "dict, so its session cannot be matched",
+                        r.get("item_id"),
+                        type(meta).__name__,
+                    )
+                    continue
+                if (
+                    meta.get("conversation_id", "") == session_id
+                    or meta.get("session_id", "") == session_id
+                ):
+                    scoped.append(r)
+            filtered = scoped
 
         final = filtered[:top_k]
 
@@ -551,7 +699,7 @@ def register_free(mcp):
 
             citations = [c.to_dict() for c in build_citations(final)]
             return {
-                "items": compact_items(final),
+                "items": [model_item(item) for item in final],
                 "citations": citations,
                 "footnote_block": build_footnote_block(final),
                 "session_id": session_id,
@@ -637,7 +785,7 @@ def register_free(mcp):
         if isinstance(result, dict) and isinstance(result.get("window_items"), list):
             result = {
                 **result,
-                "window_items": compact_items(result["window_items"]),
+                "window_items": model_items(result["window_items"], "read_around"),
             }
         return result
 
@@ -652,12 +800,13 @@ def register_free(mcp):
     )
     @graceful
     def memory_get(item_id: str, include_metadata: bool = False) -> str:
-        """Retrieve a memory item by ID: id, type, content and a compact summary.
+        """Retrieve a memory item by ID: its id, type and content.
 
-        The summary lists conflicts (one line each), dates, source and tags.
-        Pass ``include_metadata=True`` for the full raw metadata dump (large:
-        tenant/security IDs, activation, retrieval stats, full conflict facts).
-        Use ``memory_explain`` for the memory's full history and provenance.
+        If the note conflicts with other notes, one line gives the count. No
+        metadata text is shown by default. Pass ``include_metadata=True`` for the
+        full raw metadata dump (large: tenant/security IDs, activation, retrieval
+        stats, full conflict facts), or use ``memory_explain`` for the conflict
+        details and the memory's full history and provenance.
         """
         backend = get_backend()
         item = backend.get(item_id)
@@ -665,24 +814,28 @@ def register_free(mcp):
         if item is None:
             return f"Memory item not found: {item_id}"
 
+        if not include_metadata:
+            parts = [
+                f"Memory Item: {item_id}",
+                f"Type: {item['memory_type']}",
+                f"Content: {item['content']}",
+            ]
+            count = _conflict_count(item_id, item.get("metadata"))
+            if count:
+                parts.append(_conflict_line(count))
+            return "\n".join(parts)
+
         content = item["content"]
+        mtype = item["memory_type"]
         meta = item["metadata"]
-        mtype = item["memory_type"] if include_metadata else safe_memory_type(item)
 
         parts = [
             f"Memory Item: {item_id}",
             f"Type: {mtype}",
             f"Content: {content}",
         ]
-        if include_metadata:
-            if meta:
-                parts.append(f"Metadata: {meta}")
-        else:
-            parts.extend(summarize_item_metadata(item))
-            parts.append(
-                "(Metadata trimmed. include_metadata=True gives the full dump; "
-                "memory_explain gives full history.)"
-            )
+        if meta:
+            parts.append(f"Metadata: {meta}")
         return "\n".join(parts)
 
     @mcp.tool(
