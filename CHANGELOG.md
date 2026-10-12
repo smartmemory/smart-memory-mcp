@@ -2,7 +2,7 @@
 
 ## 1.5.22
 
-- U5.22: `normalize_item`, the local `get`/`search`/`list_memories` paths, `get_working_context` items and the model-facing item allowlist keep core's response-only `read_status` (extraction state, stage, execution state, outcome, revision) when present, so a pending/receipt hit is not shown as stored. Absent on the legacy arm, so its output is unchanged.
+- U5.22: `normalize_item`, the local `get`/`search`/`list_memories` paths, `get_working_context` items and the model-facing item allowlist keep core's response-only `read_status` (extraction state, stage, execution state, outcome, revision) when present, so a pending/receipt hit is not shown as stored. Absent on the legacy arm, so its output is unchanged. A present but unreadable `read_status` (not a dict, or no string `extraction_state`) is now a typed `MalformedReadStatusError` with one WARNING instead of being dropped; an absent carrier is unchanged.
 
 - MCP-MEMGET-META-1 follow-up: the default `memory_get` output shows one `Created: <iso>` line (after `Type:`, before `Content:`) from the item's `created_at`, falling back to `metadata.created_at`. The value must parse as an ISO-8601 date or datetime (max 40 chars) and the parsed value is re-emitted, so free text cannot reach the output. An invalid value drops the line and logs a WARNING without the raw value. `include_metadata=True` is unchanged.
 

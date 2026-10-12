@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 
+from smartmemory_mcp.backends.models import validated_carrier
 from smartmemory_mcp.tools.search_window import with_search_window
 
 from .common import get_backend, graceful
@@ -131,11 +132,18 @@ _MODEL_ITEM_FIELDS = frozenset(
 
 def model_item(item: Dict[str, Any]) -> Dict[str, Any]:
     """Model-facing copy of a read-tool item: its own fields, ``metadata`` emptied."""
-    return {
+    out = {
         key: {} if key == "metadata" else value
         for key, value in item.items()
         if key == "metadata" or key in _MODEL_ITEM_FIELDS
     }
+    if "read_status" in out:
+        status = validated_carrier(out["read_status"], item.get("item_id"))
+        if status is None:
+            del out["read_status"]
+        else:
+            out["read_status"] = status
+    return out
 
 
 def model_items(items: List[Any], tool: str) -> List[Dict[str, Any]]:
@@ -307,8 +315,9 @@ def _build_working_context(
                 },
             }
         )
-        if isinstance(row.get("read_status"), dict):
-            entry["read_status"] = dict(row["read_status"])
+        status = validated_carrier(row.get("read_status"), row.get("item_id"))
+        if status is not None:
+            entry["read_status"] = status
         items.append(entry)
         tokens_used += item_tokens
 

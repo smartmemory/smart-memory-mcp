@@ -9,8 +9,11 @@ See: docs/features/PLAT-MCP-MODELS-1/design.md
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional, TypedDict
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -75,6 +78,34 @@ class MemoryResult(TypedDict, total=False):
     read_status: Optional[dict]
 
 
+class MalformedReadStatusError(ValueError):
+    """A result carries a ``read_status`` that is present but unreadable (U5.22, C1/C8)."""
+
+
+def validated_carrier(status: Any, item_id: Any) -> Optional[dict]:
+    """``status`` as a carrier copy: None when absent, a typed refusal (one WARNING) when present but unreadable.
+
+    Absent (None) is the legacy gate-OFF shape and stays unchanged. A present carrier must be a dict holding a
+    non-empty string ``extraction_state``; anything else is never read as absent.
+    """
+    if status is None:
+        return None
+    if not isinstance(status, dict):
+        reason = f"a {type(status).__name__}, not a dict"
+    elif not (
+        isinstance(status.get("extraction_state"), str) and status["extraction_state"]
+    ):
+        reason = "a dict without a string extraction_state"
+    else:
+        return dict(status)
+    logger.warning(
+        "read_status carrier on %s is %s: refusing to normalize the row without its extraction status",
+        item_id,
+        reason,
+    )
+    raise MalformedReadStatusError(f"read_status on {item_id} is {reason}")
+
+
 def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
     """Normalize a dict or object into a MemoryResult.
 
@@ -120,9 +151,9 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         drift_warnings=d.get("drift_warnings"),
         as_of_resolution=d.get("as_of_resolution"),
     )
-    status = d.get("read_status")
-    if isinstance(status, dict):
-        result["read_status"] = dict(status)
+    status = validated_carrier(d.get("read_status"), result["item_id"])
+    if status is not None:
+        result["read_status"] = status
     return result
 
 
