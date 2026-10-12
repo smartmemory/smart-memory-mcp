@@ -123,6 +123,8 @@ _MODEL_ITEM_FIELDS = frozenset(
         "reference",
         "as_of_resolution",
         "score_breakdown",
+        # U5.22: extraction status of a pending/merged hit (gate-ON arm only).
+        "read_status",
     }
 )
 
@@ -288,25 +290,26 @@ def _build_working_context(
         if max_tokens is not None and tokens_used + item_tokens > max_tokens:
             break
         activation_score = compute_activation_score(row)
-        items.append(
-            _strip_identity_metadata(
-                {
-                    "item_id": row.get("item_id"),
-                    "content": content,
-                    "memory_type": row.get("memory_type"),
-                    "metadata": row.get("metadata") or {},
-                    "score_breakdown": {
-                        "activation": activation_score,
-                        "relevance": float(row.get("score") or 0.0),
-                        "recency": 1.0,
-                        "centrality": 1.0,
-                        "anchor_forced": False,
-                        "session_pin_boost": 0.0,
-                        "freshness_boost": 0.0,
-                    },
-                }
-            )
+        entry = _strip_identity_metadata(
+            {
+                "item_id": row.get("item_id"),
+                "content": content,
+                "memory_type": row.get("memory_type"),
+                "metadata": row.get("metadata") or {},
+                "score_breakdown": {
+                    "activation": activation_score,
+                    "relevance": float(row.get("score") or 0.0),
+                    "recency": 1.0,
+                    "centrality": 1.0,
+                    "anchor_forced": False,
+                    "session_pin_boost": 0.0,
+                    "freshness_boost": 0.0,
+                },
+            }
         )
+        if isinstance(row.get("read_status"), dict):
+            entry["read_status"] = dict(row["read_status"])
+        items.append(entry)
         tokens_used += item_tokens
 
     if max_tokens is not None and raw and not items:

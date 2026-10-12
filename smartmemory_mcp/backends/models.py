@@ -69,6 +69,10 @@ class MemoryResult(TypedDict, total=False):
     # set only on as_of_date searches. "unresolved" means present-day content
     # is standing in for a historical belief; an agent must not cite it as history.
     as_of_resolution: Optional[str]
+    # U5.22: response-only extraction status ({extraction_state, processing_stage,
+    # execution_state, outcome, revision}) core attaches on the visibility-gate-ON
+    # arm. Present only when the source carries it; absent on the legacy arm.
+    read_status: Optional[dict]
 
 
 def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
@@ -94,7 +98,7 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         if not d.get("created_at"):
             d["created_at"] = getattr(raw, "transaction_time", None)
 
-    return MemoryResult(
+    result = MemoryResult(
         item_id=d.get("item_id") or d.get("id", ""),
         content=d.get("content", ""),
         memory_type=d.get("memory_type", default_type),
@@ -116,6 +120,10 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         drift_warnings=d.get("drift_warnings"),
         as_of_resolution=d.get("as_of_resolution"),
     )
+    status = d.get("read_status")
+    if isinstance(status, dict):
+        result["read_status"] = dict(status)
+    return result
 
 
 def normalize_items(raw_list: list) -> list[MemoryResult]:
