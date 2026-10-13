@@ -6,6 +6,8 @@
 
 - U4.32 review fix: a save receipt that the installed wrapper cannot read now raises `SaveReturnUnavailable` (still a `RuntimeError`) with one WARNING, so callers can tell it from an unrelated runtime failure. No change on the legacy path.
 
+- U4.32 review fix 2 (tests only): the census of `smartmemory_app.storage.ingest` callers resolves module aliases, fully dotted calls, package attribute chains and relative imports, and fails naming file:line on a reference it cannot follow (getattr, a dynamic import, the module passed on as a value).
+
 - U5.22: `normalize_item`, the local `get`/`search`/`list_memories` paths, `get_working_context` items and the model-facing item allowlist keep core's response-only `read_status` (extraction state, stage, execution state, outcome, revision) when present, so a pending/receipt hit is not shown as stored. Absent on the legacy arm, so its output is unchanged. A present but unreadable `read_status` (not a dict, or no string `extraction_state`) is now a typed `MalformedReadStatusError` with one WARNING instead of being dropped; `normalize_item` checks it before core's `to_dict()` copies it, so a non-dict never escapes as a raw ValueError/TypeError. An absent carrier is unchanged.
 
 - MCP-MEMGET-META-1 follow-up: the default `memory_get` output shows one `Created: <iso>` line (after `Type:`, before `Content:`) from the item's `created_at`, falling back to `metadata.created_at`. The value must parse as an ISO-8601 date or datetime (max 40 chars) and the parsed value is re-emitted, so free text cannot reach the output. An invalid value drops the line and logs a WARNING without the raw value. `include_metadata=True` is unchanged.
