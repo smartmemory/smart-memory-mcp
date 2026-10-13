@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from dataclasses import dataclass
 from typing import Any
 
 from .interface import LOCAL_BROKEN_TOOLS, BackendCapabilities
@@ -31,6 +32,58 @@ def _metadata_matches(metadata: dict, key: str, value: Any) -> bool:
     if isinstance(cur, bool):
         return str(cur).lower() == str(value).strip().lower()
     return str(cur) == str(value)
+
+
+@dataclass(frozen=True)
+class SaveReturn:
+    """One core save return, read. ``value`` is what ``add`` returns (the id string, or the legacy held dict),
+    ``receipt`` the wire receipt on the receipt arm and None on the legacy arm."""
+
+    value: Any
+    receipt: dict[str, Any] | None = None
+    summary: str | None = None
+
+
+def _is_receipt_arm(value: Any) -> bool:
+    """Whether a core save return is a save receipt (object or wire dict) rather than a legacy shape.
+
+    A core without receipts cannot return one, so an ImportError reads as the legacy arm.
+    """
+    if isinstance(value, dict):
+        return "schema_version" in value
+    try:
+        from smartmemory.save.receipt import Receipt, ReceiptRefusal
+    except ImportError:
+        return False
+    return isinstance(value, (Receipt, ReceiptRefusal))
+
+
+def _resolve_save_return(value: Any, *, op: str) -> SaveReturn:
+    """Receipt-or-legacy view of a core save return (N-02.activate.outer-readers).
+
+    Every legacy return (id string, held or queued dict, anything else) is the legacy arm: returned as it is,
+    the wrapper not imported. A receipt is read by the wrapper's one resolver, which raises a typed, logged
+    refusal instead of turning a rejected or unreadable receipt into an id.
+    """
+    if not _is_receipt_arm(value):
+        return SaveReturn(value)
+    try:
+        from smartmemory_app.save_return import resolve_save_return
+    except ImportError as exc:
+        log.warning(
+            "Save return %s refused: smartmemory_app.save_return is not installed, so a save receipt "
+            "cannot be read; no id returned",
+            op,
+        )
+        raise RuntimeError(
+            "Local save returned a receipt but the installed smartmemory wrapper cannot read it"
+        ) from exc
+    resolved = resolve_save_return(value, op=op)
+    return SaveReturn(resolved.value, resolved.receipt, resolved.summary)
+
+
+def _save_value(value: Any, *, op: str) -> Any:
+    return _resolve_save_return(value, op=op).value
 
 
 def _decision_dict(decision: Any) -> dict[str, Any]:
@@ -129,7 +182,31 @@ class LocalBackend(BackendCapabilities):
         metadata: dict | None = None,
         **kwargs: Any,
     ) -> str:
-        """Store a memory item."""
+        """Store a memory item. Returns the id (or the legacy held dict), whichever arm core returns."""
+        return _save_value(
+            self._add_raw(content, memory_type, metadata, **kwargs), op="add"
+        )
+
+    def add_with_receipt(
+        self,
+        content: str,
+        memory_type: str = "semantic",
+        metadata: dict | None = None,
+        **kwargs: Any,
+    ) -> SaveReturn:
+        """Store a memory item and keep the save receipt when core returns one (see ``SaveReturn``)."""
+        return _resolve_save_return(
+            self._add_raw(content, memory_type, metadata, **kwargs), op="add"
+        )
+
+    def _add_raw(
+        self,
+        content: str,
+        memory_type: str,
+        metadata: dict | None,
+        **kwargs: Any,
+    ) -> Any:
+        """The core save, unread: an id string today, a receipt after the producer flip."""
         from smartmemory.models.memory_item import MemoryItem
 
         # DIST-LITE-QUIET-1: attribute the write so it lands as tier-2 user content, not
