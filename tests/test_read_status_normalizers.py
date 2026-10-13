@@ -81,6 +81,7 @@ MALFORMED = [
     ("int", 7, "a int, not a dict"),
     ("empty-string", "", "a str, not a dict"),
     ("false", False, "a bool, not a dict"),
+    ("empty-dict", {}, "a dict without a string extraction_state"),
     ("dict-without-state", {"revision": 1}, "a dict without a string extraction_state"),
     (
         "dict-empty-state",
@@ -127,6 +128,43 @@ def test_malformed_carrier_is_a_typed_refusal_at_every_site(
         with caplog.at_level(logging.WARNING):
             with pytest.raises(MalformedReadStatusError):
                 site(row)
+        assert [(r.levelname, r.getMessage()) for r in caplog.records] == [expected], (
+            site_name
+        )
+
+
+# F5: a real core MemoryItem carrying an unreadable carrier. ``to_dict()`` would copy it with ``dict()`` (raw
+# ValueError/TypeError, or an empty dict passed as valid), so the check must run before the conversion. One row per
+# malformed shape, through every normalizer that accepts an object.
+# Real MemoryItem inputs reach only the normalizers: _build_working_context consumes backend.search output, which every
+# backend has already normalized to dicts (dict rows are the SITES table above).
+OBJECT_SITES = [
+    ("normalize_item", normalize_item),
+    ("normalize_items", lambda row: normalize_items([row])),
+]
+
+
+@pytest.mark.parametrize(
+    "name,carrier,reason", MALFORMED, ids=[m[0] for m in MALFORMED]
+)
+def test_malformed_carrier_on_a_real_memory_item_is_refused_before_to_dict(
+    name, carrier, reason, caplog
+):
+    from smartmemory.models.memory_item import MemoryItem
+
+    expected = (
+        "WARNING",
+        f"read_status carrier on test_bad is {reason}: refusing to normalize the row without its extraction status",
+    )
+    for site_name, site in OBJECT_SITES:
+        item = MemoryItem(
+            item_id="test_bad", content="atlas", memory_type="semantic", metadata={}
+        )
+        item.__dict__["read_status"] = carrier
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(MalformedReadStatusError):
+                site(item)
         assert [(r.levelname, r.getMessage()) for r in caplog.records] == [expected], (
             site_name
         )
@@ -200,25 +238,28 @@ def local_backend(tmp_path, monkeypatch):
     from smartmemory_mcp.backends.local import LocalBackend
 
     mem = create_lite_memory(data_dir=str(tmp_path / "test_u522_mcp"))
-    store = InMemoryPendingStore()
-    row = AdmissionRow(
-        "test_pending", 1, "test_run", TIME, "semantic", "atlas", "atlas budget",
-        "received", "available", "indexed", SCOPE, "queued", None,
-    )  # fmt: skip
-    store.admit(row, LexicalRecord(row.item_id, 1, TEXT, source_sha256(TEXT), SCOPE))
-    mem._graph.backend.add_node(
-        "test_legacy",
-        {
-            "content": "atlas budget stored text",
-            "origin": "user:test",
-            "created_at": TIME,
-        },
-        memory_type="semantic",
-    )
-    with switch_override(SWITCH, True):
-        mem.bind_pending_reads(store, workspace_hidden=False)
-    monkeypatch.setattr(storage, "get_memory", lambda *a, **k: mem)
+    # F3: everything after the memory exists runs inside the try, so a setup failure still closes it.
     try:
+        store = InMemoryPendingStore()
+        row = AdmissionRow(
+            "test_pending", 1, "test_run", TIME, "semantic", "atlas", "atlas budget",
+            "received", "available", "indexed", SCOPE, "queued", None,
+        )  # fmt: skip
+        store.admit(
+            row, LexicalRecord(row.item_id, 1, TEXT, source_sha256(TEXT), SCOPE)
+        )
+        mem._graph.backend.add_node(
+            "test_legacy",
+            {
+                "content": "atlas budget stored text",
+                "origin": "user:test",
+                "created_at": TIME,
+            },
+            memory_type="semantic",
+        )
+        with switch_override(SWITCH, True):
+            mem.bind_pending_reads(store, workspace_hidden=False)
+        monkeypatch.setattr(storage, "get_memory", lambda *a, **k: mem)
         yield LocalBackend()
     finally:
         mem.close()
@@ -255,3 +296,93 @@ def test_local_backend_get_search_list_follow_the_gate(local_backend, on):
         assert pending["read_status"]["extraction_state"] == "extraction_pending"
     else:
         assert all("read_status" not in r for r in (*found.values(), *listed.values()))
+
+
+# F5 through LocalBackend: an unreadable carrier out of the real lite memory is refused on every read path (get and
+# list normalize in this package, search through the wrapper's storage.search). One row per path.
+BACKEND_ROWS = [
+    ("get", "get", lambda b: b.get("test_legacy")),
+    ("list", "search", lambda b: b.list_memories(limit=20, offset=0)),
+    (
+        "search",
+        "search",
+        lambda b: b.search(
+            "atlas budget", top_k=10, reranker="none", enable_hybrid=False
+        ),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "name,method,call", BACKEND_ROWS, ids=[r[0] for r in BACKEND_ROWS]
+)
+def test_local_backend_refuses_an_unreadable_core_carrier(
+    local_backend, monkeypatch, caplog, name, method, call
+):
+    from smartmemory_app import storage
+
+    mem = storage.get_memory()
+    real = getattr(mem, method)
+
+    def stamped(*args, **kwargs):
+        value = real(*args, **kwargs)
+        for hit in value if isinstance(value, list) else [value]:
+            if getattr(hit, "item_id", None) == "test_legacy":
+                hit.__dict__["read_status"] = "extraction_pending"
+        return value
+
+    monkeypatch.setattr(mem, method, stamped)
+    caplog.clear()
+    with switch_override(SWITCH, True), caplog.at_level(logging.WARNING):
+        with pytest.raises(ValueError) as err:
+            call(local_backend)
+    assert type(err.value).__name__ == "MalformedReadStatusError"
+    assert [
+        (r.levelname, r.getMessage())
+        for r in caplog.records
+        if "read_status carrier" in r.getMessage()
+    ] == [
+        (
+            "WARNING",
+            "read_status carrier on test_legacy is a str, not a dict: "
+            "refusing to normalize the row without its extraction status",
+        )
+    ]
+
+
+def test_fixture_closes_memory_when_setup_fails_after_it_exists(tmp_path, monkeypatch):
+    """F3 item 3: a failure after the lite memory exists (here: binding pending reads) still closes it."""
+    import sys
+
+    module = sys.modules[__name__]
+    opened = []
+    factory = create_lite_memory  # the real one, captured before the module global is replaced
+
+    def tracked_factory(*args, **kwargs):
+        mem = factory(*args, **kwargs)
+        record = {"mem": mem, "closed": False}
+        opened.append(record)
+        close = mem.close
+
+        def tracked_close():
+            record["closed"] = True
+            return close()
+
+        def fail_binding(*a, **k):
+            raise RuntimeError("test_u522 injected binding failure")
+
+        mem.close = tracked_close
+        mem.bind_pending_reads = fail_binding
+        return mem
+
+    monkeypatch.setattr(module, "create_lite_memory", tracked_factory)
+    gen = local_backend.__wrapped__(tmp_path, monkeypatch)
+    try:
+        with pytest.raises(RuntimeError, match="injected binding failure"):
+            next(gen)
+        assert [r["closed"] for r in opened] == [True]
+    finally:
+        gen.close()
+        for record in opened:
+            if not record["closed"]:
+                record["mem"].close()

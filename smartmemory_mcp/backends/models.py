@@ -119,6 +119,13 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
     if isinstance(raw, dict):
         d = raw
     elif hasattr(raw, "to_dict"):
+        # U5.22 (C1/C8): core's MemoryItem.to_dict() copies its response-only carrier with dict(), so an unreadable
+        # one would escape as a raw ValueError/TypeError. Check it on the object first: same typed refusal and one
+        # WARNING as every other shape.
+        validated_carrier(
+            getattr(raw, "__dict__", {}).get("read_status"),
+            getattr(raw, "item_id", None),
+        )
         d = raw.to_dict()
     else:
         # Extract canonical + alias fields from object attributes
