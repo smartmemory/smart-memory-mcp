@@ -34,6 +34,10 @@ def _metadata_matches(metadata: dict, key: str, value: Any) -> bool:
     return str(cur) == str(value)
 
 
+class SaveReturnUnavailable(RuntimeError):
+    """Core returned a save receipt but the installed wrapper cannot read it. No id was inferred."""
+
+
 @dataclass(frozen=True)
 class SaveReturn:
     """One core save return, read. ``value`` is what ``add`` returns (the id string, or the legacy held dict),
@@ -75,7 +79,7 @@ def _resolve_save_return(value: Any, *, op: str) -> SaveReturn:
             "cannot be read; no id returned",
             op,
         )
-        raise RuntimeError(
+        raise SaveReturnUnavailable(
             "Local save returned a receipt but the installed smartmemory wrapper cannot read it"
         ) from exc
     resolved = resolve_save_return(value, op=op)
