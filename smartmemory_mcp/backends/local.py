@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import importlib
 import logging
+import sys
 import threading
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, NoReturn
 
@@ -49,18 +51,42 @@ class SaveReturn:
     summary: str | None = None
 
 
-def _is_receipt_arm(value: Any) -> bool:
-    """Whether a core save return is a save receipt (object or wire dict) rather than a legacy shape.
+#: Core's receipt classes, by name (mirrors ``smartmemory_app.save_return.RECEIPT_CLASS_NAMES``).
+_RECEIPT_CLASS_NAMES = frozenset({"Receipt", "ReceiptRefusal"})
 
-    A core without receipts cannot return one, so an ImportError reads as the legacy arm.
+
+def _is_receipt_arm(value: Any) -> bool:
+    """Whether a core save return is a save receipt (object or wire mapping) rather than a legacy shape.
+
+    The wrapper's one rule (``smartmemory_app.save_return.is_receipt_arm``, U4.42 r2 N1), mirrored here so the legacy
+    arm needs neither the wrapper nor core: ``str`` and a mapping without ``schema_version`` are legacy; a mapping with
+    it is a wire receipt; any other object is a receipt when its class or a base is named ``Receipt``/
+    ``ReceiptRefusal`` or it is an instance of an already-imported ``smartmemory.save.receipt``'s classes. Never an
+    exact class-name equality and never ``dict`` only. The wrapper's resolver then refuses any receipt-arm object
+    that is not this core's receipt.
     """
-    if isinstance(value, dict):
-        return "schema_version" in value
-    try:
-        from smartmemory.save.receipt import Receipt, ReceiptRefusal
-    except ImportError:
+    if isinstance(value, str):
         return False
-    return isinstance(value, (Receipt, ReceiptRefusal))
+    if isinstance(value, Mapping):
+        return "schema_version" in value
+    if any(
+        getattr(cls, "__name__", None) in _RECEIPT_CLASS_NAMES
+        for cls in type(value).__mro__
+    ):
+        return True
+    try:  # read, never imported: a core that never loaded its receipts cannot have returned one
+        module = sys.modules["smartmemory.save.receipt"]
+    except KeyError:
+        module = None
+    classes = tuple(
+        cls
+        for cls in (
+            getattr(module, "Receipt", None),
+            getattr(module, "ReceiptRefusal", None),
+        )
+        if isinstance(cls, type)
+    )
+    return bool(classes) and isinstance(value, classes)
 
 
 def _logged(exc: SaveReturnUnavailable) -> SaveReturnUnavailable:
@@ -93,7 +119,11 @@ def _resolve_save_return(value: Any, *, op: str) -> SaveReturn:
     the wrapper not imported. A receipt is read by the wrapper's one resolver, which raises a typed, logged
     refusal instead of turning a rejected or unreadable receipt into an id.
     """
-    if not _is_receipt_arm(value):
+    try:
+        receipt_arm = _is_receipt_arm(value)
+    except Exception:  # a return that cannot even be told apart is never an id: the wrapper's reader refuses it
+        receipt_arm = True
+    if not receipt_arm:
         return SaveReturn(value)
     try:
         from smartmemory_app.save_return import resolve_save_return
