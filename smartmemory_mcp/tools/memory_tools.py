@@ -7,8 +7,33 @@ from typing import Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 
-from smartmemory_mcp.backends.models import validated_carrier
+from smartmemory_mcp.backends.models import (
+    none_found,
+    partial_note,
+    partial_reasons,
+    validated_carrier,
+)
 from smartmemory_mcp.tools.search_window import with_search_window
+
+try:
+    from smartmemory.refusal_logging import (
+        mark_refusal_logged,
+        refusal_logged,
+        refusal_text,
+    )
+except (
+    ImportError
+):  # remote-only install: no core, so no error carries core's logged mark
+
+    def mark_refusal_logged(error: BaseException) -> BaseException:
+        return error
+
+    def refusal_logged(error: BaseException) -> bool:
+        return False
+
+    def refusal_text(error: BaseException) -> str:
+        return str(error)
+
 
 from .common import get_backend, graceful
 from .lexical_contract import validate_channel_weights
@@ -287,7 +312,10 @@ def _build_working_context(
 
     decision_id = _uuid.uuid4().hex
     fetch_k = max(k * 5, k)
-    raw = list(backend.search(query, top_k=fetch_k) or [])
+    found = backend.search(query, top_k=fetch_k)
+    # U5.21 (C8): the call's completeness is read off its own return, before ``list(...)`` makes a plain list again.
+    partial = partial_reasons(found)
+    raw = list(found or [])
 
     items: List[Dict[str, Any]] = []
     tokens_used = 0
@@ -327,7 +355,7 @@ def _build_working_context(
             f"budget_too_small: max_tokens={max_tokens} cannot fit the smallest item"
         )
 
-    return {
+    response = {
         "decision_id": decision_id,
         "items": [model_item(item) for item in items] if model_facing else items,
         "drift_warnings": [],
@@ -336,6 +364,13 @@ def _build_working_context(
         "tokens_budget": max_tokens,
         "deprecation": None,
     }
+    if partial:
+        # Added only to a partial answer (never to a complete one): an empty ``items`` is then not read as "nothing".
+        response["partial_answer"] = {
+            "reasons": list(partial),
+            "note": partial_note(partial),
+        }
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -404,13 +439,22 @@ def _format_turn_content(user_turn: str, assistant_turn: str) -> str:
 
 
 def _format_recall(
-    query: str, results: list, session_id: str = None, drift_warnings: list = None
+    query: str,
+    results: list,
+    session_id: str = None,
+    drift_warnings: list = None,
+    partial: tuple = (),
 ) -> str:
-    """Format recalled turns as a prompt-ready context string."""
+    """Format recalled turns as a prompt-ready context string.
+
+    ``partial``: why core called the answer partial (U5.21), appended so a partial answer is never read as complete.
+    """
     if not results:
         if session_id:
-            return "No prior turns found for this session."
-        return f"No prior turns found for: {query}"
+            return none_found(
+                "No prior turns found for this session.", "prior turns", partial
+            )
+        return none_found(f"No prior turns found for: {query}", "prior turns", partial)
 
     lines = [f"Relevant prior context for '{query}':", ""]
     for i, item in enumerate(results, 1):
@@ -445,6 +489,9 @@ def _format_recall(
                 f"  [{severity}] {acontent} (drift={dscore:.2f}, missing: {missing_str})"
             )
 
+    if partial:
+        lines.append("")
+        lines.append(partial_note(partial))
     return "\n".join(lines)
 
 
@@ -563,6 +610,9 @@ def register_free(mcp):
                 if v is not None
             },
         )
+        # U5.21 (C8): read the call's completeness off its own return, before the tier filter and the slice below
+        # make plain lists again.
+        partial = partial_reasons(results)
 
         # CORE-ORIGIN-1: apply search tier policy
         try:
@@ -575,15 +625,20 @@ def register_free(mcp):
         results = results[:top_k]
 
         if not results:
+            # A partial answer with nothing visible is not "no results": it says it was partial and why.
+            message = none_found(
+                f"No results found for query: {query}", "results", partial
+            )
             if cite:
                 # RECALL-CITATIONS-1: distinguish "no results" from "no citations requested"
                 return {
                     "items": [],
                     "footnote_block": "",
                     "citations": [],
-                    "message": f"No results found for query: {query}",
+                    "message": message,
+                    **({"partial": list(partial)} if partial else {}),
                 }
-            return f"No results found for query: {query}"
+            return message
 
         # RECALL-CITATIONS-1: when cite=True, return structured payload with
         # pre-formatted footnote_block ready for the consuming agent to paste.
@@ -601,6 +656,7 @@ def register_free(mcp):
                 ],
                 "citations": citations,
                 "footnote_block": footnote_block,
+                **({"partial": list(partial)} if partial else {}),
             }
 
         # SELF-IMPROVE-6: capture search_session_id from backend (RemoteBackend stores it
@@ -611,6 +667,8 @@ def register_free(mcp):
 
         if catalog_mode:
             catalog = _format_catalog(query, results)
+            if partial:
+                catalog += f"\n\n{partial_note(partial)}"
             if session_id_from_search:
                 catalog += f"\n\nsearch_session_id: {session_id_from_search}"
             return catalog
@@ -649,6 +707,8 @@ def register_free(mcp):
             )
             output.append(f"   {preview}\n")
 
+        if partial:
+            output.append(partial_note(partial))
         if session_id_from_search:
             output.append(f"\nsearch_session_id: {session_id_from_search}")
         return "\n".join(output)
@@ -689,7 +749,14 @@ def register_free(mcp):
         if hasattr(backend, "recall") and not session_id:
             result = backend.recall(cwd=query, top_k=top_k)
             if isinstance(result, str):
-                return result
+                # U5.21 (C8): the text is the plain str it always was, and a partial answer rides on it. Empty is not
+                # "no memories" when core said the answer was partial.
+                partial_text = partial_reasons(result)
+                if not partial_text:
+                    return result
+                if not result.strip():
+                    return none_found(result, "memories", partial_text)
+                return f"{result}\n\n{partial_note(partial_text)}"
 
         # Delegate to the surfacing helper, then apply legacy-scope post-filter.
         # Over-fetch aggressively (10x, clamp to contract max 100) so the
@@ -735,6 +802,7 @@ def register_free(mcp):
             filtered = scoped
 
         final = filtered[:top_k]
+        partial = (response.get("partial_answer") or {}).get("reasons") or []
 
         # RECALL-CITATIONS-1: structured response with footnote block when cite=True.
         # Empty result set still returns citations=[] (never omitted) so consumers
@@ -751,9 +819,12 @@ def register_free(mcp):
                 "citations": citations,
                 "footnote_block": build_footnote_block(final),
                 "session_id": session_id,
+                **({"partial": list(partial)} if partial else {}),
             }
 
-        return _format_recall(query, final, session_id=session_id)
+        return _format_recall(
+            query, final, session_id=session_id, partial=tuple(partial)
+        )
 
     @mcp.tool(
         title="Get working context",
@@ -1131,6 +1202,7 @@ def register_pro(mcp):
         memory_search_by_metadata, whose endpoint is deprecated (GRAPH-API-1l).
         """
         backend = get_backend()
+        partial: tuple[str, ...] = ()
         try:
             result = backend.list_memories(
                 limit=limit,
@@ -1139,11 +1211,14 @@ def register_pro(mcp):
                 metadata_value=metadata_value,
             )
         except Exception as exc:
-            logger.warning(
-                "Memory list unavailable; page items and corpus total were lost because the "
-                "backend list call failed: %s",
-                exc,
-            )
+            # U5.21 (C1): a core refusal is logged once, by the site that raised it (its mark on the exception).
+            if not refusal_logged(exc):
+                logger.warning(
+                    "Memory list unavailable; page items and corpus total were lost because the "
+                    "backend list call failed: %s",
+                    refusal_text(exc),
+                )
+                mark_refusal_logged(exc)
             raise
 
         # Handle both list and dict responses
@@ -1179,6 +1254,7 @@ def register_pro(mcp):
         elif isinstance(result, list):
             items = result
             total = None
+            partial = partial_reasons(result)
             logger.warning(
                 "Memory list total is unavailable; corpus size was lost because the backend "
                 "returned only a page list."
@@ -1199,7 +1275,9 @@ def register_pro(mcp):
                     f"No memories returned for this page (offset {offset}); "
                     f"{total} memories exist."
                 )
-            return "No memories returned; total unavailable."
+            return none_found(
+                "No memories returned; total unavailable.", "memories", partial
+            )
 
         if total is None:
             output = [f"Returned {len(items)} memories; total unavailable:\n"]
@@ -1212,6 +1290,9 @@ def register_pro(mcp):
             preview = content[:100] + "..." if len(content) > 100 else content
             output.append(f"- [{item_id}] ({mtype}): {preview}")
 
+        if partial:
+            output.append("")
+            output.append(partial_note(partial))
         return "\n".join(output)
 
     @mcp.tool(

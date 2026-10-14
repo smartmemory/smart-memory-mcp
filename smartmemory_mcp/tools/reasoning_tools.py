@@ -4,6 +4,7 @@ import logging
 
 from mcp.types import ToolAnnotations
 
+from ..backends.models import none_found, partial_note, partial_reasons
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -290,9 +291,12 @@ def register(mcp):
         """Query stored reasoning traces — ask 'why' questions about past decisions."""
         backend = get_backend()
         results = backend.search(query, memory_type="reasoning", top_k=limit)
+        partial = partial_reasons(results)
 
         if not results:
-            return f"No reasoning traces found for: {query}"
+            return none_found(
+                f"No reasoning traces found for: {query}", "reasoning traces", partial
+            )
 
         output = [f"Found {len(results)} reasoning traces:\n"]
         for item in results:
@@ -302,4 +306,6 @@ def register(mcp):
             content = item["content"]
             output.append(f"- [{item_id}] ({len(steps)} steps): {content[:120]}")
 
+        if partial:
+            output.append(partial_note(partial))
         return "\n".join(output)

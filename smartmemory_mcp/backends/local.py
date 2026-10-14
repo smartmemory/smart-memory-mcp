@@ -489,9 +489,10 @@ class LocalBackend(BackendCapabilities):
 
         window = max((limit + offset) * 10, 200)
         hits = self._mem.search("*", top_k=window)
+        from smartmemory.search.results import carry_partial
         from smartmemory.search.visibility_gate import gated_partial_coverage
 
-        gated_partial_coverage(hits, where="list_memories")
+        partial = gated_partial_coverage(hits, where="list_memories")
         items = [normalize_item(raw) for raw in hits or []]
         if mkey is not None:
             items = [
@@ -505,7 +506,9 @@ class LocalBackend(BackendCapabilities):
                 "are not represented in this page or its offset.",
                 window,
             )
-        return items[offset : offset + limit]
+        # U5.21 (C8): the page is still a plain list to every caller; a partial answer's reasons ride on it so an
+        # empty page is not read as "no more memories".
+        return carry_partial(items[offset : offset + limit], partial)
 
     def clear_user_memories(self, confirm: bool = False, **kwargs: Any) -> str:
         """Clear all user memories.

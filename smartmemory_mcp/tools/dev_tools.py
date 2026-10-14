@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from mcp.types import ToolAnnotations
 
+from ..backends.models import none_found, partial_note, partial_reasons
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -100,9 +101,14 @@ def register(mcp):
         """Search past development decisions by keyword, feature, or time range."""
         backend = get_backend()
         results = backend.search(query, top_k=limit * 2, memory_type="decision")
+        partial = partial_reasons(
+            results
+        )  # before anything copies the rows: the carrier is the call's own return
 
         if not results:
-            return f"No decisions found for query: {query}"
+            return none_found(
+                f"No decisions found for query: {query}", "decisions", partial
+            )
 
         filtered = []
         for item in results:
@@ -136,8 +142,10 @@ def register(mcp):
                 filters.append(f"feature_id={feature_id}")
             if since:
                 filters.append(f"since={since}")
-            return (
-                f"No decisions found for query: {query} (filters: {', '.join(filters)})"
+            return none_found(
+                f"No decisions found for query: {query} (filters: {', '.join(filters)})",
+                "decisions",
+                partial,
             )
 
         output = [f"Found {len(filtered)} decisions for '{query}':\n"]
@@ -156,6 +164,9 @@ def register(mcp):
                 preview = rationale[:150] + "..." if len(rationale) > 150 else rationale
                 output.append(f"   Rationale: {preview}")
             output.append("")
+
+        if partial:
+            output.append(partial_note(partial))
 
         return "\n".join(output)
 
@@ -237,6 +248,7 @@ def register(mcp):
         output = []
 
         session_results = backend.search(topic, top_k=sessions, memory_type="episodic")
+        session_partial = partial_reasons(session_results)
         if session_results:
             output.append(f"=== Recent Sessions ({len(session_results)}) ===\n")
             for i, item in enumerate(session_results, 1):
@@ -249,14 +261,21 @@ def register(mcp):
                 if next_steps:
                     output.append(f"   Next steps: {'; '.join(next_steps)}")
                 output.append("")
+            if session_partial:
+                output.append(partial_note(session_partial) + "\n")
         else:
-            output.append("No recent sessions found.\n")
+            output.append(
+                none_found(
+                    "No recent sessions found.", "recent sessions", session_partial
+                )
+                + "\n"
+            )
 
         decision_results = []
         if include_decisions:
-            decision_results = (
-                backend.search(topic, top_k=3, memory_type="decision") or []
-            )
+            found = backend.search(topic, top_k=3, memory_type="decision")
+            decision_partial = partial_reasons(found)
+            decision_results = found or []
             if decision_results:
                 output.append(f"=== Related Decisions ({len(decision_results)}) ===\n")
                 for i, item in enumerate(decision_results, 1):
@@ -271,8 +290,17 @@ def register(mcp):
                     if preview:
                         output.append(f"   Rationale: {preview}")
                     output.append("")
+                if decision_partial:
+                    output.append(partial_note(decision_partial) + "\n")
             else:
-                output.append("No related decisions found.\n")
+                output.append(
+                    none_found(
+                        "No related decisions found.",
+                        "related decisions",
+                        decision_partial,
+                    )
+                    + "\n"
+                )
 
         context_parts = []
         if session_results:

@@ -164,6 +164,47 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
     return result
 
 
+def partial_reasons(rows: Any) -> tuple[str, ...]:
+    """Why core called the answer behind ``rows`` partial (U5.21 F1): the carrier's ``.partial``, else ``()``.
+
+    Read by attribute, not by importing core's ``PartialRows``: a remote-only install has no core. Anything that is not
+    a tuple of strings (a plain list, a mock) is complete-or-unmeasured. Call it on the backend call's own return: a
+    slice, a copy or a tier filter makes a plain list again.
+    """
+    names = getattr(rows, "partial", ())
+    if isinstance(names, tuple) and names and all(type(n) is str for n in names):
+        return names
+    return ()
+
+
+def partial_note(names: tuple[str, ...]) -> str:
+    """One sentence for a model-facing answer built from a partial one, ``""`` when the answer is complete."""
+    if not names:
+        return ""
+    reasons = ", ".join(
+        n[:64] for n in names
+    )  # core's names are short constants: the bound is for any other carrier
+    return f"The answer was partial (core reported: {reasons}), so matches past what it examined may not be shown."
+
+
+def none_found(complete_text: str, subject: str, names: tuple[str, ...]) -> str:
+    """``complete_text`` ("No X found ...") for a complete answer. A partial answer with nothing visible is not absence:
+    it says what was visible, that the answer was partial and why."""
+    if not names:
+        return complete_text
+    return f"No visible {subject} in the part core examined. {partial_note(names)} This is not proof that none exist."
+
+
 def normalize_items(raw_list: list) -> list[MemoryResult]:
-    """Normalize a list of raw items into MemoryResult dicts."""
-    return [normalize_item(item) for item in raw_list]
+    """Normalize a list of raw items into MemoryResult dicts.
+
+    The call's completeness survives (U5.21): a ``PartialRows`` in comes out as the same carrier over the normalized
+    rows, and any other list comes out as the plain list it always did.
+    """
+    rows = [normalize_item(item) for item in raw_list]
+    names = partial_reasons(raw_list)
+    if not names:
+        return rows
+    from smartmemory.search.results import carry_partial
+
+    return carry_partial(rows, names)
