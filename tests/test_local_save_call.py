@@ -440,3 +440,183 @@ def test_the_structured_tool_text_is_the_same_for_both_arms(
         mcp.fns["memory_ingest_structured"]({"k": 1}, "test_schema")
         == f"Structured item ingested. Schema: test_schema, Item ID: {expected}"
     )
+
+
+# --- fix round 1 (F3): every new failure boundary is a typed, marked, single-WARNING refusal ---------------------------
+# Bug class: C1 failure path without a typed/logged/marked refusal; C8 raw failure escape. One row per site of the
+# census (u-U4.42/census.py). Each asserts the exact full WARNING list (logger, level, message), the typed error and
+# the propagated core mark.
+
+BACKEND_LOGGER = "smartmemory_mcp.backends.local"
+UNAVAILABLE_WARNING = (
+    "Save refused: the installed smartmemory wrapper has no receipt save (smartmemory_app.save_caller and "
+    "storage.save), so a receipt save cannot be made; nothing was saved and add/ingest were not used"
+)
+UNREADABLE_WARNING = (
+    "Save return ingest_structured refused: smartmemory_app.save_return is not installed, so a save receipt "
+    "cannot be read; no id returned"
+)
+
+
+def _partial_module(monkeypatch, name):
+    import types
+
+    monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+
+
+def _records(caplog):
+    return [
+        (r.name, r.levelno, r.getMessage())
+        for r in caplog.records
+        if r.levelno >= logging.WARNING
+    ]
+
+
+def _wrapper_without_the_export(monkeypatch, tmp_path, mem):
+    _partial_module(monkeypatch, "smartmemory_app.save_caller")
+    return (
+        lambda: local(mem).save_call("x"),
+        SaveReturnUnavailable,
+        [(BACKEND_LOGGER, logging.WARNING, UNAVAILABLE_WARNING)],
+        True,
+    )
+
+
+def _wrapper_storage_without_save(monkeypatch, tmp_path, mem):
+    _partial_module(monkeypatch, "smartmemory_app.storage")
+    return (
+        lambda: local(mem).submit_save(object()),
+        SaveReturnUnavailable,
+        [(BACKEND_LOGGER, logging.WARNING, UNAVAILABLE_WARNING)],
+        True,
+    )
+
+
+def _missing_export_in_a_core_without_the_mark(monkeypatch, tmp_path, mem):
+    monkeypatch.setitem(sys.modules, "smartmemory.refusal_logging", None)
+    _partial_module(monkeypatch, "smartmemory_app.save_caller")
+    return (
+        lambda: local(mem).save_call("x"),
+        SaveReturnUnavailable,
+        [(BACKEND_LOGGER, logging.WARNING, UNAVAILABLE_WARNING)],
+        False,
+    )
+
+
+def _unreadable_receipt_in_a_core_without_the_mark(monkeypatch, tmp_path, mem):
+    monkeypatch.setitem(sys.modules, "smartmemory.refusal_logging", None)
+    monkeypatch.setitem(sys.modules, "smartmemory_app.save_return", None)
+    return (
+        lambda: structured(receipt().to_dict()).ingest_structured(
+            {"k": 1}, schema="test_schema"
+        ),
+        SaveReturnUnavailable,
+        [(BACKEND_LOGGER, logging.WARNING, UNREADABLE_WARNING)],
+        False,
+    )
+
+
+def _write_lock_fails(monkeypatch, tmp_path, mem):
+    def boom(path):
+        raise OSError("test lock failure")
+
+    monkeypatch.setattr(storage, "_get_lock_file", boom)
+    return (
+        lambda: local(mem).save("x"),
+        save_caller.SaveCallRefused,
+        [
+            (
+                "smartmemory_app.save_caller",
+                logging.WARNING,
+                "Save call refused (write_lock_unavailable): the local write lock could not be taken "
+                "(OSError: test lock failure); nothing was saved and ingest was not used",
+            )
+        ],
+        True,
+    )
+
+
+def _structured_receipt_is_not_a_save(monkeypatch, tmp_path, mem):
+    stage_job = receipt_mod.build_local_receipt(
+        subject=receipt_mod.ReceiptSubject(
+            "stage_job", occurrence_id="test_occ", stage_id="test_stage"
+        ),
+        run_id="test_run",
+        processing_stage=None,
+        execution_state="queued",
+        outcome=None,
+        terminal=False,
+        result_availability="pending",
+    )
+    from smartmemory_app.save_return import SaveReturnRefused
+
+    return (
+        lambda: structured(stage_job).ingest_structured_with_receipt(
+            {"k": 1}, schema="test_schema"
+        ),
+        (SaveReturnRefused),
+        [
+            (
+                "smartmemory_app.save_return",
+                logging.WARNING,
+                "Save return ingest_structured refused: receipt subject stage_job is not a save; no id returned",
+            )
+        ],
+        True,
+    )
+
+
+def _structured_rejection_is_marked(monkeypatch, tmp_path, mem):
+    rejected = receipt_mod.decode_receipt(
+        {
+            "schema_version": "1.1",
+            "admission_error": {
+                "code": "idempotency_conflict",
+                "message": "test conflict",
+            },
+        }
+    )
+    return (
+        lambda: structured(rejected).ingest_structured({"k": 1}, schema="test_schema"),
+        SaveRejected,
+        [
+            (
+                "smartmemory_app.save_return",
+                logging.WARNING,
+                "Save return ingest_structured rejected at admission (idempotency_conflict); "
+                "nothing was stored under a new id",
+            )
+        ],
+        True,
+    )
+
+
+# (label, row builder). A row builder returns (act, error type, the exact WARNING list, marked).
+BOUNDARY_ROWS = [
+    ("wrapper save_caller lacks the export", _wrapper_without_the_export),
+    ("wrapper storage lacks save", _wrapper_storage_without_save),
+    (
+        "missing export in a core without the mark",
+        _missing_export_in_a_core_without_the_mark,
+    ),
+    (
+        "unreadable receipt in a core without the mark",
+        _unreadable_receipt_in_a_core_without_the_mark,
+    ),
+    ("write lock cannot be taken", _write_lock_fails),
+    ("structured receipt that is not a save", _structured_receipt_is_not_a_save),
+    ("structured rejection", _structured_rejection_is_marked),
+]
+
+
+@pytest.mark.parametrize(
+    "label, build", BOUNDARY_ROWS, ids=[r[0] for r in BOUNDARY_ROWS]
+)
+def test_every_new_failure_boundary_is_one_typed_marked_refusal(
+    label, build, memory, monkeypatch, tmp_path, caplog
+):
+    act, error, warnings, marked = build(monkeypatch, tmp_path, memory)
+    with caplog.at_level(logging.WARNING), pytest.raises(error) as caught:
+        act()
+    assert _records(caplog) == warnings, label
+    assert refusal_logged(caught.value) is marked, label

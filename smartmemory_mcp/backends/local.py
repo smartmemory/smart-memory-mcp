@@ -515,7 +515,14 @@ class LocalBackend(BackendCapabilities):
             caller = importlib.import_module("smartmemory_app.save_caller")
         except ImportError as exc:
             self._save_unavailable(exc)
-        return getattr(caller, name)
+        symbol = getattr(caller, name, None)
+        if (
+            symbol is None
+        ):  # a wrapper whose save_caller lacks the export is the same unavailable seam
+            self._save_unavailable(
+                AttributeError(f"smartmemory_app.save_caller has no {name}")
+            )
+        return symbol
 
     @staticmethod
     def _save_unavailable(exc: BaseException) -> NoReturn:
