@@ -846,6 +846,28 @@ def test_a_failed_inspection_is_one_typed_refusal_and_is_never_inspected_again(
         assert refusal_logged(caught.value) is True, (label, consumer)
 
 
+def test_a_core_without_refusal_logging_still_refuses_once_unmarked(
+    monkeypatch, caplog
+):
+    """The ImportError arms of the mark (``_logged``, ``_cause_logged``) on the MCP side, wrapper missing: one WARNING, never a lost refusal."""
+    _wrapper_missing(monkeypatch)
+    monkeypatch.setitem(sys.modules, "smartmemory.refusal_logging", None)
+    with (
+        caplog.at_level(logging.WARNING),
+        pytest.raises(local.SaveReturnUnavailable) as caught,
+    ):
+        local._resolve_save_return(FlakyMapping(), op="add")
+    assert not any("logged" in key for key in vars(caught.value))
+    assert _warning_records(caplog) == [
+        (
+            LOGGER,
+            logging.WARNING,
+            "Save return add refused: smartmemory_app.save_return is not installed, so a save receipt cannot be "
+            "read; no id returned",
+        )
+    ]
+
+
 class FakeMCP:
     def __init__(self):
         self.fns = {}
