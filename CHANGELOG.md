@@ -28,6 +28,7 @@
 
 - U4.42 review fix (round 2): `LocalBackend` tells a receipt from a legacy save return by the wrapper's one rule (subclasses, lookalikes and any mapping with `schema_version`, not just a `dict` or an exact class name), and a return that cannot be inspected is handed to the wrapper's reader, which refuses it. Still dormant: no tool calls the receipt save.
 - U4.42 review fix: a wrapper `save_caller` module that lacks one of the names the local receipt save needs is now `SaveReturnUnavailable` with one WARNING (it was a bare `AttributeError`). Still dormant: no tool calls the receipt save, and the `memory_save*` tool names are owned by the follow-up unit U4.42-FU-TOOLS.
+- U4.42 review fix (round 3): `LocalBackend` recognises a receipt before its shape (a receipt that also is a string or a mapping is still read as a receipt), and a save return that cannot be inspected is refused on the first failure with one WARNING instead of being inspected again and read as a legacy id. A failure core already logged adds no second WARNING. Still dormant.
 
 ## 1.5.21 — 2026-10-08
 

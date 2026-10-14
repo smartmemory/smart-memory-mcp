@@ -58,17 +58,13 @@ _RECEIPT_CLASS_NAMES = frozenset({"Receipt", "ReceiptRefusal"})
 def _is_receipt_arm(value: Any) -> bool:
     """Whether a core save return is a save receipt (object or wire mapping) rather than a legacy shape.
 
-    The wrapper's one rule (``smartmemory_app.save_return.is_receipt_arm``, U4.42 r2 N1), mirrored here so the legacy
-    arm needs neither the wrapper nor core: ``str`` and a mapping without ``schema_version`` are legacy; a mapping with
-    it is a wire receipt; any other object is a receipt when its class or a base is named ``Receipt``/
-    ``ReceiptRefusal`` or it is an instance of an already-imported ``smartmemory.save.receipt``'s classes. Never an
-    exact class-name equality and never ``dict`` only. The wrapper's resolver then refuses any receipt-arm object
-    that is not this core's receipt.
+    The wrapper's one rule (``smartmemory_app.save_return.is_receipt_arm``, U4.42 r2 N1, r3 F1), mirrored here so the
+    legacy arm needs neither the wrapper nor core. Receipt identity is decided FIRST: an object whose class or a base is
+    named ``Receipt``/``ReceiptRefusal``, or that is an instance of an already-imported ``smartmemory.save.receipt``'s
+    classes, is a receipt even when it also is a ``str`` or a ``Mapping``. Only then: ``str`` and a mapping without
+    ``schema_version`` are legacy, a mapping with it is a wire receipt. Never an exact class-name equality and never
+    ``dict`` only. The wrapper's resolver then refuses any receipt-arm object that is not this core's receipt.
     """
-    if isinstance(value, str):
-        return False
-    if isinstance(value, Mapping):
-        return "schema_version" in value
     if any(
         getattr(cls, "__name__", None) in _RECEIPT_CLASS_NAMES
         for cls in type(value).__mro__
@@ -86,7 +82,13 @@ def _is_receipt_arm(value: Any) -> bool:
         )
         if isinstance(cls, type)
     )
-    return bool(classes) and isinstance(value, classes)
+    if classes and isinstance(value, classes):
+        return True
+    if isinstance(value, str):
+        return False
+    if isinstance(value, Mapping):
+        return "schema_version" in value
+    return False
 
 
 def _logged(exc: SaveReturnUnavailable) -> SaveReturnUnavailable:
@@ -98,13 +100,19 @@ def _logged(exc: SaveReturnUnavailable) -> SaveReturnUnavailable:
     return mark_refusal_logged(exc)
 
 
-def _receipt_unreadable(op: str) -> SaveReturnUnavailable:
-    """Log the one WARNING for a receipt this install cannot read and return the marked refusal to raise."""
-    log.warning(
-        "Save return %s refused: smartmemory_app.save_return is not installed, so a save receipt "
-        "cannot be read; no id returned",
-        op,
-    )
+def _receipt_unreadable(
+    op: str, cause: BaseException | None = None
+) -> SaveReturnUnavailable:
+    """Log the one WARNING for a receipt this install cannot read and return the marked refusal to raise.
+
+    A ``cause`` that already carries core's logged mark (an inspection failure its writer logged) adds no second WARNING.
+    """
+    if not _cause_logged(cause):
+        log.warning(
+            "Save return %s refused: smartmemory_app.save_return is not installed, so a save receipt "
+            "cannot be read; no id returned",
+            op,
+        )
     return _logged(
         SaveReturnUnavailable(
             "Local save returned a receipt but the installed smartmemory wrapper cannot read it"
@@ -112,17 +120,35 @@ def _receipt_unreadable(op: str) -> SaveReturnUnavailable:
     )
 
 
+def _cause_logged(cause: BaseException | None) -> bool:
+    """Whether ``cause`` already carries core's logged mark (``refusal_logged``): its writer logged the one WARNING."""
+    if cause is None:
+        return False
+    try:
+        from smartmemory.refusal_logging import refusal_logged
+    except ImportError:  # a core without the mark has no marked cause
+        return False
+    return refusal_logged(cause)
+
+
 def _resolve_save_return(value: Any, *, op: str) -> SaveReturn:
     """Receipt-or-legacy view of a core save return (N-02.activate.outer-readers).
 
     Every legacy return (id string, held or queued dict, anything else) is the legacy arm: returned as it is,
     the wrapper not imported. A receipt is read by the wrapper's one resolver, which raises a typed, logged
-    refusal instead of turning a rejected or unreadable receipt into an id.
+    refusal instead of turning a rejected or unreadable receipt into an id. A return that cannot be inspected is
+    refused on that first failure (U4.42 r3 F3): it is never inspected again and never read as legacy.
     """
     try:
         receipt_arm = _is_receipt_arm(value)
-    except Exception:  # a return that cannot even be told apart is never an id: the wrapper's reader refuses it
-        receipt_arm = True
+    except Exception as exc:  # a return that cannot even be told apart is never an id: the wrapper's one refusal ends it
+        try:
+            from smartmemory_app.save_return import refuse_uninspectable
+        except ImportError:
+            raise _receipt_unreadable(
+                op, exc
+            ) from exc  # the inspection failure stays the cause
+        refuse_uninspectable(op, exc)
     if not receipt_arm:
         return SaveReturn(value)
     try:

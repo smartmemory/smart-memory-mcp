@@ -330,6 +330,52 @@ class UninspectableMapping(Mapping):
         raise RuntimeError("test: membership cannot be read")
 
 
+class ProjectedReceipt(core_receipt.Receipt, Mapping):
+    """A receipt whose Mapping view projects an admitted wire; core's own export shows its rejection (r3 F1)."""
+
+    def __iter__(self):
+        return iter(_n1_wire())
+
+    def __len__(self):
+        return len(_n1_wire())
+
+    def __getitem__(self, key):
+        return _n1_wire()[key]
+
+
+class MappingReceipt(core_receipt.Receipt, Mapping):
+    """A receipt whose Mapping view is a plain legacy id shape with no schema_version (r3 F1)."""
+
+    def __iter__(self):
+        return iter(("item_id", "queued"))
+
+    def __len__(self):
+        return 2
+
+    def __getitem__(self, key):
+        return {"item_id": "test-legacy-id", "queued": True}[key]
+
+
+class StringReceipt(core_receipt.Receipt, str):
+    """A receipt that also is a (here empty, so falsy) string (r3 F1)."""
+
+
+def _named_mapping_receipt():
+    class Receipt(
+        Mapping
+    ):  # not core's: a mapping lookalike projecting an admitted wire
+        def __iter__(self):
+            return iter(_n1_wire())
+
+        def __len__(self):
+            return len(_n1_wire())
+
+        def __getitem__(self, key):
+            return _n1_wire()[key]
+
+    return Receipt()
+
+
 # (label, make, kind). kind is admitted | rejected | refusal | not_save | foreign | uninspectable | refusal_unreadable | unexportable | legacy.
 N1_ROWS = [
     (
@@ -386,6 +432,31 @@ N1_ROWS = [
         "refusal_unreadable",
     ),
     ("receipt whose core export raises", _unexportable_receipt, "unexportable"),
+    (
+        "receipt that also is a Mapping projecting an admitted wire, r3 F1",
+        lambda: ProjectedReceipt(N1_REJECTED),
+        "rejected",
+    ),
+    (
+        "receipt that also is a Mapping with no schema_version, r3 F1",
+        lambda: MappingReceipt(N1_REJECTED),
+        "rejected",
+    ),
+    (
+        "receipt that also is a str, r3 F1",
+        lambda: StringReceipt(N1_REJECTED),
+        "rejected",
+    ),
+    (
+        "admitted receipt that also is a str, r3 F1",
+        lambda: StringReceipt(_n1_wire()),
+        "admitted",
+    ),
+    (
+        "lookalike Mapping named Receipt projecting an admitted wire, r3 F1",
+        _named_mapping_receipt,
+        "foreign",
+    ),
     ("legacy id string", lambda: "test-id", "legacy"),
     ("legacy dict", lambda: {"item_id": "test-id", "queued": True}, "legacy"),
     ("legacy int", lambda: 7, "legacy"),
@@ -534,6 +605,247 @@ def test_every_receipt_subtype_is_read_by_the_wrappers_rule_on_every_doorway(
 
 
 # -- tool text, both arms (R15) -------------------------------------------------------------------------
+# --- fix round 3 (F2, F3) ---------------------------------------------------------------------------------------
+# F2, bug class "re-log of an already-marked failure": a catch whose cause already carries core's logged mark raises the
+# typed refusal chained from it with no WARNING of its own, so the whole failure leaves ONE WARNING (the dependency's).
+# One row per catch site of the reader (the wrapper's resolver, and this module's inspection and missing-wrapper arms).
+# F3, bug class "uncertainty read as legacy success": an inspection failure ends in the typed, once-logged refusal on
+# the FIRST failure and is never inspected again.
+DEPENDENCY_WARNING = "test dependency refused; receipt inspection unavailable"
+DEPENDENCY_RECORD = ("test_dependency", logging.WARNING, DEPENDENCY_WARNING)
+
+
+def _dependency_fails(*_args, **_kwargs):
+    """A dependency that logs its one WARNING, marks the refusal it raises as logged, and raises."""
+    from smartmemory.refusal_logging import mark_refusal_logged
+
+    logging.getLogger("test_dependency").warning(DEPENDENCY_WARNING)
+    raise mark_refusal_logged(RuntimeError("test dependency unavailable"))
+
+
+class MarkedMapping(Mapping):
+    """A mapping whose membership test (the arm rule) fails with a marked refusal."""
+
+    def __iter__(self):
+        return iter(())
+
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, key):
+        _dependency_fails()
+
+
+class FlakyMapping(Mapping):
+    """The first membership test fails, every later one succeeds without schema_version (the r3 F3 repro)."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def __iter__(self):
+        return iter(("item_id",))
+
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, key):
+        if key == "item_id":
+            return "test-legacy-id"
+        raise KeyError(key)
+
+    def __contains__(self, key):
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("test inspection unavailable")
+        return False
+
+
+def _patch_core_export(mp):
+    mp.setattr(core_receipt.Receipt, "to_dict", _dependency_fails)
+
+
+def _patch_codec(mp):
+    mp.setattr(core_receipt, "decode_receipt", _dependency_fails)
+
+
+def _patch_codec_validation(mp):
+    from smartmemory.refusal_logging import mark_refusal_logged
+
+    def fails(wire):
+        logging.getLogger("test_dependency").warning(DEPENDENCY_WARNING)
+        raise mark_refusal_logged(core_receipt.ReceiptValidationError([]))
+
+    mp.setattr(core_receipt, "decode_receipt", fails)
+
+
+def _patch_refusal_status(mp):
+    mp.setattr(core_receipt.ReceiptRefusal, "status", property(_dependency_fails))
+
+
+def _patch_receipt_text(mp):
+    mp.setattr(core_receipt.Receipt, "__str__", _dependency_fails)
+
+
+def _no_patch(mp):
+    return None
+
+
+def _wrapper_missing(mp):
+    mp.setitem(sys.modules, "smartmemory_app.save_return", None)
+    import smartmemory_app
+
+    mp.delattr(smartmemory_app, "save_return", raising=False)
+
+
+def _warning_records(caplog):
+    """Every WARNING-or-worse record except core's origin-policy line on ``add`` (see ``ours``), which is not this unit's."""
+    return [
+        (r.name, r.levelno, r.getMessage())
+        for r in caplog.records
+        if r.levelno >= logging.WARNING and r.name != "smartmemory.origin_policy"
+    ]
+
+
+def _answering(value):
+    be = LocalBackend.__new__(LocalBackend)
+    be._mem = _Answers(value)
+    return be
+
+
+# (site, make, patch, the typed error). One row per catch site that has a cause.
+MARKED_ROWS = [
+    (
+        "arm check (is_receipt_arm)",
+        MarkedMapping,
+        _no_patch,
+        save_return.SaveReturnRefused,
+    ),
+    (
+        "arm check with the wrapper missing",
+        MarkedMapping,
+        _wrapper_missing,
+        local.SaveReturnUnavailable,
+    ),
+    (
+        "core export of a receipt object",
+        lambda: core_receipt.Receipt(N1_REJECTED),
+        _patch_core_export,
+        save_return.SaveReturnRefused,
+    ),
+    (
+        "codec raises (generic catch)",
+        lambda: dict(N1_REJECTED),
+        _patch_codec,
+        save_return.SaveReturnRefused,
+    ),
+    (
+        "codec raises a validation error",
+        lambda: dict(N1_REJECTED),
+        _patch_codec_validation,
+        save_return.SaveReturnRefused,
+    ),
+    (
+        "status of a reader refusal object",
+        lambda: core_receipt.decode_receipt(N1_FUTURE),
+        _patch_refusal_status,
+        save_return.SaveReturnRefused,
+    ),
+    (
+        "status of a decoded reader refusal",
+        lambda: dict(N1_FUTURE),
+        _patch_refusal_status,
+        save_return.SaveReturnRefused,
+    ),
+    (
+        "export of the decoded receipt",
+        _n1_wire,
+        _patch_core_export,
+        save_return.SaveReturnRefused,
+    ),
+    (
+        "summary of an admitted receipt",
+        _n1_wire,
+        _patch_receipt_text,
+        save_return.SaveReturnRefused,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "label, make, patch, error", MARKED_ROWS, ids=[r[0] for r in MARKED_ROWS]
+)
+def test_a_marked_cause_is_refused_with_no_second_warning_on_every_doorway(
+    label, make, patch, error, monkeypatch, tmp_path, caplog
+):
+    from smartmemory.refusal_logging import refusal_logged
+    from smartmemory_app import storage
+
+    monkeypatch.setattr(storage, "_data_path", tmp_path)
+    value = make()
+    patch(monkeypatch)
+    # submit_save reads through the wrapper's own save_caller, which has the wrapper imported already
+    consumers = N1_CONSUMERS[:4] if patch is _wrapper_missing else N1_CONSUMERS
+    for consumer, op, call in consumers:
+        caplog.clear()
+        with pytest.raises(error) as caught:
+            call(_answering(value))
+        assert type(caught.value) is error, (label, consumer)
+        assert _warning_records(caplog) == [DEPENDENCY_RECORD], (label, consumer)
+        assert refusal_logged(caught.value) is True, (label, consumer)
+        assert refusal_logged(caught.value.__cause__) is True, (label, consumer)
+
+
+# (label, patch, the typed error, the exact WARNING). The inspection fails once; nothing may inspect again.
+FLAKY_ROWS = [
+    (
+        "wrapper installed",
+        _no_patch,
+        save_return.SaveReturnRefused,
+        (
+            "smartmemory_app.save_return",
+            "Save return {op} refused: save return cannot be inspected; no id returned",
+        ),
+    ),
+    (
+        "wrapper missing",
+        _wrapper_missing,
+        local.SaveReturnUnavailable,
+        (
+            LOGGER,
+            "Save return {op} refused: smartmemory_app.save_return is not installed, so a save receipt cannot be "
+            "read; no id returned",
+        ),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "label, patch, error, warning", FLAKY_ROWS, ids=[r[0] for r in FLAKY_ROWS]
+)
+def test_a_failed_inspection_is_one_typed_refusal_and_is_never_inspected_again(
+    label, patch, error, warning, monkeypatch, caplog
+):
+    from smartmemory.refusal_logging import refusal_logged
+
+    patch(monkeypatch)
+    for consumer, op, call in N1_CONSUMERS[
+        :4
+    ]:  # the add and ingest_structured doorways (submit_save needs storage)
+        caplog.clear()
+        value = FlakyMapping()
+        with pytest.raises(error) as caught:
+            call(_answering(value))
+        assert type(caught.value) is error, (label, consumer)
+        assert value.calls == 1, (label, consumer)
+        assert _warning_records(caplog) == [
+            (warning[0], logging.WARNING, warning[1].format(op=op))
+        ], (
+            label,
+            consumer,
+        )
+        assert refusal_logged(caught.value) is True, (label, consumer)
+
+
 class FakeMCP:
     def __init__(self):
         self.fns = {}
