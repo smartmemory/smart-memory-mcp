@@ -357,7 +357,9 @@ def register(mcp):
         found = memory.search(query, top_k=fetch, origin=origin)
         # U5.21 (C8): read core's coverage from the call's own result BEFORE `or []` replaces an empty
         # SearchResults with a plain list that carries no diagnostics.
+        from smartmemory.configuration import switches
         from smartmemory.search.visibility_gate import (
+            SWITCH,
             gated_fetch_bound,
             gated_partial_coverage,
         )
@@ -368,6 +370,10 @@ def register(mcp):
 
         note = ""
         if project:
+            # U5.21 (C3/C8): a full fetch is a stop at the bound, decided from the rows fetched BEFORE this filter: the
+            # filter may leave an empty or short answer, and sessions ranked past the fetch were not examined. Gate
+            # OFF keeps the legacy note exactly.
+            bounded = fetch > 0 and len(results) >= fetch and switches.is_on(SWITCH)
             root = str(Path(project).expanduser().resolve())
             kept, unknown = [], 0
             for item in results:
@@ -388,7 +394,7 @@ def register(mcp):
                     f"(imported before provenance) and could not be matched — re-import "
                     f"to make them filterable."
                 )
-            if truncated or len(results) == want:
+            if truncated or len(results) == want or bounded:
                 note += (
                     f"\nFiltered from the top {fetch} semantic matches; a session ranked "
                     f"below that is not shown. Raise top_k to widen the window."

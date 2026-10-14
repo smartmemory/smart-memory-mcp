@@ -951,6 +951,210 @@ def test_transcript_search_never_shows_a_hit_past_its_fetch(
     assert answer_log(caplog) == warnings
 
 
+# The project filter runs AFTER the fetch (U5.21 fix round 3, C3/C8): a full fetch is a stop at the bound, decided from the
+# rows fetched, never from how many the filter kept. One row per case of the class. top_k=2, so a project fetch is 16.
+# (case, gate on, project, rows that match the project, rows from another project, rows with no cwd, core coverage,
+#  the answer's notes after the hits, the entire WARNING list). The 17-row cases are a callee that over-returns by one.
+BOUND_FETCH = 16
+BOUND_NOTE = (
+    f"\nFiltered from the top {BOUND_FETCH} semantic matches; a session ranked below that is not shown. Raise top_k to "
+    "widen the window."
+)
+UNKNOWN_NOTE = (
+    "\n1 candidate(s) carried no recorded working directory (imported before provenance) and could not be matched "
+    "\u2014 re-import to make them filterable."
+)
+PARTIAL_NOTE = "\nThe search was partial (core reported: complete), so matching sessions past what it examined may not be shown."
+TRANSCRIPT_BOUND_ROWS = [
+    # the reviewer's r3 F1 reproduction: the one matching row is ranked past the fetch, so it is cut and not used
+    (
+        "on over-return cut then no match is empty with the bound",
+        True,
+        "/test_project",
+        1,
+        16,
+        0,
+        {"complete": True},
+        BOUND_NOTE,
+        [over("transcript search", 17, BOUND_FETCH)],
+    ),
+    (
+        "on full fetch and no match is empty with the bound",
+        True,
+        "/test_project",
+        0,
+        16,
+        0,
+        {"complete": True},
+        BOUND_NOTE,
+        [],
+    ),
+    (
+        "on full fetch and a short answer carries the bound",
+        True,
+        "/test_project",
+        1,
+        15,
+        0,
+        {"complete": True},
+        BOUND_NOTE,
+        [],
+    ),
+    (
+        "on full fetch and a full answer carries the bound",
+        True,
+        "/test_project",
+        2,
+        14,
+        0,
+        {"complete": True},
+        BOUND_NOTE,
+        [],
+    ),
+    (
+        "on fetch not full and no match is the plain empty answer",
+        True,
+        "/test_project",
+        0,
+        15,
+        0,
+        {"complete": True},
+        "",
+        [],
+    ),
+    (
+        "on full fetch with an unmatched row keeps both notes",
+        True,
+        "/test_project",
+        0,
+        15,
+        1,
+        {"complete": True},
+        UNKNOWN_NOTE + BOUND_NOTE,
+        [],
+    ),
+    (
+        "on full fetch and core partial keeps both explanations",
+        True,
+        "/test_project",
+        0,
+        16,
+        0,
+        {"complete": False},
+        BOUND_NOTE + PARTIAL_NOTE,
+        [gate_warning("transcript search", "complete")],
+    ),
+    (
+        "on no project filter never claims a bound",
+        True,
+        "",
+        2,
+        0,
+        0,
+        {"complete": True},
+        "",
+        [],
+    ),
+    (
+        "off full fetch and a short answer is the legacy answer",
+        False,
+        "/test_project",
+        1,
+        15,
+        0,
+        {"complete": True},
+        "",
+        [],
+    ),
+    (
+        "off over-return is not cut and the legacy answer shows the ninth",
+        False,
+        "/test_project",
+        1,
+        16,
+        0,
+        {"complete": True},
+        "",
+        [],
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "case,on,project,match,other,nocwd,coverage,notes,warnings",
+    TRANSCRIPT_BOUND_ROWS,
+    ids=[r[0] for r in TRANSCRIPT_BOUND_ROWS],
+)
+def test_transcript_search_project_filter_keeps_the_fetch_bound_explanation(
+    world,
+    transcripts,
+    monkeypatch,
+    caplog,
+    tmp_path,
+    case,
+    on,
+    project,
+    match,
+    other,
+    nocwd,
+    coverage,
+    notes,
+    warnings,
+):
+    import types
+
+    from smartmemory.search.results import SearchDiagnostics, SearchResults
+
+    def row(item_id, cwd):
+        meta = {"title": "atlas"} | ({"cwd": cwd} if cwd else {})
+        return types.SimpleNamespace(item_id=item_id, content="atlas", metadata=meta)
+
+    # other-project rows rank first, the matching ones after them, the rows with no cwd last
+    rows = (
+        [row(f"test_transcript_o{i}", "/other") for i in range(other)]
+        + [row(f"test_transcript_m{i}", "/test_project") for i in range(match)]
+        + [row(f"test_transcript_n{i}", None) for i in range(nocwd)]
+    )
+    monkeypatch.setattr(
+        world.mem,
+        "search",
+        lambda query, *, top_k, **kw: SearchResults(
+            list(rows), SearchDiagnostics(coverage=coverage)
+        ),
+    )
+    caplog.set_level(logging.WARNING)
+    with switch_override(SWITCH, on):
+        out = transcripts("atlas", top_k=2, project=project)
+
+    fetch = BOUND_FETCH if project else 2
+    # the rows the answer may show: gate ON never uses a row past the fetch
+    shown = [r for r in (rows[:fetch] if on else rows) if r.metadata.get("cwd")]
+    if project:
+        shown = [r for r in shown if r.metadata["cwd"] == "/test_project"]
+    shown = shown[:2]
+    scope = "source=all" + (f", project={project}" if project else "")
+    if shown:
+        lines = [f"{len(shown)} session(s) matching 'atlas' ({scope}):", ""]
+        for i, r in enumerate(shown, 1):
+            lines += [
+                f"{i}. [?] atlas",
+                "   atlas",
+                f"   ran in: {r.metadata['cwd']}",
+                f"   item_id: {r.item_id}",
+                "",
+            ]
+        expected = "\n".join(lines).rstrip() + notes
+    else:
+        expected = (
+            f"No matching sessions for 'atlas' ({scope}).\n"
+            f"Store: {tmp_path}. Run `transcript_status()` to see how much of the "
+            f"corpus has actually been imported \u2014 a partial import is the usual "
+            f"reason a real memory is missing.{notes}"
+        )
+    assert out == expected
+    assert full_log(caplog) == warnings
+
+
 def test_transcript_search_unreadable_coverage_is_a_typed_refusal_not_complete(
     world, transcripts, monkeypatch, caplog
 ):
