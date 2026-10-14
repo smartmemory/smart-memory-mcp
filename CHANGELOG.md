@@ -24,6 +24,8 @@
 - CODE-INDEXER-HARDEN-1 U5 fix round 1: `RemoteBackend.ingest_code` (core installed) sends the dirty-aware `commit_hash` and `repo_identity` in its upload.
 - U5 post-review fix round: Expose and forward file_path and item_id from code_dependencies to REST and local scoped graph resolution. Refuse exact-name/dotted-suffix ambiguity until a selector chooses the root. Real SQLite and FalkorDB tests cover each selector and both backend paths. The hosted filesystem parameter blacklist stays intact. An exact tool/parameter declaration identifies code_dependencies.file_path as a stored-field selector, with live-schema and hosted wire tests proving literal REST forwarding.
 
+- U4.42: `LocalBackend` gains a dormant receipt save, with no switch and no tool calling it. `save_call(...)` builds one frozen call with a stable retry key (a supplied `idempotency_key` verbatim, or a minted `mcp:<uuid4 hex>`), an explicit `wait` and the registered `mcp.local` producer namespace; `submit_save(call)` sends it through `SmartMemory.save` and returns a `SaveReturn`, and `save(...)` does both. Re-submitting a call retries with the same key. It never falls back to `add` or `ingest`, and `supports("save")` is true for Local only (Remote and Hosted are unchanged). `ingest_structured` now reads a receipt as its subject id and `ingest_structured_with_receipt` keeps it; every legacy return is handed back as it was, and a rejected receipt is a typed error with one WARNING. A wrapper without the caller seam is one `SaveReturnUnavailable` with one WARNING.
+
 ## 1.5.21 — 2026-10-08
 
 - Format three files that drifted from `ruff format` after 1.5.20 (no behavior change).
