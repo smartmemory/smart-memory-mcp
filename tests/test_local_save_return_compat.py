@@ -12,6 +12,7 @@ import builtins
 import importlib.util
 import logging
 import sys
+from collections.abc import Mapping
 from types import MappingProxyType
 from unittest.mock import MagicMock
 
@@ -292,7 +293,23 @@ def _second_core_copy_rejected():
     return module.decode_receipt(N1_REJECTED)
 
 
-# (label, make, kind). kind is admitted | rejected | refusal | not_save | foreign | legacy.
+class UninspectableMapping(Mapping):
+    """A mapping whose membership test raises: the arm rule itself cannot tell it apart."""
+
+    def __getitem__(self, key):
+        raise KeyError(key)
+
+    def __iter__(self):
+        return iter(())
+
+    def __len__(self):
+        return 0
+
+    def __contains__(self, key):
+        raise RuntimeError("test: membership cannot be read")
+
+
+# (label, make, kind). kind is admitted | rejected | refusal | not_save | foreign | uninspectable | legacy.
 N1_ROWS = [
     (
         "core receipt admitted",
@@ -341,6 +358,7 @@ N1_ROWS = [
         lambda: MappingProxyType(dict(N1_REJECTED)),
         "rejected",
     ),
+    ("mapping whose membership test raises", UninspectableMapping, "uninspectable"),
     ("legacy id string", lambda: "test-id", "legacy"),
     ("legacy dict", lambda: {"item_id": "test-id", "queued": True}, "legacy"),
     ("legacy int", lambda: 7, "legacy"),
@@ -398,6 +416,10 @@ N1_REFUSED = {
         save_return.SaveReturnRefused,
         "Save return {op} refused: receipt subject stage_job is not a save; no id returned",
     ),
+    "uninspectable": (
+        save_return.SaveReturnRefused,
+        "Save return {op} refused: save return cannot be inspected; no id returned",
+    ),
     "foreign": (
         save_return.SaveReturnRefused,
         "Save return {op} refused: save return is named like a receipt but is not this core's receipt; no id returned",
@@ -416,11 +438,18 @@ def test_every_receipt_subtype_is_read_by_the_wrappers_rule_on_every_doorway(
     monkeypatch.setattr(
         storage, "_data_path", tmp_path
     )  # submit_save takes the write lock under the test's dir
-    assert (
-        local._is_receipt_arm(make())
-        is save_return.is_receipt_arm(make())
-        is (kind != "legacy")
-    ), label
+    if (
+        kind == "uninspectable"
+    ):  # both copies of the rule raise; the reader turns that into a refusal
+        for rule in (local._is_receipt_arm, save_return.is_receipt_arm):
+            with pytest.raises(RuntimeError):
+                rule(make())
+    else:
+        assert (
+            local._is_receipt_arm(make())
+            is save_return.is_receipt_arm(make())
+            is (kind != "legacy")
+        ), label
     for consumer, op, call in N1_CONSUMERS:
         caplog.clear()
         value = make()
