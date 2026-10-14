@@ -354,7 +354,13 @@ def register(mcp):
             if project
             else top_k
         )
-        results = memory.search(query, top_k=fetch, origin=origin) or []
+        found = memory.search(query, top_k=fetch, origin=origin)
+        # U5.21 (C8): read core's coverage from the call's own result BEFORE `or []` replaces an empty
+        # SearchResults with a plain list that carries no diagnostics.
+        from smartmemory.search.visibility_gate import gated_partial_coverage
+
+        partial = gated_partial_coverage(found, where="transcript search")
+        results = found or []
 
         note = ""
         if project:
@@ -383,6 +389,14 @@ def register(mcp):
                     f"\nFiltered from the top {fetch} semantic matches; a session ranked "
                     f"below that is not shown. Raise top_k to widen the window."
                 )
+
+        if partial:
+            # A partial answer is never presented as a definitive one: "nothing found" would read as "no such
+            # session" when core only examined part of what it could see.
+            note += (
+                f"\nThe search was partial (core reported: {', '.join(partial)}), so matching sessions "
+                f"past what it examined may not be shown."
+            )
 
         if not results:
             return (

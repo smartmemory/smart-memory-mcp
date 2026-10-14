@@ -2,6 +2,8 @@
 
 ## 1.5.22
 
+- U5.21: `transcript_search` and the local `list_memories` read core's search coverage. Gate ON, a partial answer (scan budget spent, `complete` False, ...) adds "The search was partial (core reported: ...)" to the transcript answer, empty or not, and one WARNING to `list_memories`, instead of presenting a short page as all there is. An unreadable coverage is a typed refusal, never read as complete. Gate OFF text, results and logs are unchanged, and local `search` already passes the `read_status` carrier through (U5.22).
+
 - U4.32: the local backend reads a core save return as a receipt or a legacy shape, with no switch. `LocalBackend.add` still returns the id string (or the held dict) and the `memory_add` text (`Item ID: <id>`, `Memory held: ...`) is unchanged. A save receipt (object or wire dict) reads as its subject id through the wrapper's `smartmemory_app.save_return`, never `str(receipt)`, and `add_with_receipt` returns a `SaveReturn(value, receipt, summary)` that keeps it. A rejected receipt is a typed `SaveRejected` and an unreadable one a `SaveReturnRefused`, each with one WARNING. A receipt with no wrapper reader installed is one WARNING and a `RuntimeError`, never an id. Legacy returns never import the wrapper, so a core without receipts is unchanged.
 
 - U4.32 review fix: a save receipt that the installed wrapper cannot read now raises `SaveReturnUnavailable` (still a `RuntimeError`) with one WARNING, so callers can tell it from an unrelated runtime failure. No change on the legacy path.

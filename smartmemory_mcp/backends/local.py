@@ -489,6 +489,9 @@ class LocalBackend(BackendCapabilities):
 
         window = max((limit + offset) * 10, 200)
         hits = self._mem.search("*", top_k=window)
+        from smartmemory.search.visibility_gate import gated_partial_coverage
+
+        gated_partial_coverage(hits, where="list_memories")
         items = [normalize_item(raw) for raw in hits or []]
         if mkey is not None:
             items = [
