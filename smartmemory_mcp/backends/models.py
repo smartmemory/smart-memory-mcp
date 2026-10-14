@@ -184,7 +184,8 @@ def partial_note(names: tuple[str, ...]) -> str:
     reasons = ", ".join(
         n[:64] for n in names
     )  # core's names are short constants: the bound is for any other carrier
-    return f"The answer was partial (core reported: {reasons}), so matches past what it examined may not be shown."
+    # The reasons are core's coverage names and the client's own (``fetch_bound``, a lost lookup), so none is "core's".
+    return f"The answer was partial ({reasons}), so matches past what was examined may not be shown."
 
 
 def none_found(complete_text: str, subject: str, names: tuple[str, ...]) -> str:

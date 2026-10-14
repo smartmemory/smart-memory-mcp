@@ -489,10 +489,18 @@ class LocalBackend(BackendCapabilities):
 
         window = max((limit + offset) * 10, 200)
         hits = self._mem.search("*", top_k=window)
+        from smartmemory.configuration import switches
         from smartmemory.search.results import carry_partial
-        from smartmemory.search.visibility_gate import gated_partial_coverage
+        from smartmemory.search.visibility_gate import (
+            FETCH_BOUND_REASON,
+            SWITCH,
+            gated_fetch_bound,
+            gated_partial_coverage,
+        )
 
         partial = gated_partial_coverage(hits, where="list_memories")
+        # U5.21 (C4): gate ON, a row past the window was never asked for, so it is not paged.
+        hits = gated_fetch_bound(hits, window, where="list_memories")
         items = [normalize_item(raw) for raw in hits or []]
         if mkey is not None:
             items = [
@@ -506,6 +514,9 @@ class LocalBackend(BackendCapabilities):
                 "are not represented in this page or its offset.",
                 window,
             )
+            if switches.is_on(SWITCH):
+                # C3/C8: a full window is a stop at the bound, not the end of the corpus: the page says it is partial.
+                partial = (*partial, FETCH_BOUND_REASON)
         # U5.21 (C8): the page is still a plain list to every caller; a partial answer's reasons ride on it so an
         # empty page is not read as "no more memories".
         return carry_partial(items[offset : offset + limit], partial)

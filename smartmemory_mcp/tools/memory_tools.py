@@ -16,29 +16,30 @@ from smartmemory_mcp.backends.models import (
 from smartmemory_mcp.tools.search_window import with_search_window
 
 try:
+    from smartmemory.configuration import switches as _switches
     from smartmemory.refusal_logging import (
         mark_refusal_logged,
         refusal_logged,
         refusal_text,
     )
-except (
-    ImportError
-):  # remote-only install: no core, so no error carries core's logged mark
-
-    def mark_refusal_logged(error: BaseException) -> BaseException:
-        return error
-
-    def refusal_logged(error: BaseException) -> bool:
-        return False
-
-    def refusal_text(error: BaseException) -> str:
-        return str(error)
+    from smartmemory.search.visibility_gate import SWITCH as _GATE_SWITCH
+except ImportError:  # remote-only install: no core, so no gate can be ON and no error carries core's logged mark
+    _switches = None
 
 
 from .common import get_backend, graceful
 from .lexical_contract import validate_channel_weights
 
 logger = logging.getLogger(__name__)
+
+
+def _gate_on() -> bool:
+    """``sm2_search_visibility_gate`` is ON (U5.21). Always False on a remote-only install, which has no core.
+
+    Probed with ``switches.is_on``, so the OFF arm gains no switch WARNING. Every U5.21 behaviour that reads core's
+    refusal mark runs only when this is True: OFF, each legacy WARNING is logged exactly as the base did.
+    """
+    return _switches is not None and _switches.is_on(_GATE_SWITCH)
 
 
 _CREATED_AT_MAX_LEN = 40
@@ -1211,13 +1212,18 @@ def register_pro(mcp):
                 metadata_value=metadata_value,
             )
         except Exception as exc:
-            # U5.21 (C1): a core refusal is logged once, by the site that raised it (its mark on the exception).
-            if not refusal_logged(exc):
-                logger.warning(
-                    "Memory list unavailable; page items and corpus total were lost because the "
-                    "backend list call failed: %s",
-                    refusal_text(exc),
-                )
+            # U5.21 (C1): gate ON, a core refusal is logged once, by the site that raised it (its mark on the
+            # exception), and the text is rendered bounded. OFF, every failure is logged here exactly as the base
+            # did, mark or no mark.
+            gate_on = _gate_on()
+            if gate_on and refusal_logged(exc):
+                raise
+            logger.warning(
+                "Memory list unavailable; page items and corpus total were lost because the "
+                "backend list call failed: %s",
+                refusal_text(exc) if gate_on else exc,
+            )
+            if gate_on:
                 mark_refusal_logged(exc)
             raise
 
