@@ -77,8 +77,26 @@ def fetch_origin(sibling: Path) -> bool:
         return False
 
 
+def _path_at_origin(sibling: Path, relpath: str) -> bool:
+    """True if `relpath` exists in the sibling's origin/main tree."""
+    try:
+        run(["git", "-C", str(sibling), "cat-file", "-e", f"origin/main:{relpath}"])
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def _submodule_exists_at_origin(sibling: Path, module: str, name: str) -> bool:
+    """`from pkg import name` also resolves when `name` is a submodule (`pkg/name.py`) or a subpackage
+    (`pkg/name/__init__.py`) of `pkg` on origin/main, even when `pkg/__init__.py` never mentions it."""
+    base = "/".join(module.split(".") + [name])
+    return _path_at_origin(sibling, base + ".py") or _path_at_origin(sibling, base + "/__init__.py")
+
+
 def symbol_exists_at_origin(sibling: Path, module: str, name: str) -> bool | None:
-    """Returns True/False if module file found, None if module file not at origin/main."""
+    """True if `name` is defined in `module`, or is a submodule/subpackage of it, on the sibling's origin/main.
+    False if the module is there but has no such name, None if the module is not at origin/main at all
+    (a namespace package, a directory with no `__init__.py`, counts as present when the submodule exists)."""
     parts = module.split(".")
     candidates = ["/".join(parts) + ".py", "/".join(parts) + "/__init__.py"]
     for relpath in candidates:
@@ -103,7 +121,9 @@ def symbol_exists_at_origin(sibling: Path, module: str, name: str) -> bool | Non
                 for alias in node.names:
                     if (alias.asname or alias.name) == name:
                         return True
-        return False
+        return _submodule_exists_at_origin(sibling, module, name)
+    if _submodule_exists_at_origin(sibling, module, name):
+        return True
     return None  # module not found at origin
 
 
