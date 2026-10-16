@@ -2,6 +2,8 @@
 
 ## 1.5.22
 
+- PREPUSH-SUBMODULE-1: the pre-push cross-repo import check no longer refuses `from pkg import name` when `name` is a submodule (`pkg/name.py`) or subpackage (`pkg/name/__init__.py`) that exists on the sibling's origin/main but is not bound in `pkg/__init__.py`, and a namespace package (no `__init__.py`) resolves the same way. A name found only in the sibling's working tree is still refused. Tests: `tests/test_pre_push_hook_submodule_imports.py` (12 rows, run through the hook's `main()` against a throwaway repo and a sibling clone).
+
 - MCP-MEMGET-META-1 follow-up: the default `memory_get` output shows one `Created: <iso>` line (after `Type:`, before `Content:`) from the item's `created_at`, falling back to `metadata.created_at`. The value must parse as an ISO-8601 date or datetime (max 40 chars) and the parsed value is re-emitted, so free text cannot reach the output. An invalid value drops the line and logs a WARNING without the raw value. `include_metadata=True` is unchanged.
 
 - MCP-MEMGET-META-1 (owner shape): `memory_get` now returns id, type and content plus at most one line counting conflicts (pointing at `memory_explain` and `memory_get(include_metadata=True)`); `include_metadata=True` is unchanged. The structured read tools (`memory_search`/`memory_recall` with `cite=True`, `get_working_context`, `read_around` items, hosted `code_effects`) return item fields with `metadata` emptied (`code_effects` keeps `effects_bundle`), and the catalog snippet no longer copies the metadata title. A malformed conflict count or non-dict recall metadata logs a WARNING instead of raising. The real A3 note drops from 34,163 to 5,358 characters. REST and SDKs are unchanged.
