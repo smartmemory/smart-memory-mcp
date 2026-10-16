@@ -77,33 +77,49 @@ def fetch_origin(sibling: Path) -> bool:
         return False
 
 
-def _path_at_origin(sibling: Path, relpath: str) -> bool:
-    """True if `relpath` exists in the sibling's origin/main tree."""
+def _origin_object_type(sibling: Path, relpath: str) -> str | None:
+    """Git object type of `relpath` in the sibling's origin/main tree (`blob` or `tree`), None if absent."""
     try:
-        run(["git", "-C", str(sibling), "cat-file", "-e", f"origin/main:{relpath}"])
-        return True
+        return run(
+            ["git", "-C", str(sibling), "cat-file", "-t", f"origin/main:{relpath}"]
+        ).strip()
     except subprocess.CalledProcessError:
-        return False
+        return None
 
 
-def _submodule_exists_at_origin(sibling: Path, module: str, name: str) -> bool:
-    """`from pkg import name` also resolves when `name` is a submodule (`pkg/name.py`) or a subpackage
-    (`pkg/name/__init__.py`) of `pkg` on origin/main, even when `pkg/__init__.py` never mentions it."""
-    base = "/".join(module.split(".") + [name])
-    return _path_at_origin(sibling, base + ".py") or _path_at_origin(sibling, base + "/__init__.py")
+def _dotted_kind(sibling: Path, parts: list[str]) -> str:
+    """How Python resolves the dotted path on the sibling's origin/main: `package` (x/__init__.py), `module` (x.py),
+    `namespace` (a directory x/ with no `__init__.py`) or `missing`. Per component the order is package, then module
+    file, then namespace directory, so x.py shadows an x/ without `__init__.py`. A module has no children: any
+    component below one is `missing`."""
+    kind = "missing"
+    for depth in range(1, len(parts) + 1):
+        base = "/".join(parts[:depth])
+        if _origin_object_type(sibling, base + "/__init__.py") == "blob":
+            kind = "package"
+        elif _origin_object_type(sibling, base + ".py") == "blob":
+            kind = "module"
+        elif _origin_object_type(sibling, base) == "tree":
+            kind = "namespace"
+        else:
+            return "missing"
+        if kind == "module" and depth < len(parts):
+            return "missing"
+    return kind
 
 
 def symbol_exists_at_origin(sibling: Path, module: str, name: str) -> bool | None:
-    """True if `name` is defined in `module`, or is a submodule/subpackage of it, on the sibling's origin/main.
-    False if the module is there but has no such name, None if the module is not at origin/main at all
-    (a namespace package, a directory with no `__init__.py`, counts as present when the submodule exists)."""
+    """True if `name` is defined in `module`, or is a child (submodule, subpackage, namespace directory) of a
+    package `module`, on the sibling's origin/main. False if the module is there but has no such name, None if the
+    module is not at origin/main at all. Resolution follows Python's import precedence (`_dotted_kind`), so a file
+    module is never searched for children."""
     parts = module.split(".")
-    candidates = ["/".join(parts) + ".py", "/".join(parts) + "/__init__.py"]
-    for relpath in candidates:
-        try:
-            content = run(["git", "-C", str(sibling), "show", f"origin/main:{relpath}"])
-        except subprocess.CalledProcessError:
-            continue
+    kind = _dotted_kind(sibling, parts)
+    if kind == "missing":
+        return None  # module not found at origin
+    if kind != "namespace":  # a namespace package has no source to read
+        relpath = "/".join(parts) + (".py" if kind == "module" else "/__init__.py")
+        content = run(["git", "-C", str(sibling), "show", f"origin/main:{relpath}"])
         try:
             tree = ast.parse(content)
         except SyntaxError:
@@ -121,10 +137,7 @@ def symbol_exists_at_origin(sibling: Path, module: str, name: str) -> bool | Non
                 for alias in node.names:
                     if (alias.asname or alias.name) == name:
                         return True
-        return _submodule_exists_at_origin(sibling, module, name)
-    if _submodule_exists_at_origin(sibling, module, name):
-        return True
-    return None  # module not found at origin
+    return kind != "module" and _dotted_kind(sibling, parts + [name]) != "missing"
 
 
 def main() -> int:
