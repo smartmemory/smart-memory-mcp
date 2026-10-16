@@ -24,7 +24,7 @@ ORIGIN_TREE = {
     "service_common/ns/mod.py": "y = 1\n",  # namespace package: no __init__.py
 }
 
-# (row id, import line in the pushed file, exit code, why). Rows b, c, g, j failed on the code before this unit.
+# (row id, import line in the pushed file, exit code, why). Rows b, c, g, j failed before this unit; m and o failed at review round 1 (2ead3f7).
 ROWS = [
     ("a_defined_in_init", "from service_common.connectors import defined", 0, ""),
     (
@@ -78,7 +78,83 @@ ROWS = [
         1,
         "",
     ),
+    (
+        "m_file_shadows_namespace_dir",
+        "from service_common.plain import child",
+        1,
+        "review r1 H1: plain.py has no children",
+    ),
+    (
+        "n_package_beats_file",
+        "from service_common.both import child",
+        0,
+        "regular package wins over both.py",
+    ),
+    (
+        "o_intermediate_shadowed",
+        "from service_common.pkg.plain.sub import x",
+        1,
+        "pkg/plain.py shadows pkg/plain/sub",
+    ),
+    (
+        "p_staged_only",
+        "from service_common.connectors import staged_only",
+        1,
+        "staged, gone from the working tree",
+    ),
+    (
+        "q_committed_locally_only",
+        "from service_common.connectors import committed_only",
+        1,
+        "not on origin/main",
+    ),
+    (
+        "r_nested_namespace",
+        "from service_common.ns.deep import mod",
+        0,
+        "namespace under a namespace",
+    ),
+    (
+        "s_name_in_file_module",
+        "from service_common.connectors.oauth_state import token",
+        0,
+        "a file module binds the name",
+    ),
+    (
+        "t_name_missing_in_file_module",
+        "from service_common.connectors.oauth_state import nothing",
+        1,
+        "",
+    ),
 ]
+
+# Extra files on the sibling's origin/main for one row (pushed to its bare origin before the hook runs).
+ORIGIN_EXTRA = {
+    "m_file_shadows_namespace_dir": {
+        "service_common/plain.py": "",
+        "service_common/plain/child.py": "value = 1\n",
+    },
+    "n_package_beats_file": {
+        "service_common/both.py": "",
+        "service_common/both/__init__.py": "",
+        "service_common/both/child.py": "value = 1\n",
+    },
+    "o_intermediate_shadowed": {
+        "service_common/pkg/__init__.py": "",
+        "service_common/pkg/plain.py": "",
+        "service_common/pkg/plain/sub/__init__.py": "x = 1\n",
+    },
+    "r_nested_namespace": {"service_common/ns/deep/mod.py": "z = 1\n"},
+}
+
+# Sibling-clone state for one row: "staged" = `git add`, then delete the file; "committed" = commit in the clone only.
+SIBLING_STATE = {
+    "p_staged_only": ("staged", "service_common/connectors/staged_only.py"),
+    "q_committed_locally_only": (
+        "committed",
+        "service_common/connectors/committed_only.py",
+    ),
+}
 
 
 def _load_hook():
@@ -142,9 +218,27 @@ def workspace(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "import_line,expected_exit", [(r[1], r[2]) for r in ROWS], ids=[r[0] for r in ROWS]
+    "row_id,import_line,expected_exit", [r[:3] for r in ROWS], ids=[r[0] for r in ROWS]
 )
-def test_submodule_import_resolution(workspace, capsys, import_line, expected_exit):
+def test_submodule_import_resolution(
+    workspace, capsys, row_id, import_line, expected_exit
+):
+    tmp_path = workspace.parent
+    if row_id in ORIGIN_EXTRA:
+        seed = tmp_path / "common-seed"
+        _write_tree(seed, ORIGIN_EXTRA[row_id])
+        _git(seed, "add", ".")
+        _git(seed, "commit", "-q", "-m", row_id)
+        _git(seed, "push", "-q", str(tmp_path / "common-origin.git"), "main")
+    if row_id in SIBLING_STATE:
+        state, rel = SIBLING_STATE[row_id]
+        common = tmp_path / "smart-memory-common"
+        _write_tree(common, {rel: "v = 1\n"})
+        _git(common, "add", rel)
+        if state == "staged":
+            (common / rel).unlink()
+        else:
+            _git(common, "commit", "-q", "-m", row_id)
     _write_tree(workspace, {"memory_service/uses.py": import_line + "\n"})
     _git(workspace, "add", ".")
     _git(workspace, "commit", "-q", "-m", "add import")
