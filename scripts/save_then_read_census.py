@@ -526,7 +526,7 @@ OWNED_BY_U4_42 = {
         ["test_the_structured_tool_text_is_the_same_for_both_arms", 433],
     ],
 }
-WORKER_OWNER = "C49-RW-HARNESS-1 (filed 2026-10-17, later-ring real-worker parity harness, unscheduled; G47, graph C-49.contract.mcp-suites)"
+WORKER_OWNER = "C49-RW-HARNESS-1"
 
 
 def _backend_classes(repo):
@@ -792,7 +792,11 @@ CLASSES = {
     "deferred_real_worker": "real core or worker save-then-read candidate, carried into the later-ring real-worker harness (graph: C-49.contract.mcp-suites)",
 }
 DEFERRED = ("deferred_ring3_sdk_harness", "deferred_real_worker")
-OWNER_ID = re.compile(r"^[A-Z0-9][A-Z0-9.\-]+")
+# An owner is the WHOLE string: a graph step id (C-49.contract.sdk-suites) or a filed unit id (C49-RW-HARNESS-1).
+# It is matched with fullmatch, so a prefix that looks like an id never passes ("NOT AN OWNER" starts with "NOT").
+OWNER_ID = re.compile(
+    r"C-\d+(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*|[A-Z][A-Z0-9]*(?:[.-][A-Z0-9]+)+"
+)
 
 
 def engine_sha(script_text):
@@ -879,7 +883,7 @@ def problems(doc, repo):
                 out.append(
                     f"{unit['key']}: a deferral names where (file:line) and its owner step"
                 )
-            elif not OWNER_ID.match(d["owner"]):
+            elif not OWNER_ID.fullmatch(d["owner"]):
                 out.append(
                     f"{unit['key']}: owner {d['owner']!r} is not a graph step id or a filed unit id (a description is not an owner)"
                 )

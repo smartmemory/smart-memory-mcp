@@ -24,7 +24,7 @@
   {
    "class": "deferred_real_worker",
    "key": "tests/integration/test_hold_receipt.py::test_conversation_formatter_preserves_real_chunk_hold",
-   "owner": "C49-RW-HARNESS-1 (filed 2026-10-17, later-ring real-worker parity harness, unscheduled; G47, graph C-49.contract.mcp-suites)",
+   "owner": "C49-RW-HARNESS-1",
    "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
    "where": [
     "tests/integration/test_hold_receipt.py:145"
@@ -33,7 +33,7 @@
   {
    "class": "deferred_real_worker",
    "key": "tests/integration/test_hold_receipt.py::test_remote_add_returns_real_hold",
-   "owner": "C49-RW-HARNESS-1 (filed 2026-10-17, later-ring real-worker parity harness, unscheduled; G47, graph C-49.contract.mcp-suites)",
+   "owner": "C49-RW-HARNESS-1",
    "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
    "where": [
     "tests/integration/test_hold_receipt.py:52",
@@ -43,7 +43,7 @@
   {
    "class": "deferred_real_worker",
    "key": "tests/integration/test_hold_receipt.py::test_tools_report_real_hold_without_success",
-   "owner": "C49-RW-HARNESS-1 (filed 2026-10-17, later-ring real-worker parity harness, unscheduled; G47, graph C-49.contract.mcp-suites)",
+   "owner": "C49-RW-HARNESS-1",
    "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
    "where": [
     "tests/integration/test_hold_receipt.py:52",
@@ -649,7 +649,7 @@
   {
    "disposition": {
     "class": "deferred_real_worker",
-    "owner": "C49-RW-HARNESS-1 (filed 2026-10-17, later-ring real-worker parity harness, unscheduled; G47, graph C-49.contract.mcp-suites)",
+    "owner": "C49-RW-HARNESS-1",
     "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
     "where": [
      "tests/integration/test_hold_receipt.py:145"
@@ -675,7 +675,7 @@
   {
    "disposition": {
     "class": "deferred_real_worker",
-    "owner": "C49-RW-HARNESS-1 (filed 2026-10-17, later-ring real-worker parity harness, unscheduled; G47, graph C-49.contract.mcp-suites)",
+    "owner": "C49-RW-HARNESS-1",
     "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
     "where": [
      "tests/integration/test_hold_receipt.py:52",
@@ -702,7 +702,7 @@
   {
    "disposition": {
     "class": "deferred_real_worker",
-    "owner": "C49-RW-HARNESS-1 (filed 2026-10-17, later-ring real-worker parity harness, unscheduled; G47, graph C-49.contract.mcp-suites)",
+    "owner": "C49-RW-HARNESS-1",
     "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
     "where": [
      "tests/integration/test_hold_receipt.py:52",

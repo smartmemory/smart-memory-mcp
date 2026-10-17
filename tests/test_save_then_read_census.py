@@ -308,6 +308,31 @@ PROBLEM_ROWS = [
         "is not a graph step id or a filed unit id",
     ),
     (
+        "a deferral owner that is an uppercase description whose first word looks like an id",
+        lambda d, disp, mp: _set(_deferred(d), "owner", "NOT AN OWNER"),
+        "is not a graph step id or a filed unit id",
+    ),
+    (
+        "a deferral owner that is a real owner id with trailing words",
+        lambda d, disp, mp: _set(_deferred(d), "owner", "C49-RW-HARNESS-1 extra"),
+        "is not a graph step id or a filed unit id",
+    ),
+    (
+        "a deferral owner that is a lowercased unit id",
+        lambda d, disp, mp: _set(_deferred(d), "owner", "c49-rw-harness-1"),
+        "is not a graph step id or a filed unit id",
+    ),
+    (
+        "a deferral owner that is an empty owner",
+        lambda d, disp, mp: _set(_deferred(d), "owner", ""),
+        "names where",
+    ),
+    (
+        "a deferral owner that is a bare letter",
+        lambda d, disp, mp: _set(_deferred(d), "owner", "X"),
+        "is not a graph step id or a filed unit id",
+    ),
+    (
         "a deferral pointing at a missing line",
         lambda d, disp, mp: _set(_deferred(d), "where", ["tests/nope.py:1"]),
         "is not a line of this tree",
@@ -400,6 +425,33 @@ def test_each_census_defect_is_one_named_problem(row, monkeypatch):
     mutate(doc, disp, monkeypatch)
     found = census.problems(doc, ROOT)
     assert len(found) == 1 and expected in found[0], found
+
+
+# every owner in use or filed, and each form the census assigns: all whole-string ids, so none may raise a problem
+OWNER_OK_ROWS = [
+    "C49-RW-HARNESS-1",
+    "C49-SDK-STATUS-1",
+    "C-49.contract.sdk-suites",
+    "C-49.contract.mcp-suites",
+    "C-01.activate.save.hosted-adapters",
+    "U49.A2",
+]
+
+
+@pytest.mark.parametrize("owner", OWNER_OK_ROWS)
+def test_a_whole_string_owner_id_is_accepted(owner, monkeypatch):
+    doc = copy.deepcopy(census.build(ROOT))
+    disp = copy.deepcopy(census.DISPOSITIONS)
+    monkeypatch.setattr(census, "DISPOSITIONS", disp)
+    for unit in doc["units"]:
+        unit["disposition"] = disp[unit["key"]]
+    _set(_deferred(doc), "owner", owner)
+    assert census.problems(doc, ROOT) == []
+
+
+def test_every_owner_the_census_assigns_is_a_whole_string_id():
+    owners = {d["owner"] for d in census.DISPOSITIONS.values() if "owner" in d}
+    assert owners and all(census.OWNER_ID.fullmatch(o) for o in owners), owners
 
 
 def test_the_command_line_passes_on_this_tree_and_fails_on_a_stale_fixture(
