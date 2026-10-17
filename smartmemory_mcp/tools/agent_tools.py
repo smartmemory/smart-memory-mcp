@@ -6,7 +6,7 @@ from typing import Dict, Optional
 
 from mcp.types import ToolAnnotations
 
-from smartmemory_mcp.backends.remote import path_id
+from smartmemory_mcp.backends.path_guard import path_id
 
 from .common import get_backend, graceful
 
@@ -64,7 +64,7 @@ def register(mcp):
         profile = {"memory_type_weights": memory_type_weights or {}}
         result = request(
             "PUT",
-            f"/memory/agents/{path_id(agent_id)}/recall-profile",
+            f"/memory/agents/{path_id(agent_id, under='/memory/agents/')}/recall-profile",
             json={"recall_profile": profile},
         )
         if isinstance(result, dict) and result.get("error"):
@@ -93,7 +93,10 @@ def register(mcp):
         if request is None:
             raise NotImplementedError(_LOCAL_UNSUPPORTED)
 
-        result = request("GET", f"/memory/agents/{path_id(agent_id)}/recall-profile")
+        result = request(
+            "GET",
+            f"/memory/agents/{path_id(agent_id, under='/memory/agents/')}/recall-profile",
+        )
         if isinstance(result, dict) and result.get("error"):
             return f"Failed to read recall profile for {agent_id}: {result['error']}"
 
