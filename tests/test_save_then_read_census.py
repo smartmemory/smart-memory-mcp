@@ -108,6 +108,50 @@ ENGINE_ROWS = [
         0,
     ),
     (
+        "an attribute used as a value is a save",
+        "def test_h(memory):\n    run = memory.add\n    run('x')\n    memory.get('i')\n",
+        {"test_h": True},
+        0,
+    ),
+    (
+        "a getattr with a constant name is a save and a read",
+        "def test_i(memory):\n    getattr(memory, 'add')('x')\n    getattr(memory, 'get')('i')\n",
+        {"test_i": True},
+        0,
+    ),
+    (
+        "a getattr fed by a parametrize table is the methods the table names",
+        "@pytest.mark.parametrize(('m', 'a'), [\n    ('get', 1),\n    ('add', 2),\n])\n"
+        "def test_j(memory, m, a):\n    getattr(memory, m)(a)\n",
+        {"test_j": True},
+        0,
+    ),
+    (
+        "a getattr fed by a module-level table",
+        "ROWS = [('add', 1)]\n\n\n@pytest.mark.parametrize(('m', 'a'), ROWS)\n"
+        "def test_k(memory, m, a):\n    getattr(memory, m)(a)\n",
+        {"test_k": False},
+        0,
+    ),
+    (
+        "direct store setup is a save",
+        "def test_l(store):\n    store.add_node('i', {})\n    store.get('i')\n",
+        {"test_l": True},
+        0,
+    ),
+    (
+        "a publish into the store is a save",
+        "def test_m(indexer, memory):\n    indexer.publish([], [])\n    memory.get('i')\n",
+        {"test_m": True},
+        0,
+    ),
+    (
+        "a mock assertion on a save name is not a save",
+        "def test_n(memory):\n    memory.add.assert_called_once()\n    memory.add.return_value = 1\n",
+        {},
+        0,
+    ),
+    (
         "a nested function is its own unit",
         "def test_g(memory):\n    def inner():\n        memory.add('x')\n\n    inner()\n",
         {"test_g.<locals>.inner": False, "test_g": False},
@@ -125,6 +169,74 @@ def test_the_engine_finds_each_unit_shape(row, tmp_path):
     assert {r["function"]: r["reads_after_save"] for r in found["rows"]} == expected
     assert sum(not s["memory_like"] for s in found["sites"]) == outside
     assert found["parse_errors"] == []
+
+
+# id, files under tests/ (name: source), expected unit keys
+IMPORT_ROWS = [
+    (
+        "a helper imported by name",
+        {
+            "helpers.py": "def seed(memory):\n    memory.add('x')\n",
+            "test_a.py": "from tests.helpers import seed\n\n\ndef test_a(memory):\n    seed(memory)\n",
+        },
+        {"tests/helpers.py::seed", "tests/test_a.py::test_a"},
+    ),
+    (
+        "a helper imported under another name",
+        {
+            "helpers.py": "def seed(memory):\n    memory.add('x')\n",
+            "test_a.py": "from helpers import seed as plant\n\n\ndef test_a(memory):\n    plant(memory)\n",
+        },
+        {"tests/helpers.py::seed", "tests/test_a.py::test_a"},
+    ),
+    (
+        "a helper reached through its module",
+        {
+            "helpers.py": "def seed(memory):\n    memory.add('x')\n",
+            "test_a.py": "import tests.helpers as h\n\n\ndef test_a(memory):\n    h.seed(memory)\n",
+        },
+        {"tests/helpers.py::seed", "tests/test_a.py::test_a"},
+    ),
+    (
+        "a fixture imported into a test module from another directory",
+        {
+            "lib/helpers.py": "@pytest.fixture\ndef seeded(memory):\n    memory.add('x')\n",
+            "test_a.py": "from tests.lib.helpers import seeded\n\n\ndef test_a(seeded):\n    pass\n",
+        },
+        {"tests/lib/helpers.py::seeded", "tests/test_a.py::test_a"},
+    ),
+    (
+        "a helper nobody imports does not make a caller",
+        {
+            "helpers.py": "def seed(memory):\n    memory.add('x')\n",
+            "test_a.py": "def test_a(memory):\n    seed(memory)\n",
+        },
+        {"tests/helpers.py::seed"},
+    ),
+]
+
+
+@pytest.mark.parametrize("row", IMPORT_ROWS, ids=[r[0] for r in IMPORT_ROWS])
+def test_a_helper_defined_in_another_file_makes_its_importers_units(row, tmp_path):
+    _, files, expected = row
+    for name, source in files.items():
+        path = tmp_path / "tests" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source)
+    found = census.scan(tmp_path, VOCAB)
+    assert {r["key"] for r in found["rows"]} == expected
+
+
+def test_a_getattr_no_literal_table_names_is_reported_not_ignored(tmp_path):
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_x.py").write_text(
+        "def test_a(memory, name):\n    getattr(memory, name)('x')\n\n\n"
+        "def test_b(other, name):\n    getattr(other, name)('x')\n"
+    )
+    found = census.scan(tmp_path, VOCAB)
+    assert found["dynamic"] == ["tests/test_x.py:2"], (
+        "only a memory-like receiver is reported"
+    )
 
 
 # id, file bytes: a file the census cannot read as Python or text
@@ -191,6 +303,11 @@ PROBLEM_ROWS = [
         "names where",
     ),
     (
+        "a deferral owned by a description, not an id",
+        lambda d, disp, mp: _set(_deferred(d), "owner", "the later-ring suite"),
+        "is not a graph step id or a filed unit id",
+    ),
+    (
         "a deferral pointing at a missing line",
         lambda d, disp, mp: _set(_deferred(d), "where", ["tests/nope.py:1"]),
         "is not a line of this tree",
@@ -242,6 +359,20 @@ PROBLEM_ROWS = [
             census, "WAIT_USERS", {**census.WAIT_USERS, "tests/old.py": "r"}
         ),
         "no longer waits",
+    ),
+    (
+        "a dispatch nobody named",
+        lambda d, disp, mp: d["blind_spots"]["dynamic_dispatch"].update(
+            {"tests/x.py:1": None}
+        ),
+        "name it in DYNAMIC",
+    ),
+    (
+        "a DYNAMIC entry that is no longer a dispatch",
+        lambda d, disp, mp: mp.setattr(
+            census, "DYNAMIC", {**census.DYNAMIC, "tests/old.py:2": "r"}
+        ),
+        "not an unresolved dispatch now",
     ),
     (
         "a test file that cannot be parsed",

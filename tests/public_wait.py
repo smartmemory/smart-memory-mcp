@@ -261,7 +261,9 @@ def observation_from_row(row: object, item_id: str) -> Observation:
     stage, state, outcome = (
         carrier.get(k) for k in ("processing_stage", "execution_state", "outcome")
     )
-    if stage is not None and stage not in _STAGE_VALUES:
+    if (
+        stage not in _STAGE_VALUES
+    ):  # a missing or null stage is as unreadable as an unknown one
         raise refuse(
             f"read_status.processing_stage is {shown(stage)}, not one of {_STAGE_VALUES}"
         )
@@ -283,7 +285,7 @@ def observation_from_row(row: object, item_id: str) -> Observation:
         )
     detail = f"get({shown(item_id)}): stage={stage}, execution_state={state}, outcome={outcome}"
     return Observation(
-        stage=None if stage == "received" else stage or "stored",
+        stage=None if stage == "received" else stage,
         terminal=state in _TERMINAL,
         outcome=outcome,
         held="paused" if state == "paused" else None,

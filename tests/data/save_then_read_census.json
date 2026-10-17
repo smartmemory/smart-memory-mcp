@@ -1,5 +1,8 @@
 {
  "blind_spots": {
+  "dynamic_dispatch": {
+   "tests/test_backend_conformance.py:37": "an audit that checks the backend class defines each called method, it never calls it"
+  },
   "non_python": [
    "tests/fixtures/code_upload_before_move.json",
    "tests/fixtures/memget_a3_8f64f81f.json"
@@ -21,7 +24,7 @@
   {
    "class": "deferred_real_worker",
    "key": "tests/integration/test_hold_receipt.py::test_conversation_formatter_preserves_real_chunk_hold",
-   "owner": "the later-ring real-worker parity suite (G47; graph C-49.contract.mcp-suites names no step id for it, filed as a follow-up)",
+   "owner": "C49-RW-HARNESS-1 (filed 2026-10-17, later-ring real-worker parity harness, unscheduled; G47, graph C-49.contract.mcp-suites)",
    "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
    "where": [
     "tests/integration/test_hold_receipt.py:145"
@@ -30,7 +33,7 @@
   {
    "class": "deferred_real_worker",
    "key": "tests/integration/test_hold_receipt.py::test_remote_add_returns_real_hold",
-   "owner": "the later-ring real-worker parity suite (G47; graph C-49.contract.mcp-suites names no step id for it, filed as a follow-up)",
+   "owner": "C49-RW-HARNESS-1 (filed 2026-10-17, later-ring real-worker parity harness, unscheduled; G47, graph C-49.contract.mcp-suites)",
    "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
    "where": [
     "tests/integration/test_hold_receipt.py:52",
@@ -40,7 +43,7 @@
   {
    "class": "deferred_real_worker",
    "key": "tests/integration/test_hold_receipt.py::test_tools_report_real_hold_without_success",
-   "owner": "the later-ring real-worker parity suite (G47; graph C-49.contract.mcp-suites names no step id for it, filed as a follow-up)",
+   "owner": "C49-RW-HARNESS-1 (filed 2026-10-17, later-ring real-worker parity harness, unscheduled; G47, graph C-49.contract.mcp-suites)",
    "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
    "where": [
     "tests/integration/test_hold_receipt.py:52",
@@ -48,7 +51,7 @@
    ]
   }
  ],
- "engine_sha": "5095ffe92c264b19",
+ "engine_sha": "26e1cd5c1b3af891",
  "ignore": [
   "tests/public_wait.py",
   "tests/test_public_wait.py",
@@ -60,7 +63,8 @@
   "tests/test_local_save_return_compat.py:283",
   "tests/test_local_save_return_compat.py:300",
   "tests/test_local_save_return_compat.py:455",
-  "tests/test_portability.py:55"
+  "tests/test_portability.py:55",
+  "tests/test_code_index_ingest_fixes.py:183"
  ],
  "owned_by_u4_42": {
   "file": "tests/test_local_save_call.py",
@@ -212,6 +216,38 @@
    "receiver": "<tool-name>"
   },
   {
+   "call": "publish_bundle",
+   "file": "tests/test_code_collection_retention.py",
+   "function": "test_collection_failure_retains_generation.<locals>.upload",
+   "line": 43,
+   "memory_like": true,
+   "receiver": "CodeIndexer(memory._graph, payload['repo"
+  },
+  {
+   "call": "ingest_code",
+   "file": "tests/test_code_collection_retention.py",
+   "function": "test_collection_failure_retains_generation",
+   "line": 85,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "publish",
+   "file": "tests/test_code_disambiguation.py",
+   "function": "dependency_tool",
+   "line": 60,
+   "memory_like": true,
+   "receiver": "CodeIndexer(graph, REPO, '.')"
+  },
+  {
+   "call": "add_node",
+   "file": "tests/test_code_effects.py",
+   "function": "test_hosted_effects_scoped_http_sqlite",
+   "line": 96,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
    "call": "code_index",
    "file": "tests/test_code_index_ingest_fixes.py",
    "function": "_tool",
@@ -220,12 +256,36 @@
    "receiver": "<tool-name>"
   },
   {
+   "call": "publish_bundle",
+   "file": "tests/test_code_index_ingest_fixes.py",
+   "function": "test_remote_parser_dependency_arms.<locals>.upload",
+   "line": 81,
+   "memory_like": true,
+   "receiver": "CodeIndexer(graph, payload['repo'], str("
+  },
+  {
+   "call": "ingest_code",
+   "file": "tests/test_code_index_ingest_fixes.py",
+   "function": "test_default_code_index_skips_a_failing_js_file_instead_of_refusing",
+   "line": 183,
+   "memory_like": false,
+   "receiver": "local"
+  },
+  {
    "call": "add",
    "file": "tests/test_code_index_repo_key.py",
    "function": "_names_by_repo",
    "line": 67,
    "memory_like": false,
    "receiver": "by_repo.setdefault(node['repo'], set())"
+  },
+  {
+   "call": "publish_bundle",
+   "file": "tests/test_dead_code_options.py",
+   "function": "test_local_lite_store_honours_all_four_combinations",
+   "line": 90,
+   "memory_like": true,
+   "receiver": "indexer"
   },
   {
    "call": "add",
@@ -274,6 +334,22 @@
    "line": 77,
    "memory_like": true,
    "receiver": "memory"
+  },
+  {
+   "call": "publish_bundle",
+   "file": "tests/test_framework_semantics.py",
+   "function": "test_local_dead_code_preserves_components_hooks_and_jsx",
+   "line": 40,
+   "memory_like": true,
+   "receiver": "indexer"
+  },
+  {
+   "call": "publish_bundle",
+   "file": "tests/test_framework_semantics.py",
+   "function": "test_local_falkordb_dead_code_selects_indexed_memory_type",
+   "line": 141,
+   "memory_like": true,
+   "receiver": "indexer"
   },
   {
    "call": "add",
@@ -360,6 +436,22 @@
    "file": "tests/test_local_save_return_compat.py",
    "function": "test_receipt_reads_as_id_and_keeps_the_receipt",
    "line": 138,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_rejected_receipt_is_typed_logged_and_never_an_id",
+   "line": 145,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add_with_receipt",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_rejected_receipt_is_typed_logged_and_never_an_id",
+   "line": 145,
    "memory_like": true,
    "receiver": "be"
   },
@@ -476,6 +568,14 @@
    "receiver": "backend"
   },
   {
+   "call": "add_node",
+   "file": "tests/test_read_status_normalizers.py",
+   "function": "local_backend",
+   "line": 251,
+   "memory_like": true,
+   "receiver": "mem._graph.backend"
+  },
+  {
    "call": "ingest_code",
    "file": "tests/test_remote_code_ingest.py",
    "function": "test_remote_ingest_code_preserves_upload_payload",
@@ -549,7 +649,7 @@
   {
    "disposition": {
     "class": "deferred_real_worker",
-    "owner": "the later-ring real-worker parity suite (G47; graph C-49.contract.mcp-suites names no step id for it, filed as a follow-up)",
+    "owner": "C49-RW-HARNESS-1 (filed 2026-10-17, later-ring real-worker parity harness, unscheduled; G47, graph C-49.contract.mcp-suites)",
     "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
     "where": [
      "tests/integration/test_hold_receipt.py:145"
@@ -575,7 +675,7 @@
   {
    "disposition": {
     "class": "deferred_real_worker",
-    "owner": "the later-ring real-worker parity suite (G47; graph C-49.contract.mcp-suites names no step id for it, filed as a follow-up)",
+    "owner": "C49-RW-HARNESS-1 (filed 2026-10-17, later-ring real-worker parity harness, unscheduled; G47, graph C-49.contract.mcp-suites)",
     "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
     "where": [
      "tests/integration/test_hold_receipt.py:52",
@@ -602,7 +702,7 @@
   {
    "disposition": {
     "class": "deferred_real_worker",
-    "owner": "the later-ring real-worker parity suite (G47; graph C-49.contract.mcp-suites names no step id for it, filed as a follow-up)",
+    "owner": "C49-RW-HARNESS-1 (filed 2026-10-17, later-ring real-worker parity harness, unscheduled; G47, graph C-49.contract.mcp-suites)",
     "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
     "where": [
      "tests/integration/test_hold_receipt.py:52",
@@ -701,6 +801,127 @@
    "saves": [],
    "via": [
     "helper tests/test_backend_conformance.py::test_advertised_document_tool_executes.<locals>.check"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; the hosted arm is an in-process ASGI route that publishes inline into the same store: no worker; the persisted nodes and edges are read back in the test"
+   },
+   "file": "tests/test_code_collection_retention.py",
+   "function": "test_collection_failure_retains_generation",
+   "key": "tests/test_code_collection_retention.py::test_collection_failure_retains_generation",
+   "line": 22,
+   "reads": [
+    [
+     108,
+     "search_nodes_by_type_or_tag"
+    ],
+    [
+     109,
+     "get_all_edges"
+    ],
+    [
+     121,
+     "read_bytes"
+    ],
+    [
+     140,
+     "search_nodes_by_type_or_tag"
+    ],
+    [
+     141,
+     "get_all_edges"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [
+    [
+     85,
+     "ingest_code"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the hosted arm is an in-process ASGI route that publishes inline into the same store: no worker"
+   },
+   "file": "tests/test_code_collection_retention.py",
+   "function": "test_collection_failure_retains_generation.<locals>.upload",
+   "key": "tests/test_code_collection_retention.py::test_collection_failure_retains_generation.<locals>.upload",
+   "line": 41,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     43,
+     "publish_bundle"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "fixture: CodeIndexer.publish into SQLite or FalkorDB inline (a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test); the FalkorDB arm needs a track port and was classified by source, not executed"
+   },
+   "file": "tests/test_code_disambiguation.py",
+   "function": "dependency_tool",
+   "key": "tests/test_code_disambiguation.py::dependency_tool",
+   "line": 31,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     60,
+     "publish"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "consumes dependency_tool: the entities were published inline, so the tool read sees them with no wait"
+   },
+   "file": "tests/test_code_disambiguation.py",
+   "function": "test_exact_name_shadowed_by_a_longer_suffix_resolves_through_the_tool",
+   "key": "tests/test_code_disambiguation.py::test_exact_name_shadowed_by_a_longer_suffix_resolves_through_the_tool",
+   "line": 141,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "fixture tests/test_code_disambiguation.py::dependency_tool"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "add_node into a real SQLite backend (a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test); the hosted read is an in-process route over that store"
+   },
+   "file": "tests/test_code_effects.py",
+   "function": "test_hosted_effects_scoped_http_sqlite",
+   "key": "tests/test_code_effects.py::test_hosted_effects_scoped_http_sqlite",
+   "line": 60,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     96,
+     "add_node"
+    ]
+   ],
+   "via": [
+    "direct"
    ]
   },
   {
@@ -805,6 +1026,112 @@
    "saves": [],
    "via": [
     "helper tests/test_code_index_ingest_fixes.py::_tool"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the hosted arm is an in-process ASGI route that publishes inline into the same store: no worker"
+   },
+   "file": "tests/test_code_index_ingest_fixes.py",
+   "function": "test_remote_parser_dependency_arms.<locals>.upload",
+   "key": "tests/test_code_index_ingest_fixes.py::test_remote_parser_dependency_arms.<locals>.upload",
+   "line": 79,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     81,
+     "publish_bundle"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; the retained index is read back in the same test"
+   },
+   "file": "tests/test_code_index_repo_key.py",
+   "function": "test_explicit_name_owned_by_another_checkout_is_refused",
+   "key": "tests/test_code_index_repo_key.py::test_explicit_name_owned_by_another_checkout_is_refused",
+   "line": 90,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_code_index_ingest_fixes.py::_tool"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the upload route is a recording stub: the payload is captured, nothing is stored and no worker exists"
+   },
+   "file": "tests/test_code_index_repo_key.py",
+   "function": "test_remote_backend_upload_carries_provenance_and_identity",
+   "key": "tests/test_code_index_repo_key.py::test_remote_backend_upload_carries_provenance_and_identity",
+   "line": 127,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_code_index_ingest_fixes.py::_tool"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; the stored repo keys are read back in the same test"
+   },
+   "file": "tests/test_code_index_repo_key.py",
+   "function": "test_same_basename_checkouts_get_distinct_remote_keys",
+   "key": "tests/test_code_index_repo_key.py::test_same_basename_checkouts_get_distinct_remote_keys",
+   "line": 71,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_code_index_ingest_fixes.py::_tool"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; the empty store is asserted after the refusal"
+   },
+   "file": "tests/test_code_index_repo_key.py",
+   "function": "test_without_core_repo_name_is_required",
+   "key": "tests/test_code_index_repo_key.py::test_without_core_repo_name_is_required",
+   "line": 107,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_code_index_ingest_fixes.py::_tool"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; publish_bundle then the public dead-code read"
+   },
+   "file": "tests/test_dead_code_options.py",
+   "function": "test_local_lite_store_honours_all_four_combinations",
+   "key": "tests/test_dead_code_options.py::test_local_lite_store_honours_all_four_combinations",
+   "line": 74,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     90,
+     "publish_bundle"
+    ]
+   ],
+   "via": [
+    "direct"
    ]
   },
   {
@@ -947,6 +1274,65 @@
     [
      77,
      "ingest_structured"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; publish_bundle then the public dead-code read"
+   },
+   "file": "tests/test_framework_semantics.py",
+   "function": "test_local_dead_code_preserves_components_hooks_and_jsx",
+   "key": "tests/test_framework_semantics.py::test_local_dead_code_preserves_components_hooks_and_jsx",
+   "line": 14,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     40,
+     "publish_bundle"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "CodeIndexer.publish_bundle inline into a real FalkorDB-backed memory (no worker) then the public dead-code read; needs a track port, classified by source, not executed"
+   },
+   "file": "tests/test_framework_semantics.py",
+   "function": "test_local_falkordb_dead_code_selects_indexed_memory_type",
+   "key": "tests/test_framework_semantics.py::test_local_falkordb_dead_code_selects_indexed_memory_type",
+   "line": 57,
+   "reads": [
+    [
+     71,
+     "get"
+    ],
+    [
+     72,
+     "get"
+    ],
+    [
+     119,
+     "get"
+    ],
+    [
+     142,
+     "search_nodes"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [
+    [
+     141,
+     "publish_bundle"
     ]
    ],
    "via": [
@@ -1186,6 +1572,31 @@
     "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
    },
    "file": "tests/test_local_save_return_compat.py",
+   "function": "test_rejected_receipt_is_typed_logged_and_never_an_id",
+   "key": "tests/test_local_save_return_compat.py::test_rejected_receipt_is_typed_logged_and_never_an_id",
+   "line": 141,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     145,
+     "add"
+    ],
+    [
+     145,
+     "add_with_receipt"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_return_compat.py",
    "function": "test_unreadable_receipt_is_refused",
    "key": "tests/test_local_save_return_compat.py::test_unreadable_receipt_is_refused",
    "line": 155,
@@ -1291,6 +1702,89 @@
    ],
    "via": [
     "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "fixture: an in-memory pending store admits one row and add_node seeds one legacy row in a real Lite graph (a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test)"
+   },
+   "file": "tests/test_read_status_normalizers.py",
+   "function": "local_backend",
+   "key": "tests/test_read_status_normalizers.py::local_backend",
+   "line": 236,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     251,
+     "add_node"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "consumes local_backend: the admitted and seeded rows are read through get, search and list with no wait"
+   },
+   "file": "tests/test_read_status_normalizers.py",
+   "function": "test_local_backend_get_search_list_follow_the_gate",
+   "key": "tests/test_read_status_normalizers.py::test_local_backend_get_search_list_follow_the_gate",
+   "line": 269,
+   "reads": [
+    [
+     273,
+     "search"
+    ],
+    [
+     278,
+     "list_memories"
+    ],
+    [
+     280,
+     "get"
+    ],
+    [
+     281,
+     "get"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "fixture tests/test_read_status_normalizers.py::local_backend"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "consumes local_backend: the unreadable carrier is read back through the real local backend with no wait"
+   },
+   "file": "tests/test_read_status_normalizers.py",
+   "function": "test_local_backend_refuses_an_unreadable_core_carrier",
+   "key": "tests/test_read_status_normalizers.py::test_local_backend_refuses_an_unreadable_core_carrier",
+   "line": 319,
+   "reads": [
+    [
+     324,
+     "get_memory"
+    ],
+    [
+     325,
+     "get"
+    ],
+    [
+     325,
+     "search"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "fixture tests/test_read_status_normalizers.py::local_backend"
    ]
   },
   {

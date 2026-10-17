@@ -594,6 +594,29 @@ INVALID_ROWS = [
         "read_status.processing_stage is 'bogus', not one of ('received', 'stored', 'extracted')",
     ),
     (
+        "a null stage on an active run",
+        carrier(None, "queued"),
+        "read_status.processing_stage is None, not one of ('received', 'stored', 'extracted')",
+    ),
+    (
+        "a missing stage on an active run",
+        {
+            k: v
+            for k, v in carrier("stored", "queued").items()
+            if k != "processing_stage"
+        },
+        "read_status.processing_stage is None, not one of ('received', 'stored', 'extracted')",
+    ),
+    (
+        "a missing stage on a completed run",
+        {
+            k: v
+            for k, v in carrier("stored", "completed", "completed").items()
+            if k != "processing_stage"
+        },
+        "read_status.processing_stage is None, not one of ('received', 'stored', 'extracted')",
+    ),
+    (
         "an unknown execution state",
         carrier("stored", "bogus"),
         "read_status.execution_state is 'bogus', not one of ('queued', 'waiting', 'running', 'paused', 'completed', 'failed', 'dead')",
