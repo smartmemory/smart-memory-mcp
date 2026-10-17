@@ -731,7 +731,7 @@ def test_memory_ingest_tool_reads_the_id_on_both_arms(
     from smartmemory_app import storage
 
     class ScriptedMemory:
-        def ingest(self, content, context=None, sync=True):
+        def ingest(self, content, context=None, sync=None):
             return result
 
     monkeypatch.setattr(storage, "_data_path", tmp_path)
