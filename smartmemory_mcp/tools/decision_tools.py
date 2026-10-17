@@ -84,11 +84,16 @@ def register(mcp):
         rationale: Optional[str] = None,
         constraints: Optional[List[str]] = None,
     ) -> str:
-        """Create a new decision with provenance tracking.
+        """Record a decision the user stated, with provenance.
 
-        CORE-EXPERTISE-1 Phase 1: rejected_alternatives, rationale, constraints
-        capture the "why" structure that makes decisions usable expertise.
+        Use this when the user states a decision: "I decided X", "we chose X over
+        Y", "we're going with X". Put the decision in `content` as one sentence and
+        pass `rejected_alternatives` and `rationale` when the user gave them. A
+        decision stored this way can later be reinforced, superseded or checked for
+        conflicts; one stored with memory_add or memory_ingest may not be.
         """
+        # CORE-EXPERTISE-1 Phase 1: rejected_alternatives, rationale, constraints
+        # capture the "why" structure that makes decisions usable expertise.
         try:
             backend = get_backend()
             decision = backend.decision_create(

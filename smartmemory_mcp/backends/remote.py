@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 
 class RemoteBackend(BackendCapabilities):
+    # POST /memory/add defaults use_pipeline=True service-side, so add() runs extraction.
+    add_runs_extraction = True
     """HTTP client implementing MemoryBackend protocol for the hosted SmartMemory API."""
 
     unsupported_capabilities = frozenset(

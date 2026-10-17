@@ -455,7 +455,11 @@ def register_free(mcp):
     )
     @graceful
     def memory_ingest(content: str, memory_type: str = "semantic") -> str:
-        """Ingest content through the full NLP pipeline with entity extraction."""
+        """Store what the user said and extract entities, dates and relations from it.
+
+        Use this for facts, events, plans and anything naming people, places,
+        organizations or dates. Runs the full extraction pipeline.
+        """
         backend = get_backend()
         result = backend.ingest(content, memory_type=memory_type)
         if isinstance(result, dict):
@@ -1019,8 +1023,20 @@ def register_pro(mcp):
         metadata: Optional[Dict[str, Any]] = None,
         tags: Optional[List[str]] = None,
     ) -> str:
-        """Add a memory item directly without the NLP pipeline."""
+        """Store a memory with explicit metadata or tags.
+
+        On the hosted/remote service this runs the same extraction pipeline as
+        memory_ingest. In local mode it stores the text as-is, with no entity, date
+        or decision extraction; prefer memory_ingest there.
+        """
         backend = get_backend()
+        if not getattr(backend, "add_runs_extraction", False):
+            logger.warning(
+                "memory_add: %s stores without the extraction pipeline; no entities, "
+                "dates, relations or Decision nodes will be extracted from this item "
+                "(use memory_ingest for extraction)",
+                type(backend).__name__,
+            )
         item_metadata = metadata or {}
         if tags:
             item_metadata["tags"] = tags

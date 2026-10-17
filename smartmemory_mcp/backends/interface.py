@@ -34,6 +34,9 @@ class BackendCapabilities:
     """Central capability check, including explicitly unsupported operations."""
 
     unsupported_capabilities: frozenset[str] = frozenset()
+    # Whether `add()` runs entity/date/decision extraction (MCP-CAPTURE-ROUTING-1).
+    # False is the safe default: memory_add then warns that extraction was skipped.
+    add_runs_extraction: bool = False
 
     @classmethod
     def supports(cls, method: str) -> bool:

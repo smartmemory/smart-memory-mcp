@@ -19,12 +19,13 @@ from mcp.types import ToolAnnotations
 
 from smartmemory_mcp.capabilities import BackendCapabilityMiddleware
 from smartmemory_mcp.health import register_health
+from smartmemory_mcp.instructions import LOCAL_INSTRUCTIONS
 from smartmemory_mcp.tier import Tier, resolve_tier, store_api_key
 from smartmemory_mcp.tools.common import graceful
 
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("smartmemory")
+mcp = FastMCP("smartmemory", instructions=LOCAL_INSTRUCTIONS)
 mcp.add_middleware(BackendCapabilityMiddleware())
 
 # Set when the PRO-tier transcript tools register, so `main()` knows whether the
