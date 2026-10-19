@@ -20,3 +20,6 @@ keyring = ["keyring>=24.0"]
 
 [project.scripts]
 smartmemory-mcp = "smartmemory_mcp.server:main"
+
+[tool.setuptools.packages.find]
+include = ["smartmemory_mcp*"]
