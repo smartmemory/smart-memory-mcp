@@ -124,17 +124,32 @@ FREE_TOOLS = sorted(
         "read_around",  # CORE-RECALL-CENTERED-1 Phase 2
         "memory_recall_pack",  # CORE-RECALL-BUDGET-1 — budgeted context assembly, FREE by design
         "memory_policy_bundle",  # GOV-STRATUM-SEAM-1 P1 — required before a runner plans
+        # DEV-ONBOARD-FU-MCP-DECISION-TOOLS-FREE-1 — the decision suite is FREE
+        # (tests/test_decision_tools_free_tier.py pins each name).
+        "decision_create",
+        "decision_get",
+        "decision_list",
+        "decision_search",
+        "decision_supersede",
+        "decision_retract",
+        "decision_reinforce",
+        "decision_contradict",
+        "decision_provenance",
+        "decision_find_conflicts",
+        "decision_create_pending",
+        "decision_resolve_requirement",
+        "decision_try_activate",
     ]
 )
 
 
 class TestToolRegistration:
     def test_free_tier_tool_count(self):
-        """FREE tier registers exactly 17 tools."""
+        """FREE tier registers exactly 30 tools (17 + the 13 decision tools)."""
         env = _clean_env()
         data = _run_snippet(env)
-        assert data["count"] == 17, (
-            f"Expected 17 FREE tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 30, (
+            f"Expected 30 FREE tools, got {data['count']}: {data['names']}"
         )
         assert data["names"] == FREE_TOOLS
 
