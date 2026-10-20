@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- DEV-ONBOARD-FU-MCP-DECISION-TOOLS-FREE-1 (owner pick, option a): the 13 decision tools (`decision_create`, `_get`, `_list`, `_search`, `_supersede`, `_retract`, `_reinforce`, `_contradict`, `_provenance`, `_find_conflicts`, `_create_pending`, `_resolve_requirement`, `_try_activate`) are registered in the FREE tier, so a keyless local server lists and accepts them, matching the Python SDK where `add_decision` needs no key. Before, `_register_tools` registered them only at `tier >= PRO`, so a Claude Code or Codex user with no API key never saw them. Only the decision suite moved: every other PRO and PRO+ tool keeps its tier, and the hosted allowlist (`hosted/tools.py`, no decision tools) is unchanged. FREE is now 30 registered tools (was 17), PRO 68 and PRO+ 99 are unchanged totals. The local server instructions no longer say "when it is available" for `decision_create`. Tests: `tests/test_decision_tools_free_tier.py` (13 rows listed keyless, 13 rows called keyless through FastMCP, 4 rows proving other PRO tools stay PRO, a completeness guard), `tests/test_tier_registration.py` (FREE count and names).
+
 - SM-MCP-FLAT-LAYOUT-1: `pyproject.toml` now declares the package explicitly (`[tool.setuptools.packages.find] include = ["smartmemory_mcp*"]`). Before, setuptools flat-layout auto-discovery ran on every build, so any stray top-level directory next to `smartmemory_mcp/` (an empty `scratch/` was enough) failed the build with `Multiple top-level packages discovered in a flat-layout` and `uv run smartmemory-mcp` exited before any MCP traffic, which Claude Code reports as CONNECTION_CLOSED. The built wheel is identical (same 58 files). Checked with an empty `scratch/`, `build/` and `scripts/` present.
 
 ## 1.5.23 — 2026-10-17

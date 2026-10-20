@@ -19,7 +19,7 @@ _COMMON = (
 
 LOCAL_INSTRUCTIONS = _COMMON + (
     "- A decision the user states ('I decided X', 'we chose X over Y', 'we are going with X'): "
-    "use decision_create when it is available, with the decision as one sentence and "
+    "use decision_create, with the decision as one sentence and "
     "rejected_alternatives / rationale when the user gave them.\n"
     "- memory_add in local mode stores the text as-is with no entity, date or decision "
     "extraction. Use it only for verbatim notes; prefer memory_ingest otherwise.\n"

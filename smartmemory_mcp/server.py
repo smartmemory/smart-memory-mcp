@@ -1,9 +1,10 @@
 """SmartMemory Unified MCP Server.
 
 Tiered tool registration:
-  FREE  (13 tools) — no login required
-  PRO   (58 tools) — after smartmemory login
-  PRO+  (89 tools) — PRO + SMARTMEMORY_MCP_FULL_TOOLS=true
+  FREE  (30 tools) — no login required, includes the decision suite
+  PRO   (68 tools) — after smartmemory login
+  PRO+  (99 tools) — PRO + SMARTMEMORY_MCP_FULL_TOOLS=true
+(Counts are cumulative registered tools, asserted by tests/test_tier_registration.py.)
 
 Backend is independent of tier:
   Local  — default, uses smartmemory package (pip install smartmemory)
@@ -141,19 +142,27 @@ def _register_tools():
     logger.info("SmartMemory MCP starting with tier: %s", tier.name)
 
     # FREE tier (always registered)
-    from smartmemory_mcp.tools import memory_tools, portability_tools, lifecycle_tools
+    from smartmemory_mcp.tools import (
+        decision_tools,
+        memory_tools,
+        portability_tools,
+        lifecycle_tools,
+    )
 
     memory_tools.register_free(mcp)
     memory_tools.register_feedback(mcp)
     portability_tools.register(mcp)
     lifecycle_tools.register(mcp)
+    # DEV-ONBOARD-FU-MCP-DECISION-TOOLS-FREE-1: decision tools are FREE, matching the
+    # Python SDK where add_decision needs no key. Only this suite moved; the rest of
+    # the PRO block below is unchanged.
+    decision_tools.register(mcp)
 
     # PRO tier
     if tier >= Tier.PRO:
         memory_tools.register_pro(mcp)
 
         from smartmemory_mcp.tools import (
-            decision_tools,
             code_tools,
             graph_tools,
             anchor_tools,
@@ -165,7 +174,6 @@ def _register_tools():
             transcript_tools,
         )
 
-        decision_tools.register(mcp)
         code_tools.register(mcp)
         graph_tools.register(mcp)
         anchor_tools.register(mcp)
