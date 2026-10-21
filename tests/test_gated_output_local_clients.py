@@ -79,6 +79,7 @@ NOISE = (
     ("smartmemory.models.rerank", "rerank_unscored"),
     ("smartmemory.search.pending_facade", "Extraction status unavailable for"),
     (LANE_LOG, "Read gate scan budget spent in lane "),
+    ("smartmemory.search.visibility_pages", "SMARTMEMORY_PAGE_CURSOR_KEY is unset"),
 )
 LIST_TOTAL_LOST = (
     MEMORY_TOOLS_LOG,
@@ -443,69 +444,60 @@ def test_memory_recall_cap_stop_reaches_the_model_as_partial(
 
 # -- memory_list: the paginated read (R11) --------------------------------------------------------------------------
 
-# (case, rows visible, scan budget, limit, offset, ids shown in order, partial note expected)
-# Pages are cut from rows core's gate already admitted, there is no cursor token (offset/limit only), and ``limit`` and
-# ``offset`` bound the page under both coverage states. ``limit=0`` is accepted by the inherited, unchanged code.
+# (case, rows visible, limit, offset, ids shown in order)
+# Gate ON, pages are cut from core's frozen walk (LOCAL-FROZEN-PAGE-1): ``limit`` and ``offset`` bound the page, there is
+# no cursor token for a client, and the page carries the walk's total. The walk reads every visible row, so a small lane
+# scan budget no longer makes the list partial (see ``test_memory_list_is_exact_under_a_small_scan_budget``).
 LIST_ROWS = [
     (
         "complete first page is bounded by limit",
         {0, 1, 2, 3, 4, 5},
-        None,
         4,
         0,
         [0, 1, 2, 3],
-        False,
     ),
-    ("complete second page by offset", {0, 1, 2, 3, 4, 5}, None, 4, 4, [4, 5], False),
+    ("complete second page by offset", {0, 1, 2, 3, 4, 5}, 4, 4, [4, 5]),
     (
         "complete page past the end is empty and silent",
         {0, 1, 2, 3, 4, 5},
-        None,
         4,
         9,
         [],
-        False,
     ),
-    ("partial page names itself", {5}, 1, 4, 0, [5], True),
-    ("partial page past the end is not 'no more memories'", {5}, 1, 4, 9, [], True),
 ]
 
 
 @pytest.mark.parametrize(
-    "case,visible,budget,limit,offset,shown,note",
+    "case,visible,limit,offset,shown",
     LIST_ROWS,
     ids=[r[0] for r in LIST_ROWS],
 )
 def test_memory_list_pages_under_both_coverage_states(
-    world, caplog, case, visible, budget, limit, offset, shown, note
+    world, caplog, case, visible, limit, offset, shown
 ):
     seed(world.mem, "semantic", visible=visible)
-    if budget is not None:
-        # The wildcard "*" refills until it is complete on its own: with one memory type it never reports the budget
-        # spent. A second type with a visible row is what makes core's merged enumeration cross the budget and say so.
-        seed(world.mem, "episodic", visible={5})
-    world.set_budget(budget)
     caplog.set_level(logging.WARNING)
     out = call(world, "memory_list", True, limit=limit, offset=offset)
-    listed = out.count("- [test_u521_")
-    assert listed == len(shown)
-    if not note:  # one memory type is seeded, so the rows are exactly the semantic ones named in ``shown``
-        assert [n for n in range(6) if f"test_u521_semantic_{n}]" in out] == shown
-    assert (PARTIAL_PHRASE in out) is note
-    if note and not shown:
-        assert (
-            "No visible memories in the part core examined." in out
-            and NO_VISIBLE in out
-        )
-    assert answer_log(caplog) == [
-        # the merged wildcard enumeration stays complete, core names only the spent budget
-        *(
-            [gate_warning("list_memories", "read_gate_scan_budget_spent")]
-            if note
-            else []
-        ),
-        LIST_TOTAL_LOST,
-    ]
+    assert out.count("- [test_u521_") == len(shown)
+    assert [n for n in range(6) if f"test_u521_semantic_{n}]" in out] == shown
+    assert PARTIAL_PHRASE not in out
+    if not shown:
+        assert "No memories returned for this page (offset 9); 6 memories exist." in out
+    else:
+        assert f"of 6 memories" in out
+    assert answer_log(caplog) == []
+
+
+def test_memory_list_is_exact_under_a_small_scan_budget(world, caplog):
+    """The lane scan budget bounded the old wildcard read, so it made the page partial. The frozen walk reads every
+    visible row on its own bound, so the same store lists both visible rows, names no partial and carries the total."""
+    seed(world.mem, "semantic", visible={5})
+    seed(world.mem, "episodic", visible={5})
+    world.set_budget(1)
+    caplog.set_level(logging.WARNING)
+    out = call(world, "memory_list", True, limit=4, offset=0)
+    assert out.count("- [test_u521_") == 2 and "Showing 2 of 2 memories" in out
+    assert PARTIAL_PHRASE not in out and answer_log(caplog) == []
 
 
 def test_memory_list_off_arm_is_the_legacy_page(world, caplog):
@@ -516,7 +508,7 @@ def test_memory_list_off_arm_is_the_legacy_page(world, caplog):
     # four rows of six, one visible (5): at least three are rows the gate hides ON
     assert PARTIAL_PHRASE not in out
     assert len(shown(out)) == 4 and len(shown(out) - {5}) >= 3
-    assert answer_log(caplog) == [OFF_SWITCH_WARNING, LIST_TOTAL_LOST]
+    assert answer_log(caplog) == [OFF_SWITCH_WARNING, LIST_TOTAL_LOST]  # OFF is the base's page and lines
 
 
 # -- memory_list refusals: logged once by the origin when the gate is ON, the base's lines when it is OFF (F3, F4) -------
@@ -562,23 +554,19 @@ def _odd_text():
 
 
 def _core_unreadable(world, monkeypatch):
-    """The real core path: ``list_memories`` reads coverage core could not have written, and core's reader refuses."""
-    from smartmemory.search.results import SearchDiagnostics, SearchResults
+    """The real core path: the frozen walk's own refusal (``direct_lists._refuse``: one WARNING, a typed error)."""
+    from smartmemory.search import direct_lists
 
-    monkeypatch.setattr(
-        world.mem,
-        "search",
-        lambda *a, **k: SearchResults(
-            [], SearchDiagnostics(coverage={"complete": "no"})
-        ),
-    )
+    def refuse(**kwargs):
+        raise direct_lists._refuse("the root read failed (test); the read was not completed")
+
+    monkeypatch.setattr(world.mem, "read_gated_roots_page", refuse)
 
 
 CORE_UNREADABLE = (
-    RESULTS_LOG,
+    "smartmemory.search.direct_lists",
     "WARNING",
-    "Search coverage refused: coverage['complete'] is a str, not a bool, so the result cannot be read as complete or "
-    "partial",
+    "Direct list read unavailable: the root read failed (test); the read was not completed",
 )
 
 # (case, fault, gate on, the error the tool raises (None: it answers), the mark on it afterwards, the COMPLETE list).
@@ -638,7 +626,7 @@ LIST_REFUSAL_ROWS = [
         "on core refusal is logged by core only",
         "core",
         True,
-        "PartialCoverageUnreadable",
+        "VisibilityUnavailable",
         True,
         [CORE_UNREADABLE],
     ),
@@ -662,7 +650,7 @@ def test_memory_list_logs_a_refusal_once_and_off_is_the_base(
     world, monkeypatch, caplog, case, fault, on, error, marked, warnings
 ):
     from smartmemory.refusal_logging import refusal_logged
-    from smartmemory.search import results as results_module
+    from smartmemory import visibility as results_module
 
     seed(world.mem, "semantic", visible={5})
     if fault == "core":
@@ -729,17 +717,17 @@ class ListOverReturn:
 
 
 # (case, gate on, how the store answers, ids on the page, names carried, the WARNING list). The real-store rows hold 201
-# visible rows, so the wildcard's window of 200 comes back full. ON: the full window is a stop at the bound, so the page
-# carries ``fetch_bound``; OFF: the legacy page with the legacy line only. The stand-in rows over-return one row past the
-# window that alone matches the filter: ON it is never paged (core's WARNING says so), OFF the legacy list pages it.
+# visible rows. ON: the frozen walk has no 200-row window, so all 201 are paged and nothing is partial; OFF: the legacy
+# wildcard window comes back full and the page carries only the legacy line. The stand-in rows (OFF only: the stand-in
+# has no walk) over-return one row past the window that alone matches the filter, and the legacy list pages it.
 LIST_BOUND_ROWS = [
     (
-        "on full window carries fetch_bound",
+        "on full store pages in full, no window and no fetch_bound",
         True,
         "real",
         4,
-        ("fetch_bound",),
-        [LIST_CAP_LINE],
+        (),
+        [],
     ),
     (
         "off full window is the legacy page",
@@ -748,14 +736,6 @@ LIST_BOUND_ROWS = [
         4,
         (),
         [OFF_SWITCH_WARNING, LIST_CAP_LINE],
-    ),
-    (
-        "on over-return is cut to the window",
-        True,
-        "over",
-        [],
-        ("fetch_bound",),
-        [over("list_memories", 201, 200), LIST_CAP_LINE],
     ),
     (
         "off over-return is the legacy page",
@@ -790,23 +770,25 @@ def test_list_memories_never_pages_past_its_window_and_carries_the_stop(
     else:
         assert [r["item_id"] for r in got] == page
     assert getattr(got, "partial", ()) == names
-    assert type(got).__name__ == ("PartialRows" if names else "list")
+    assert type(got).__name__ == (
+        "PartialRows" if names else ("_FrozenListPage" if on else "list")
+    )
     assert (answer_log(caplog) if store == "real" else full_log(caplog)) == warnings
     if store == "real":
         # through the tool: the model-facing page names the stop (ON), the legacy page does not (OFF)
         caplog.clear()
         with switch_override(SWITCH, on):
             out = world.tools["memory_list"](limit=4, offset=0)
-        assert ("The answer was partial (fetch_bound)" in out) is on
+        assert "The answer was partial (fetch_bound)" not in out
+        assert ("of 201 memories" in out) is on
 
 
 # -- memory_list and R11, clause by clause ----------------------------------------------------------------------------
 # R11 (a) no existence oracle: a hidden row and an absent row give the same page (row below).
 # R11 (b)/(c) N/A: memory_list has no cursor token. Paging is ``limit``/``offset`` over one fresh wildcard read.
-# R11 (d) NOT MET, deferred: no cursor, so nothing is frozen. Every page re-reads the wildcard and slices by offset, so a
-#     row written between pages shifts the walk (pinned below as today's behaviour). Core's frozen-membership walk is
-#     U5.24's ``read_gated_roots_page`` (``smartmemory/search/direct_lists.py``); moving this local list onto it is not
-#     in any queued brief, raised under Questions in REPORT-U5.21.md.
+# R11 (d) MET (LOCAL-FROZEN-PAGE-1): gate ON, the list pages on core's frozen walk (``read_gated_roots_page``). The
+#     backend keeps the cursor that continues each page it served, so ``limit``/``offset`` is unchanged and a row written
+#     or deleted between pages never changes the membership or the total (``test_r11d_paging_is_frozen_across_pages``).
 # R11 (e) a partial page is never "no more memories": ``LIST_ROWS`` "partial page past the end" and the window rows above.
 # R11 (f) inherited, accepted by the coordinator: ``limit=0`` is accepted by the unchanged code (not changed here).
 
@@ -830,12 +812,7 @@ def test_r11a_a_hidden_row_and_an_absent_row_give_the_same_page(world, caplog):
     assert hidden_log == answer_log(caplog) == []
 
 
-def test_r11d_paging_is_not_frozen_today(world):
-    """Pins today's offset paging (R11(d) deferred): a row written between pages is walked into page two. When this
-    list moves onto a frozen walk, this test fails and is replaced by the frozen-membership row."""
-    seed(world.mem, "semantic", visible={0, 1, 2, 3, 4, 5})
-    at_first = _listed(world, limit=10, offset=0)
-    first = _listed(world, limit=3, offset=0)
+def _write_new_row(world, _expected):
     world.mem._graph.backend.add_node(
         "test_u521_semantic_new",
         {
@@ -845,11 +822,88 @@ def test_r11d_paging_is_not_frozen_today(world):
         },
         memory_type="semantic",
     )
-    at_second = _listed(world, limit=10, offset=0)
-    second = _listed(world, limit=4, offset=3)
-    assert first == at_first[:3] and len(at_first) == 6
-    # page two is cut from the membership AT page two (7 rows), not the one page one saw (6): not frozen
-    assert len(at_second) == 7 and second == at_second[3:7]
+
+
+def _delete_member(world, expected):
+    world.mem._graph.backend.remove_node(expected[4])
+
+
+# One row per paging shape. (case, limit, offsets walked in order, what lands after page one, expected rows per page as
+# slices of the walk's membership, a member id index that never appears, the frozen total every page carries)
+R11D_ROWS = [
+    ("first page", 4, [0], None, [(0, 4)], None, 6),
+    ("middle page", 2, [0, 2], None, [(0, 2), (2, 4)], None, 6),
+    ("last page", 4, [0, 4], None, [(0, 4), (4, 6)], None, 6),
+    ("empty page past the end", 4, [0, 9], None, [(0, 4), (0, 0)], None, 6),
+    (
+        "a write between pages",
+        3,
+        [0, 3],
+        _write_new_row,
+        [(0, 3), (3, 6)],
+        None,
+        6,
+    ),
+    (
+        "a delete between pages",
+        3,
+        [0, 3],
+        _delete_member,
+        [(0, 3), (3, 6)],
+        4,
+        6,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "case,limit,offsets,mutate,slices,dropped,total",
+    R11D_ROWS,
+    ids=[r[0] for r in R11D_ROWS],
+)
+def test_r11d_paging_is_frozen_across_pages(
+    world, case, limit, offsets, mutate, slices, dropped, total
+):
+    """R11(d): membership and total are the walk's first-page values, whatever lands between pages."""
+    seed(world.mem, "semantic", visible={0, 1, 2, 3, 4, 5})
+    expected = _listed(world, limit=10, offset=0)  # a walk of its own: the fixed membership
+    assert len(expected) == 6
+    pages = []
+    with switch_override(SWITCH, True):
+        for n, offset in enumerate(offsets):
+            page = world.backend.list_memories(limit=limit, offset=offset)
+            pages.append(([r["item_id"] for r in page], page.total))
+            if n == 0 and mutate is not None:
+                mutate(world, expected)
+    seen = [i for ids, _ in pages for i in ids]
+    gone = expected[dropped] if dropped is not None else None
+    for (ids, got_total), (lo, hi) in zip(pages, slices):
+        assert ids == [i for i in expected[lo:hi] if i != gone]
+        assert got_total == total
+    assert len(seen) == len(set(seen)) and "test_u521_semantic_new" not in seen
+
+
+def test_r11d_unseen_offset_starts_a_walk_and_skips(world):
+    """A client that asks for offset 3 with no earlier page on record gets rows 3.. of a new walk, then can continue."""
+    seed(world.mem, "semantic", visible={0, 1, 2, 3, 4, 5})
+    expected = _listed(world, limit=10, offset=0)
+    world.backend._walks.clear()
+    with switch_override(SWITCH, True):
+        page = world.backend.list_memories(limit=2, offset=3)
+        nxt = world.backend.list_memories(limit=2, offset=5)
+    assert [r["item_id"] for r in page] == expected[3:5] and page.total == 6
+    assert [r["item_id"] for r in nxt] == expected[5:6] and nxt.total == 6
+
+
+def test_r11d_the_tool_prints_the_frozen_total_on_every_page(world, caplog):
+    seed(world.mem, "semantic", visible={0, 1, 2, 3, 4, 5})
+    caplog.set_level(logging.WARNING)
+    first = call(world, "memory_list", True, limit=3, offset=0)
+    _write_new_row(world, None)
+    second = call(world, "memory_list", True, limit=3, offset=3)
+    assert "Showing 3 of 6 memories" in first and "Showing 3 of 6 memories" in second
+    assert "test_u521_semantic_new" not in second
+    assert LIST_TOTAL_LOST not in answer_log(caplog)
 
 
 # -- transcript_search (already read core's coverage before this round; kept on the real core) ----------------------

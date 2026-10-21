@@ -1204,12 +1204,19 @@ def register_pro(mcp):
                 )
         elif isinstance(result, list):
             items = result
-            total = None
             partial = partial_reasons(result)
-            logger.warning(
-                "Memory list total is unavailable; corpus size was lost because the backend "
-                "returned only a page list."
+            # A frozen local walk (LOCAL-FROZEN-PAGE-1) hands its fixed total along on the page it returns.
+            carried = getattr(result, "total", None)
+            total = (
+                carried
+                if isinstance(carried, int) and not isinstance(carried, bool)
+                else None
             )
+            if total is None:
+                logger.warning(
+                    "Memory list total is unavailable; corpus size was lost because the backend "
+                    "returned only a page list."
+                )
         else:
             logger.warning(
                 "Memory list unavailable; page items and corpus total were lost because the "

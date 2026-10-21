@@ -37,6 +37,16 @@ def _metadata_matches(metadata: dict, key: str, value: Any) -> bool:
     return str(cur) == str(value)
 
 
+class _FrozenListPage(list):
+    """A gate-ON list page: the plain list ``list_memories`` always returned, plus the walk's frozen ``total`` and the
+    names (``partial``, as ``PartialRows``) of why core called it degraded. ``total`` is None when core gave none."""
+
+    def __init__(self, rows: Any, *, total: int | None, partial: tuple[str, ...]) -> None:
+        super().__init__(rows)
+        self.total = total
+        self.partial = partial
+
+
 class SaveReturnUnavailable(RuntimeError):
     """Core returned a save receipt but the installed wrapper cannot read it. No id was inferred."""
 
@@ -690,9 +700,14 @@ class LocalBackend(BackendCapabilities):
                 f"metadata_key and metadata_value must be supplied together; {missing} is missing."
             )
 
+        from smartmemory.configuration import switches
+        from smartmemory.search.visibility_gate import SWITCH as _GATE_SWITCH
+
+        if switches.is_on(_GATE_SWITCH):
+            return self._list_frozen(limit, offset, mkey, mval)
+
         window = max((limit + offset) * 10, 200)
         hits = self._mem.search("*", top_k=window)
-        from smartmemory.configuration import switches
         from smartmemory.search.results import carry_partial
         from smartmemory.search.visibility_gate import (
             FETCH_BOUND_REASON,
@@ -723,6 +738,77 @@ class LocalBackend(BackendCapabilities):
         # U5.21 (C8): the page is still a plain list to every caller; a partial answer's reasons ride on it so an
         # empty page is not read as "no more memories".
         return carry_partial(items[offset : offset + limit], partial)
+
+    # LOCAL-FROZEN-PAGE-1 (R11(d)): gate ON, a list walk is frozen by core's ``read_gated_roots_page``. ``memory_list``
+    # keeps its ``limit``/``offset`` contract (no cursor reaches a client), so the backend remembers, per filter, the
+    # cursor that continues each page it served: ``offset`` N resumes the walk whose last page ended at N.
+    _WALK_FILTERS_KEPT = 8
+    _WALK_OFFSETS_KEPT = 64
+
+    def _list_frozen(
+        self, limit: int, offset: int, mkey: str | None, mval: Any
+    ) -> list[MemoryResult]:
+        """One page of the gate-ON list from a frozen walk: membership and ``total`` are fixed at the walk's first page."""
+        from collections import OrderedDict
+
+        from smartmemory.search.visibility_pages import CursorRejected
+
+        if limit < 1:
+            return _FrozenListPage([], total=None, partial=())  # inherited: limit=0 is accepted, an empty page
+        walks = self.__dict__.setdefault("_walks", OrderedDict())
+        key = (mkey, None if mval is None else str(mval))
+        offsets: dict[int, str] = walks.setdefault(key, {})
+        walks.move_to_end(key)
+        while len(walks) > self._WALK_FILTERS_KEPT:
+            walks.popitem(last=False)
+        accept = None
+        discriminator = ""
+        if mkey is not None:
+            discriminator = f"metadata:{mkey}={mval}"
+
+            def accept(row: Mapping[str, Any], _ctx: Any) -> bool:
+                return _metadata_matches(
+                    normalize_item(dict(row)).get("metadata") or {}, mkey, mval
+                )
+
+        # Offset 0 is a new look at the list, so it starts a new walk. A later offset resumes the walk that served the
+        # page before it, or, with no such page on record, starts a walk and skips ``offset`` rows of it.
+        cursor = None if offset == 0 else offsets.get(offset)
+        if offset == 0:
+            offsets.clear()
+        for attempt in (0, 1):
+            skip = offset if cursor is None and offset > 0 else 0
+            try:
+                page = self._mem.read_gated_roots_page(
+                    limit=skip + limit,
+                    cursor=cursor,
+                    accept=accept,
+                    discriminator=discriminator,
+                    include_total=True,
+                )
+                break
+            except CursorRejected as exc:
+                if attempt:
+                    raise
+                log.warning(
+                    "list_memories lost its frozen walk at offset %d (%s); the page is cut from a new walk, so its "
+                    "membership and total may differ from the earlier pages.",
+                    offset,
+                    exc,
+                )
+                offsets.clear()
+                cursor = None
+        rows = page.rows[skip:]
+        if page.next_cursor:
+            offsets[offset + len(rows)] = page.next_cursor
+            while len(offsets) > self._WALK_OFFSETS_KEPT:
+                offsets.pop(next(iter(offsets)))
+        partial = ("read_gate_scan_budget_spent",) if page.degraded else ()
+        return _FrozenListPage(
+            [normalize_item(raw) for raw in rows],
+            total=page.total_visible,
+            partial=partial,
+        )
 
     def clear_user_memories(self, confirm: bool = False, **kwargs: Any) -> str:
         """Clear all user memories.
