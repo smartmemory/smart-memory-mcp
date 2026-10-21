@@ -33,6 +33,7 @@
 - U4.42 review fix (round 2): `LocalBackend` tells a receipt from a legacy save return by the wrapper's one rule (subclasses, lookalikes and any mapping with `schema_version`, not just a `dict` or an exact class name), and a return that cannot be inspected is handed to the wrapper's reader, which refuses it. Still dormant: no tool calls the receipt save.
 - U4.42 review fix: a wrapper `save_caller` module that lacks one of the names the local receipt save needs is now `SaveReturnUnavailable` with one WARNING (it was a bare `AttributeError`). Still dormant: no tool calls the receipt save, and the `memory_save*` tool names are owned by the follow-up unit U4.42-FU-TOOLS.
 - U4.42 review fix (round 3): `LocalBackend` recognises a receipt before its shape (a receipt that also is a string or a mapping is still read as a receipt), and a save return that cannot be inspected is refused on the first failure with one WARNING instead of being inspected again and read as a legacy id. A failure core already logged adds no second WARNING. Still dormant.
+- U4.42 land (tests only): the save-then-read census now holds dispositions for the 13 units in `tests/test_local_save_call.py` (8 `save_only` against a real Lite core with a recording manager, 5 `mocked_seam`), drops `OWNED_BY_U4_42`, names the `save_call` getattr probe in `DYNAMIC`, re-points three `NON_MEMORY` lines in `test_local_save_return_compat.py`, and adds `ingest_structured_with_receipt`, `save`, `save_call` and `submit_save` to the pinned save vocabulary.
 
 ## 1.5.21 — 2026-10-08
 
