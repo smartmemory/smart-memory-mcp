@@ -296,6 +296,38 @@
    "receiver": "indexer"
   },
   {
+   "call": "add_node",
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "seed",
+   "line": 165,
+   "memory_like": true,
+   "receiver": "mem._graph.backend"
+  },
+  {
+   "call": "add_node",
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "seed_capped",
+   "line": 390,
+   "memory_like": true,
+   "receiver": "mem._graph.backend"
+  },
+  {
+   "call": "add_node",
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "seed_many",
+   "line": 697,
+   "memory_like": true,
+   "receiver": "mem._graph.backend"
+  },
+  {
+   "call": "add_node",
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_r11d_paging_is_not_frozen_today",
+   "line": 839,
+   "memory_like": true,
+   "receiver": "world.mem._graph.backend"
+  },
+  {
    "call": "add",
    "file": "tests/test_hosted_tools_allowlist.py",
    "function": "test_no_hosted_tool_takes_a_filesystem_path",
@@ -1537,6 +1569,447 @@
    ],
    "via": [
     "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "seed",
+   "key": "tests/test_gated_output_local_clients.py::seed",
+   "line": 162,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     165,
+     "add_node"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "seed_capped",
+   "key": "tests/test_gated_output_local_clients.py::seed_capped",
+   "line": 385,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     390,
+     "add_node"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "seed_many",
+   "key": "tests/test_gated_output_local_clients.py::seed_many",
+   "line": 695,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     697,
+     "add_node"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_every_consumer_of_a_partial_empty_search_says_partial_not_none",
+   "key": "tests/test_gated_output_local_clients.py::test_every_consumer_of_a_partial_empty_search_says_partial_not_none",
+   "line": 331,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_evolution_status_with_a_partial_empty_search_is_not_idle",
+   "key": "tests/test_gated_output_local_clients.py::test_evolution_status_with_a_partial_empty_search_is_not_idle",
+   "line": 347,
+   "reads": [
+    [
+     352,
+     "evolution_status"
+    ],
+    [
+     354,
+     "evolution_status"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_f1_all_visible_control_says_nothing_partial",
+   "key": "tests/test_gated_output_local_clients.py::test_f1_all_visible_control_says_nothing_partial",
+   "line": 253,
+   "reads": [
+    [
+     258,
+     "memory_search"
+    ],
+    [
+     263,
+     "memory_search"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_f1_off_arm_is_the_legacy_answer",
+   "key": "tests/test_gated_output_local_clients.py::test_f1_off_arm_is_the_legacy_answer",
+   "line": 270,
+   "reads": [
+    [
+     275,
+     "memory_search"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_f1_partial_empty_search_is_not_no_results_found",
+   "key": "tests/test_gated_output_local_clients.py::test_f1_partial_empty_search_is_not_no_results_found",
+   "line": 239,
+   "reads": [
+    [
+     244,
+     "memory_search"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_list_memories_never_pages_past_its_window_and_carries_the_stop",
+   "key": "tests/test_gated_output_local_clients.py::test_list_memories_never_pages_past_its_window_and_carries_the_stop",
+   "line": 776,
+   "reads": [
+    [
+     787,
+     "list_memories"
+    ],
+    [
+     799,
+     "memory_list"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed_many"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_local_backend_search_carries_core_partial_names_and_off_is_a_plain_list",
+   "key": "tests/test_gated_output_local_clients.py::test_local_backend_search_carries_core_partial_names_and_off_is_a_plain_list",
+   "line": 1196,
+   "reads": [
+    [
+     1202,
+     "search"
+    ],
+    [
+     1206,
+     "search"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_memory_list_logs_a_refusal_once_and_off_is_the_base",
+   "key": "tests/test_gated_output_local_clients.py::test_memory_list_logs_a_refusal_once_and_off_is_the_base",
+   "line": 661,
+   "reads": [
+    [
+     677,
+     "memory_list"
+    ],
+    [
+     680,
+     "memory_list"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_memory_list_off_arm_is_the_legacy_page",
+   "key": "tests/test_gated_output_local_clients.py::test_memory_list_off_arm_is_the_legacy_page",
+   "line": 511,
+   "reads": [
+    [
+     515,
+     "memory_list"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_memory_list_pages_under_both_coverage_states",
+   "key": "tests/test_gated_output_local_clients.py::test_memory_list_pages_under_both_coverage_states",
+   "line": 479,
+   "reads": [
+    [
+     489,
+     "memory_list"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_memory_recall_cap_stop_reaches_the_model_as_partial",
+   "key": "tests/test_gated_output_local_clients.py::test_memory_recall_cap_stop_reaches_the_model_as_partial",
+   "line": 427,
+   "reads": [
+    [
+     434,
+     "memory_recall"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed_capped"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_memory_recall_with_a_partial_empty_answer_is_not_an_empty_string",
+   "key": "tests/test_gated_output_local_clients.py::test_memory_recall_with_a_partial_empty_answer_is_not_an_empty_string",
+   "line": 360,
+   "reads": [
+    [
+     367,
+     "memory_recall"
+    ],
+    [
+     371,
+     "memory_recall"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_memory_recall_with_a_partial_nonempty_answer_carries_the_note",
+   "key": "tests/test_gated_output_local_clients.py::test_memory_recall_with_a_partial_nonempty_answer_carries_the_note",
+   "line": 375,
+   "reads": [
+    [
+     378,
+     "memory_recall"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_r11a_a_hidden_row_and_an_absent_row_give_the_same_page",
+   "key": "tests/test_gated_output_local_clients.py::test_r11a_a_hidden_row_and_an_absent_row_give_the_same_page",
+   "line": 819,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_r11d_paging_is_not_frozen_today",
+   "key": "tests/test_gated_output_local_clients.py::test_r11d_paging_is_not_frozen_today",
+   "line": 833,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     839,
+     "add_node"
+    ]
+   ],
+   "via": [
+    "direct",
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_transcript_search_never_shows_a_hit_past_its_fetch",
+   "key": "tests/test_gated_output_local_clients.py::test_transcript_search_never_shows_a_hit_past_its_fetch",
+   "line": 926,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_transcript_search_partial_empty_and_off_arm",
+   "key": "tests/test_gated_output_local_clients.py::test_transcript_search_partial_empty_and_off_arm",
+   "line": 886,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test (U5.21: partial-answer reads of the gated local clients)"
+   },
+   "file": "tests/test_gated_output_local_clients.py",
+   "function": "test_transcript_search_unreadable_coverage_is_a_typed_refusal_not_complete",
+   "key": "tests/test_gated_output_local_clients.py::test_transcript_search_unreadable_coverage_is_a_typed_refusal_not_complete",
+   "line": 1158,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_gated_output_local_clients.py::seed"
    ]
   },
   {

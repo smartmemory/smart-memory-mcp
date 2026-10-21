@@ -748,6 +748,37 @@ for _key in (
 ):
     DISPOSITIONS["tests/" + _key] = D("mocked_seam", MOCKED)
 
+for _key in (
+    "test_gated_output_local_clients.py::seed",
+    "test_gated_output_local_clients.py::seed_capped",
+    "test_gated_output_local_clients.py::seed_many",
+    "test_gated_output_local_clients.py::test_every_consumer_of_a_partial_empty_search_says_partial_not_none",
+    "test_gated_output_local_clients.py::test_evolution_status_with_a_partial_empty_search_is_not_idle",
+    "test_gated_output_local_clients.py::test_f1_all_visible_control_says_nothing_partial",
+    "test_gated_output_local_clients.py::test_f1_off_arm_is_the_legacy_answer",
+    "test_gated_output_local_clients.py::test_f1_partial_empty_search_is_not_no_results_found",
+    "test_gated_output_local_clients.py::test_list_memories_never_pages_past_its_window_and_carries_the_stop",
+    "test_gated_output_local_clients.py::test_local_backend_search_carries_core_partial_names_and_off_is_a_plain_list",
+    "test_gated_output_local_clients.py::test_memory_list_logs_a_refusal_once_and_off_is_the_base",
+    "test_gated_output_local_clients.py::test_memory_list_off_arm_is_the_legacy_page",
+    "test_gated_output_local_clients.py::test_memory_list_pages_under_both_coverage_states",
+    "test_gated_output_local_clients.py::test_memory_recall_cap_stop_reaches_the_model_as_partial",
+    "test_gated_output_local_clients.py::test_memory_recall_with_a_partial_empty_answer_is_not_an_empty_string",
+    "test_gated_output_local_clients.py::test_memory_recall_with_a_partial_nonempty_answer_carries_the_note",
+    "test_gated_output_local_clients.py::test_r11a_a_hidden_row_and_an_absent_row_give_the_same_page",
+    "test_gated_output_local_clients.py::test_r11d_paging_is_not_frozen_today",
+    "test_gated_output_local_clients.py::test_transcript_search_never_shows_a_hit_past_its_fetch",
+    "test_gated_output_local_clients.py::test_transcript_search_partial_empty_and_off_arm",
+    "test_gated_output_local_clients.py::test_transcript_search_unreadable_coverage_is_a_typed_refusal_not_complete",
+):
+    DISPOSITIONS["tests/" + _key] = D(
+        "local_inline",
+        LOCAL
+        + "; "
+        + SEEDED
+        + " (U5.21: partial-answer reads of the gated local clients)",
+    )
+
 SAVE_ONLY = "the save goes to a real Lite core under a recording save manager (no worker) and the test asserts the request or the typed refusal, it never reads the item back"
 for _key, _class in (
     (
