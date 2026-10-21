@@ -129,6 +129,35 @@ class MemoryBackend(Protocol):
         """Ingest structured data with an optional schema."""
         ...
 
+    # --- Receipt-reading saves (U4.42-FU-TOOLS): the save tools' one seam ---------
+    # Each returns a ``SaveReturn``: the legacy value on the legacy arm, the receipt plus its summary on the receipt arm.
+
+    def add_with_receipt(
+        self, content: str, memory_type: str = "semantic", **kwargs: Any
+    ) -> Any:
+        """``add`` that keeps the save receipt."""
+        ...
+
+    def ingest_with_receipt(
+        self, content: str, memory_type: str = "semantic", **kwargs: Any
+    ) -> Any:
+        """``ingest`` that keeps the save receipt."""
+        ...
+
+    def ingest_structured_with_receipt(
+        self, data: dict[str, Any], schema: str | None = None, **kwargs: Any
+    ) -> Any:
+        """``ingest_structured`` that keeps the save receipt."""
+        ...
+
+    def ingest_document_with_receipt(self, source: str, **kwargs: Any) -> Any:
+        """``ingest_document`` that keeps the save receipt."""
+        ...
+
+    def ingest_conversation_with_receipt(self, turns: list, **kwargs: Any) -> Any:
+        """``ingest_conversation_sync`` that keeps the save receipt."""
+        ...
+
     def ingest_document(
         self,
         source: str,

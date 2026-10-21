@@ -17,7 +17,9 @@ from typing import Any
 import httpx
 
 from .interface import BackendCapabilities
+from .local import SaveReturn
 from .models import CodeIngestResult, MemoryResult, normalize_item, normalize_items
+from .receipts import read_wire_save
 
 logger = logging.getLogger(__name__)
 
@@ -463,7 +465,13 @@ class RemoteBackend(BackendCapabilities):
     def add(
         self, content: str, memory_type: str = "semantic", **kwargs: Any
     ) -> str | dict:
-        """POST /memory/add. Return an item_id or a terminal held receipt."""
+        """POST /memory/add. Return an item_id or a terminal held receipt (a save receipt reads as its subject id)."""
+        return self.add_with_receipt(content, memory_type, **kwargs).value
+
+    def add_with_receipt(
+        self, content: str, memory_type: str = "semantic", **kwargs: Any
+    ) -> SaveReturn:
+        """POST /memory/add and keep the save receipt when the service returns one (see ``SaveReturn``)."""
         body: dict[str, Any] = {"content": content, "memory_type": memory_type}
         if metadata := kwargs.get("metadata"):
             body["metadata"] = (
@@ -473,8 +481,10 @@ class RemoteBackend(BackendCapabilities):
             body["use_pipeline"] = True
         result = self._request("POST", "/memory/add", json=body) or {}
         if isinstance(result, dict):
+            if "schema_version" in result:
+                return read_wire_save(result, op="add")
             if result.get("status") == "held":
-                return result
+                return SaveReturn(result)
             # Surface the failure. The `str(result)` fallback below used to swallow
             # an {"error": ...} response and hand back "{'error': 'API error 500:
             # ...'}" AS THE NEW ITEM ID — reporting a failed write as a successful
@@ -484,8 +494,8 @@ class RemoteBackend(BackendCapabilities):
             item_id = result.get("item_id") or result.get("id")
             if not item_id:
                 raise RuntimeError(f"/memory/add returned no item id: {result!r}")
-            return str(item_id)
-        return str(result)
+            return SaveReturn(str(item_id))
+        return SaveReturn(str(result))
 
     def get(self, item_id: str, **kwargs: Any) -> MemoryResult | None:
         """GET /memory/{item_id}. Returns None only when the item genuinely is absent."""
@@ -733,7 +743,20 @@ class RemoteBackend(BackendCapabilities):
     def ingest(
         self, content: str, memory_type: str = "semantic", **kwargs: Any
     ) -> dict[str, Any] | str:
-        """POST /memory/ingest (full pipeline)."""
+        """POST /memory/ingest (full pipeline). Returns the service response, unread."""
+        return self._ingest_raw(content, memory_type, **kwargs)
+
+    def ingest_with_receipt(
+        self, content: str, memory_type: str = "semantic", **kwargs: Any
+    ) -> SaveReturn:
+        """POST /memory/ingest and keep the save receipt when the service returns one (see ``SaveReturn``)."""
+        return read_wire_save(
+            self._ingest_raw(content, memory_type, **kwargs), op="ingest"
+        )
+
+    def _ingest_raw(
+        self, content: str, memory_type: str, **kwargs: Any
+    ) -> dict[str, Any]:
         context: dict[str, Any] = {"memory_type": memory_type}
         # Merge metadata as top-level context keys (service merges context into pipeline state)
         metadata = kwargs.get("metadata")
@@ -919,11 +942,31 @@ class RemoteBackend(BackendCapabilities):
             raise RuntimeError(err)
         return result
 
+    def ingest_document_with_receipt(self, source: str, **kwargs: Any) -> SaveReturn:
+        """POST /memory/ingest/document and keep the save receipt when the service returns one."""
+        return read_wire_save(
+            self.ingest_document(source, **kwargs), op="ingest_document"
+        )
+
+    def ingest_conversation_with_receipt(
+        self, turns: list, **kwargs: Any
+    ) -> SaveReturn:
+        """POST /memory/ingest/conversation and keep the save receipt when the service returns one."""
+        return read_wire_save(
+            self.ingest_conversation_sync(turns, **kwargs), op="ingest_conversation"
+        )
+
     # --- MemoryBackend protocol: NOT available in remote mode --------------------
 
     def ingest_structured(
         self, items: list[dict[str, Any]], **kwargs: Any
     ) -> dict[str, Any]:
+        """Not available in remote mode."""
+        raise NotImplementedError("Not available in remote mode. Use local backend.")
+
+    def ingest_structured_with_receipt(
+        self, data: dict[str, Any], schema: str | None = None, **kwargs: Any
+    ) -> SaveReturn:
         """Not available in remote mode."""
         raise NotImplementedError("Not available in remote mode. Use local backend.")
 

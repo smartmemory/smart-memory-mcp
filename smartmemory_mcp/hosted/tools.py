@@ -20,7 +20,7 @@ from mcp.types import ToolAnnotations
 # --- the allowlist ---------------------------------------------------------------
 
 MEMORY_TOOLS = (
-    "memory_ingest",
+    "memory_save",
     "memory_search",
     "memory_recall",
     "read_around",
@@ -28,13 +28,11 @@ MEMORY_TOOLS = (
     "memory_explain",
     "memory_recall_pack",
     "memory_policy_bundle",
-    "memory_add",
     "memory_update",
     "memory_delete",
     "memory_list",
     "memory_stats",
-    "memory_distill",
-    "memory_ingest_conversation",
+    "memory_save_conversation",
     "memory_search_by_metadata",
     "memory_feedback",
 )
@@ -197,6 +195,7 @@ def register_module_tools(mcp: Any) -> dict[str, CapturedTool]:
         code_tools,
         memory_tools,
         reasoning_tools,
+        save_tools,
     )
 
     registrar = _CapturingRegistrar(mcp)
@@ -204,6 +203,8 @@ def register_module_tools(mcp: Any) -> dict[str, CapturedTool]:
     memory_tools.register_free(registrar)
     memory_tools.register_pro(registrar)
     memory_tools.register_feedback(registrar)
+    save_tools.register_free(registrar)
+    save_tools.register_pro(registrar)
     code_tools.register(registrar)
     from . import effects
 

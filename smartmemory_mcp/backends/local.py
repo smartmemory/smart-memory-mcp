@@ -433,7 +433,19 @@ class LocalBackend(BackendCapabilities):
     # -- Ingest & Recall --
 
     def ingest(self, content: str, memory_type: str = "episodic", **kwargs: Any) -> str:
-        """Full pipeline ingestion."""
+        """Full pipeline ingestion. Returns what core returns, unread (dev tools still call this)."""
+        return self._ingest_raw(content, memory_type, **kwargs)
+
+    def ingest_with_receipt(
+        self, content: str, memory_type: str = "episodic", **kwargs: Any
+    ) -> SaveReturn:
+        """Full pipeline ingestion that keeps the save receipt when core returns one (see ``SaveReturn``)."""
+        return _resolve_save_return(
+            self._ingest_raw(content, memory_type, **kwargs), op="ingest"
+        )
+
+    def _ingest_raw(self, content: str, memory_type: str, **kwargs: Any) -> Any:
+        """The full-pipeline save, unread: an id string or result dict today, a receipt after the producer flip."""
         from smartmemory_app.storage import ingest
 
         # storage.ingest() uses 'properties' not 'metadata'
@@ -475,6 +487,20 @@ class LocalBackend(BackendCapabilities):
             chunk_size=chunk_size,
             chunk_strategy=chunk_strategy,
             reference=reference,
+        )
+
+    def ingest_document_with_receipt(self, source: str, **kwargs: Any) -> SaveReturn:
+        """Document ingestion that keeps the save receipt when core returns one (a legacy result dict is the legacy arm)."""
+        return _resolve_save_return(
+            self.ingest_document(source, **kwargs), op="ingest_document"
+        )
+
+    def ingest_conversation_with_receipt(
+        self, turns: list, **kwargs: Any
+    ) -> SaveReturn:
+        """Conversation ingestion that keeps the save receipt when core returns one (a legacy result dict is the legacy arm)."""
+        return _resolve_save_return(
+            self.ingest_conversation_sync(turns, **kwargs), op="ingest_conversation"
         )
 
     def ingest_structured(
