@@ -140,9 +140,15 @@ def _register_tools():
     logger.info("SmartMemory MCP starting with tier: %s", tier.name)
 
     # FREE tier (always registered)
-    from smartmemory_mcp.tools import memory_tools, portability_tools, lifecycle_tools
+    from smartmemory_mcp.tools import (
+        memory_tools,
+        portability_tools,
+        lifecycle_tools,
+        save_tools,
+    )
 
     memory_tools.register_free(mcp)
+    save_tools.register_free(mcp)
     memory_tools.register_feedback(mcp)
     portability_tools.register(mcp)
     lifecycle_tools.register(mcp)
@@ -158,7 +164,7 @@ def _register_tools():
             anchor_tools,
             plan_tools,
             agent_tools,
-            structured_tools,
+            save_tools,
             pattern_tools,
             peer_tools,
             transcript_tools,
@@ -170,7 +176,7 @@ def _register_tools():
         anchor_tools.register(mcp)
         plan_tools.register(mcp)
         agent_tools.register(mcp)
-        structured_tools.register(mcp)
+        save_tools.register_pro(mcp)
         pattern_tools.register(mcp)
         peer_tools.register(mcp)
         transcript_tools.register(mcp)

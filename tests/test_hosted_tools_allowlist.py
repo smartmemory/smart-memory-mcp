@@ -70,8 +70,7 @@ EXCLUDED_TOOLS = (
     "decision_create",  # requires _mem
     "peer_chat",  # parked remotely
     "transcript_search",  # local transcript store
-    "memory_ingest_document",  # not audited for hosted
-    "memory_ingest_structured",  # not audited for hosted
+    "memory_save_document",  # path-taking, not audited for hosted
 )
 
 FORBIDDEN_RESULT_FRAGMENTS = (
@@ -266,7 +265,7 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
     advertised = {tool.name for tool in asyncio.run(mcp.list_tools())}
 
     assert advertised == set(HOSTED_TOOLS)
-    assert len(advertised) == 27
+    assert len(advertised) == 25
 
 
 @pytest.mark.parametrize("name", EXCLUDED_TOOLS)
@@ -319,9 +318,9 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ("memory_search", {"query": "runbook", "as_of_date": "2026-01-01"}),
     ("memory_recall", {"query": "runbook"}),
     ("memory_recall", {"query": "runbook", "top_k": 3}),
-    ("memory_ingest", {"content": "a note"}),
-    ("memory_ingest", {"content": "a note", "memory_type": "episodic"}),
-    ("memory_add", {"content": "a note"}),
+    ("memory_save", {"content": "a note"}),
+    ("memory_save", {"content": "a note", "memory_type": "episodic"}),
+    ("memory_save", {"content": "a note", "memory_type": "pending"}),
     ("memory_get", {"item_id": "mem-1"}),
     ("memory_explain", {"memory_id": "mem-1"}),
     ("memory_update", {"item_id": "mem-1", "content": "changed"}),
@@ -329,13 +328,27 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ("memory_list", {}),
     ("memory_list", {"limit": 3}),
     ("memory_stats", {}),
-    ("memory_distill", {"user_turn": "hi", "assistant_turn": "hello"}),
     (
-        "memory_distill",
-        {"user_turn": "hi", "assistant_turn": "hello", "session_id": "s-1"},
+        "memory_save_conversation",
+        {
+            "turns": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+            ]
+        },
     ),
     (
-        "memory_ingest_conversation",
+        "memory_save_conversation",
+        {
+            "turns": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+            ],
+            "conversation_id": "s-1",
+        },
+    ),
+    (
+        "memory_save_conversation",
         {"turns": [{"role": "user", "content": "hi"}]},
     ),
     ("memory_search_by_metadata", {"metadata_key": "source", "metadata_value": "test"}),

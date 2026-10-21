@@ -1,0 +1,2581 @@
+{
+ "blind_spots": {
+  "dynamic_dispatch": {
+   "tests/test_backend_conformance.py:37": "an audit that checks the backend class defines each called method, it never calls it",
+   "tests/test_local_save_call.py:200": "getattr over the four core save doorways to wrap each one and count calls, the refusal test asserts none ran"
+  },
+  "non_python": [
+   "tests/fixtures/code_upload_before_move.json",
+   "tests/fixtures/memget_a3_8f64f81f.json"
+  ],
+  "wait_users": {
+   "tests/test_hosted_identity.py": "an asyncio Event barrier between concurrent tool calls, no save",
+   "tests/test_local_backend_lazy.py": "a thread Event handshake around lazy storage init, no save",
+   "tests/test_windows_credential_store.py": "a lock-contention sleep around key storage, no memory save"
+  },
+  "waits": [
+   "tests/test_hosted_identity.py:256",
+   "tests/test_local_backend_lazy.py:131",
+   "tests/test_local_backend_lazy.py:139",
+   "tests/test_windows_credential_store.py:311"
+  ]
+ },
+ "core_wait_imports": [],
+ "deferred": [
+  {
+   "class": "deferred_real_worker",
+   "key": "tests/integration/test_hold_receipt.py::test_conversation_formatter_preserves_real_chunk_hold",
+   "owner": "C49-RW-HARNESS-1",
+   "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
+   "where": [
+    "tests/integration/test_hold_receipt.py:158"
+   ]
+  },
+  {
+   "class": "deferred_real_worker",
+   "key": "tests/integration/test_hold_receipt.py::test_remote_add_returns_real_hold",
+   "owner": "C49-RW-HARNESS-1",
+   "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
+   "where": [
+    "tests/integration/test_hold_receipt.py:52",
+    "tests/integration/test_hold_receipt.py:140"
+   ]
+  },
+  {
+   "class": "deferred_real_worker",
+   "key": "tests/integration/test_hold_receipt.py::test_tools_report_real_hold_without_success",
+   "owner": "C49-RW-HARNESS-1",
+   "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
+   "where": [
+    "tests/integration/test_hold_receipt.py:52",
+    "tests/integration/test_hold_receipt.py:133"
+   ]
+  }
+ ],
+ "engine_sha": "26e1cd5c1b3af891",
+ "ignore": [
+  "tests/public_wait.py",
+  "tests/test_public_wait.py",
+  "tests/test_save_then_read_census.py"
+ ],
+ "non_memory_sites": [
+  "tests/test_code_index_repo_key.py:67",
+  "tests/test_hosted_tools_allowlist.py:299",
+  "tests/test_local_save_return_compat.py:953",
+  "tests/test_local_save_return_compat.py:970",
+  "tests/test_local_save_return_compat.py:1125",
+  "tests/test_portability.py:55",
+  "tests/test_code_index_ingest_fixes.py:183"
+ ],
+ "owned_by_u4_42": {},
+ "parse_errors": [],
+ "repo": "smart-memory-mcp",
+ "sites": [
+  {
+   "call": "ingest",
+   "file": "tests/integration/test_hold_receipt.py",
+   "function": "held",
+   "line": 52,
+   "memory_like": true,
+   "receiver": "core"
+  },
+  {
+   "call": "memory_save",
+   "file": "tests/integration/test_hold_receipt.py",
+   "function": "test_tools_report_real_hold_without_success",
+   "line": 58,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "dev_save_session",
+   "file": "tests/integration/test_hold_receipt.py",
+   "function": "test_tools_report_real_hold_without_success",
+   "line": 59,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "memory_save",
+   "file": "tests/integration/test_hold_receipt.py",
+   "function": "test_tools_report_real_hold_without_success",
+   "line": 60,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "memory_save_conversation",
+   "file": "tests/integration/test_hold_receipt.py",
+   "function": "test_tools_report_real_hold_without_success",
+   "line": 62,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "dev_record_decision",
+   "file": "tests/integration/test_hold_receipt.py",
+   "function": "test_tools_report_real_hold_without_success",
+   "line": 71,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "dev_record_pattern",
+   "file": "tests/integration/test_hold_receipt.py",
+   "function": "test_tools_report_real_hold_without_success",
+   "line": 79,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "dev_log_friction",
+   "file": "tests/integration/test_hold_receipt.py",
+   "function": "test_tools_report_real_hold_without_success",
+   "line": 81,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "add",
+   "file": "tests/integration/test_hold_receipt.py",
+   "function": "test_remote_add_returns_real_hold",
+   "line": 141,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "memory_save_conversation",
+   "file": "tests/integration/test_hold_receipt.py",
+   "function": "test_conversation_formatter_preserves_real_chunk_hold",
+   "line": 183,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "memory_save_document",
+   "file": "tests/test_backend_conformance.py",
+   "function": "test_advertised_document_tool_executes.<locals>.check",
+   "line": 110,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "publish_bundle",
+   "file": "tests/test_code_collection_retention.py",
+   "function": "test_collection_failure_retains_generation.<locals>.upload",
+   "line": 43,
+   "memory_like": true,
+   "receiver": "CodeIndexer(memory._graph, payload['repo"
+  },
+  {
+   "call": "ingest_code",
+   "file": "tests/test_code_collection_retention.py",
+   "function": "test_collection_failure_retains_generation",
+   "line": 85,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "publish",
+   "file": "tests/test_code_disambiguation.py",
+   "function": "dependency_tool",
+   "line": 60,
+   "memory_like": true,
+   "receiver": "CodeIndexer(graph, REPO, '.')"
+  },
+  {
+   "call": "add_node",
+   "file": "tests/test_code_effects.py",
+   "function": "test_hosted_effects_scoped_http_sqlite",
+   "line": 96,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "code_index",
+   "file": "tests/test_code_index_ingest_fixes.py",
+   "function": "_tool",
+   "line": 26,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "publish_bundle",
+   "file": "tests/test_code_index_ingest_fixes.py",
+   "function": "test_remote_parser_dependency_arms.<locals>.upload",
+   "line": 81,
+   "memory_like": true,
+   "receiver": "CodeIndexer(graph, payload['repo'], str("
+  },
+  {
+   "call": "ingest_code",
+   "file": "tests/test_code_index_ingest_fixes.py",
+   "function": "test_default_code_index_skips_a_failing_js_file_instead_of_refusing",
+   "line": 183,
+   "memory_like": false,
+   "receiver": "local"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_code_index_repo_key.py",
+   "function": "_names_by_repo",
+   "line": 67,
+   "memory_like": false,
+   "receiver": "by_repo.setdefault(node['repo'], set())"
+  },
+  {
+   "call": "publish_bundle",
+   "file": "tests/test_dead_code_options.py",
+   "function": "test_local_lite_store_honours_all_four_combinations",
+   "line": 90,
+   "memory_like": true,
+   "receiver": "indexer"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_dist_lite_quiet_local_origin.py",
+   "function": "test_add_sets_mcp_memory_add_origin",
+   "line": 33,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_dist_lite_quiet_local_origin.py",
+   "function": "test_add_respects_caller_supplied_origin",
+   "line": 46,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest",
+   "file": "tests/test_dist_lite_quiet_local_origin.py",
+   "function": "test_ingest_passes_mcp_memory_ingest_origin",
+   "line": 68,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest",
+   "file": "tests/test_dist_lite_quiet_local_origin.py",
+   "function": "test_ingest_respects_caller_supplied_origin",
+   "line": 88,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest_code",
+   "file": "tests/test_edge_tool_output.py",
+   "function": "test_edge_tool_exposes_persisted_evidence",
+   "line": 26,
+   "memory_like": true,
+   "receiver": "memory"
+  },
+  {
+   "call": "ingest_structured",
+   "file": "tests/test_edge_tool_output.py",
+   "function": "test_legacy_code_warns_about_missing_source_evidence",
+   "line": 77,
+   "memory_like": true,
+   "receiver": "memory"
+  },
+  {
+   "call": "publish_bundle",
+   "file": "tests/test_framework_semantics.py",
+   "function": "test_local_dead_code_preserves_components_hooks_and_jsx",
+   "line": 40,
+   "memory_like": true,
+   "receiver": "indexer"
+  },
+  {
+   "call": "publish_bundle",
+   "file": "tests/test_framework_semantics.py",
+   "function": "test_local_falkordb_dead_code_selects_indexed_memory_type",
+   "line": 141,
+   "memory_like": true,
+   "receiver": "indexer"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_hosted_tools_allowlist.py",
+   "function": "test_no_hosted_tool_takes_a_filesystem_path",
+   "line": 299,
+   "memory_like": false,
+   "receiver": "observed_selectors"
+  },
+  {
+   "call": "ingest_document",
+   "file": "tests/test_ingest_document.py",
+   "function": "test_local_ingest_document",
+   "line": 35,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_document",
+   "file": "tests/test_ingest_document.py",
+   "function": "test_remote_ingest_document",
+   "line": 84,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_document",
+   "file": "tests/test_ingest_document.py",
+   "function": "test_remote_ingest_document_surfaces_service_error",
+   "line": 119,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_document",
+   "file": "tests/test_ingest_document.py",
+   "function": "test_local_ingest_document_propagates_loader_error",
+   "line": 127,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "memory_save_document",
+   "file": "tests/test_local_backend_lazy.py",
+   "function": "test_pro_tools_list_does_not_call_storage_get_memory",
+   "line": 85,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_save_mints_a_key_in_cores_alphabet_and_names_the_mcp_local_producer",
+   "line": 117,
+   "memory_like": true,
+   "receiver": "local(memory)"
+  },
+  {
+   "call": "save_call",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request",
+   "line": 132,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "submit_save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request",
+   "line": 137,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "submit_save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request",
+   "line": 138,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "save_call",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_two_calls_without_a_key_mint_two_keys",
+   "line": 149,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_save_passes_each_field_to_core_unjudged",
+   "line": 169,
+   "memory_like": true,
+   "receiver": "local(memory)"
+  },
+  {
+   "call": "save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_data_saves_do_not_extract_by_default",
+   "line": 177,
+   "memory_like": true,
+   "receiver": "local(memory)"
+  },
+  {
+   "call": "save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_an_unreachable_wait_is_cores_typed_refusal_and_the_manager_is_untouched",
+   "line": 190,
+   "memory_like": true,
+   "receiver": "local(memory)"
+  },
+  {
+   "call": "save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_the_facade_off_is_cores_refusal_and_never_add_or_ingest",
+   "line": 208,
+   "memory_like": true,
+   "receiver": "local(memory)"
+  },
+  {
+   "call": "save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_rejected_admission_is_save_rejected_with_one_warning",
+   "line": 228,
+   "memory_like": true,
+   "receiver": "local(memory)"
+  },
+  {
+   "call": "ingest_structured",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_legacy_returns_are_unchanged_and_import_nothing",
+   "line": 353,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest_structured_with_receipt",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_legacy_returns_are_unchanged_and_import_nothing",
+   "line": 354,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest_structured",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_receipt_the_wrapper_cannot_read_is_one_marked_refusal_and_never_an_id",
+   "line": 371,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest_structured",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it",
+   "line": 383,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest_structured_with_receipt",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it",
+   "line": 384,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest_structured",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it",
+   "line": 386,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest_structured",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_never_turns_a_rejection_into_an_id",
+   "line": 402,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "memory_save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_the_structured_save_tool_reads_both_arms",
+   "line": 449,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_legacy_returns_are_unchanged_and_import_nothing",
+   "line": 111,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add_with_receipt",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_legacy_returns_are_unchanged_and_import_nothing",
+   "line": 112,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_receipt_reads_as_id_and_keeps_the_receipt",
+   "line": 136,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add_with_receipt",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_receipt_reads_as_id_and_keeps_the_receipt",
+   "line": 137,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_receipt_reads_as_id_and_keeps_the_receipt",
+   "line": 143,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_rejected_receipt_is_typed_logged_and_never_an_id",
+   "line": 150,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add_with_receipt",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_rejected_receipt_is_typed_logged_and_never_an_id",
+   "line": 150,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_unreadable_receipt_is_refused",
+   "line": 163,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_receipt_without_the_wrapper_reader_is_one_warning_and_a_typed_error",
+   "line": 181,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "ingest_callers",
+   "line": 953,
+   "memory_like": false,
+   "receiver": "aliases.setdefault(bound, set())"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "ingest_callers",
+   "line": 970,
+   "memory_like": false,
+   "receiver": "aliases.setdefault(a.asname or a.name, s"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "ingest_callers",
+   "line": 1125,
+   "memory_like": false,
+   "receiver": "found"
+  },
+  {
+   "call": "memory_save",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_memory_ingest_tool_reads_the_id_on_both_arms",
+   "line": 1416,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "ingest",
+   "file": "tests/test_origin_context.py",
+   "function": "test_remote_context",
+   "line": 15,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_conversation_sync",
+   "file": "tests/test_origin_context.py",
+   "function": "test_remote_context",
+   "line": 20,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_origin_context.py",
+   "function": "test_local_context",
+   "line": 30,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest",
+   "file": "tests/test_origin_context.py",
+   "function": "test_local_context",
+   "line": 35,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_portability.py",
+   "function": "_write_remote_archive",
+   "line": 55,
+   "memory_like": false,
+   "receiver": "archive"
+  },
+  {
+   "call": "import_okf",
+   "file": "tests/test_portability.py",
+   "function": "test_local_backend_import_constructs_direct_corpus_importer",
+   "line": 172,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "import_okf",
+   "file": "tests/test_portability.py",
+   "function": "test_remote_import_passes_active_workspace_to_headers_and_request",
+   "line": 216,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "add_node",
+   "file": "tests/test_read_status_normalizers.py",
+   "function": "local_backend",
+   "line": 251,
+   "memory_like": true,
+   "receiver": "mem._graph.backend"
+  },
+  {
+   "call": "ingest_code",
+   "file": "tests/test_remote_code_ingest.py",
+   "function": "test_remote_ingest_code_preserves_upload_payload",
+   "line": 49,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_remote_error_surfacing.py",
+   "function": "test_add_raises_instead_of_returning_the_error_dict_as_an_item_id",
+   "line": 241,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_remote_error_surfacing.py",
+   "function": "test_add_raises_when_no_item_id_comes_back",
+   "line": 249,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_remote_error_surfacing.py",
+   "function": "test_add_returns_id_from_the_id_key",
+   "line": 259,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "memory_save",
+   "file": "tests/test_save_tools.py",
+   "function": "test_typed_wire_refusals_propagate_to_the_agent",
+   "line": 667,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "memory_save",
+   "file": "tests/test_save_tools.py",
+   "function": "test_save_does_not_mutate_the_callers_metadata",
+   "line": 868,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "add_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1172,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_conversation_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1172,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_document_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1172,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_structured_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1172,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1172,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "add_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1177,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_conversation_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1177,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_document_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1177,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_structured_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1177,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1177,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "memory_save",
+   "file": "tests/test_save_tools.py",
+   "function": "test_g166_the_three_save_tools_are_listed",
+   "line": 1266,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "memory_save_conversation",
+   "file": "tests/test_save_tools.py",
+   "function": "test_g166_the_three_save_tools_are_listed",
+   "line": 1266,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "memory_save_document",
+   "file": "tests/test_save_tools.py",
+   "function": "test_g166_the_three_save_tools_are_listed",
+   "line": 1266,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "memory_save_document",
+   "file": "tests/test_tier_registration.py",
+   "function": "TestToolRegistration.test_pro_tier_tool_count",
+   "line": 151,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "memory_save_document",
+   "file": "tests/test_tier_registration.py",
+   "function": "TestToolRegistration.test_pro_plus_tier_tool_count",
+   "line": 168,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  }
+ ],
+ "units": [
+  {
+   "disposition": {
+    "class": "explicit_sync_kept",
+    "why": "ingest(sync=True) per call at the helper: an explicit pin the C1 guard allows (G47), kept as is"
+   },
+   "file": "tests/integration/test_hold_receipt.py",
+   "function": "held",
+   "key": "tests/integration/test_hold_receipt.py::held",
+   "line": 51,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     52,
+     "ingest"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "deferred_real_worker",
+    "owner": "C49-RW-HARNESS-1",
+    "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
+    "where": [
+     "tests/integration/test_hold_receipt.py:158"
+    ],
+    "why": "real core ingest_conversation chunk hold, formatted by the tool; no worker ran, so a queued chunk hold is unproven"
+   },
+   "file": "tests/integration/test_hold_receipt.py",
+   "function": "test_conversation_formatter_preserves_real_chunk_hold",
+   "key": "tests/integration/test_hold_receipt.py::test_conversation_formatter_preserves_real_chunk_hold",
+   "line": 149,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     183,
+     "memory_save_conversation"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "deferred_real_worker",
+    "owner": "C49-RW-HARNESS-1",
+    "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
+    "where": [
+     "tests/integration/test_hold_receipt.py:52",
+     "tests/integration/test_hold_receipt.py:140"
+    ],
+    "why": "RemoteBackend.add is fed a real core hold under the explicit sync=True at held(); the worker-path hold is untested"
+   },
+   "file": "tests/integration/test_hold_receipt.py",
+   "function": "test_remote_add_returns_real_hold",
+   "key": "tests/integration/test_hold_receipt.py::test_remote_add_returns_real_hold",
+   "line": 136,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     141,
+     "add"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "deferred_real_worker",
+    "owner": "C49-RW-HARNESS-1",
+    "prepared": "await_public(observe_get(backend, item_id), wait=\"terminal\", deadline_s=30.0)",
+    "where": [
+     "tests/integration/test_hold_receipt.py:52",
+     "tests/integration/test_hold_receipt.py:133"
+    ],
+    "why": "the seven save tools report a real hold only under the explicit sync=True at held(); the worker-path twin (queued then held) has no test, and the empty-store read at :121 cannot tell held from queued"
+   },
+   "file": "tests/integration/test_hold_receipt.py",
+   "function": "test_tools_report_real_hold_without_success",
+   "key": "tests/integration/test_hold_receipt.py::test_tools_report_real_hold_without_success",
+   "line": 86,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     58,
+     "memory_save"
+    ],
+    [
+     59,
+     "dev_save_session"
+    ],
+    [
+     60,
+     "memory_save"
+    ],
+    [
+     62,
+     "memory_save_conversation"
+    ],
+    [
+     71,
+     "dev_record_decision"
+    ],
+    [
+     79,
+     "dev_record_pattern"
+    ],
+    [
+     81,
+     "dev_log_friction"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_backend_conformance.py",
+   "function": "test_advertised_document_tool_executes",
+   "key": "tests/test_backend_conformance.py::test_advertised_document_tool_executes",
+   "line": 91,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_backend_conformance.py::test_advertised_document_tool_executes.<locals>.check"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_backend_conformance.py",
+   "function": "test_advertised_document_tool_executes.<locals>.check",
+   "key": "tests/test_backend_conformance.py::test_advertised_document_tool_executes.<locals>.check",
+   "line": 107,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     110,
+     "memory_save_document"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_backend_conformance.py",
+   "function": "test_capabilities_filter_listings_and_reject_unsupported_calls",
+   "key": "tests/test_backend_conformance.py::test_capabilities_filter_listings_and_reject_unsupported_calls",
+   "line": 58,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_backend_conformance.py::test_advertised_document_tool_executes.<locals>.check"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; the hosted arm is an in-process ASGI route that publishes inline into the same store: no worker; the persisted nodes and edges are read back in the test"
+   },
+   "file": "tests/test_code_collection_retention.py",
+   "function": "test_collection_failure_retains_generation",
+   "key": "tests/test_code_collection_retention.py::test_collection_failure_retains_generation",
+   "line": 22,
+   "reads": [
+    [
+     108,
+     "search_nodes_by_type_or_tag"
+    ],
+    [
+     109,
+     "get_all_edges"
+    ],
+    [
+     121,
+     "read_bytes"
+    ],
+    [
+     140,
+     "search_nodes_by_type_or_tag"
+    ],
+    [
+     141,
+     "get_all_edges"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [
+    [
+     85,
+     "ingest_code"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the hosted arm is an in-process ASGI route that publishes inline into the same store: no worker"
+   },
+   "file": "tests/test_code_collection_retention.py",
+   "function": "test_collection_failure_retains_generation.<locals>.upload",
+   "key": "tests/test_code_collection_retention.py::test_collection_failure_retains_generation.<locals>.upload",
+   "line": 41,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     43,
+     "publish_bundle"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "fixture: CodeIndexer.publish into SQLite or FalkorDB inline (a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test); the FalkorDB arm needs a track port and was classified by source, not executed"
+   },
+   "file": "tests/test_code_disambiguation.py",
+   "function": "dependency_tool",
+   "key": "tests/test_code_disambiguation.py::dependency_tool",
+   "line": 31,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     60,
+     "publish"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "consumes dependency_tool: the entities were published inline, so the tool read sees them with no wait"
+   },
+   "file": "tests/test_code_disambiguation.py",
+   "function": "test_exact_name_shadowed_by_a_longer_suffix_resolves_through_the_tool",
+   "key": "tests/test_code_disambiguation.py::test_exact_name_shadowed_by_a_longer_suffix_resolves_through_the_tool",
+   "line": 141,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "fixture tests/test_code_disambiguation.py::dependency_tool"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "add_node into a real SQLite backend (a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test); the hosted read is an in-process route over that store"
+   },
+   "file": "tests/test_code_effects.py",
+   "function": "test_hosted_effects_scoped_http_sqlite",
+   "key": "tests/test_code_effects.py::test_hosted_effects_scoped_http_sqlite",
+   "line": 60,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     96,
+     "add_node"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "not_a_save",
+    "why": "returns the registered code_index tool function; saves nothing itself"
+   },
+   "file": "tests/test_code_index_ingest_fixes.py",
+   "function": "_tool",
+   "key": "tests/test_code_index_ingest_fixes.py::_tool",
+   "line": 23,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     26,
+     "code_index"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin"
+   },
+   "file": "tests/test_code_index_ingest_fixes.py",
+   "function": "test_default_code_index_skips_a_failing_js_file_instead_of_refusing",
+   "key": "tests/test_code_index_ingest_fixes.py::test_default_code_index_skips_a_failing_js_file_instead_of_refusing",
+   "line": 166,
+   "reads": [
+    [
+     194,
+     "search_nodes_by_type_or_tag"
+    ],
+    [
+     196,
+     "get"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_code_index_ingest_fixes.py::_tool"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin"
+   },
+   "file": "tests/test_code_index_ingest_fixes.py",
+   "function": "test_local_partial_parse_retains_prior_sqlite_generation",
+   "key": "tests/test_code_index_ingest_fixes.py::test_local_partial_parse_retains_prior_sqlite_generation",
+   "line": 29,
+   "reads": [
+    [
+     49,
+     "search_nodes_by_type_or_tag"
+    ],
+    [
+     50,
+     "get_all_edges"
+    ],
+    [
+     56,
+     "search_nodes_by_type_or_tag"
+    ],
+    [
+     57,
+     "get_all_edges"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_code_index_ingest_fixes.py::_tool"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the hosted arm is an in-process ASGI route that publishes inline into SQLite: no worker"
+   },
+   "file": "tests/test_code_index_ingest_fixes.py",
+   "function": "test_remote_parser_dependency_arms",
+   "key": "tests/test_code_index_ingest_fixes.py::test_remote_parser_dependency_arms",
+   "line": 66,
+   "reads": [
+    [
+     137,
+     "search_nodes_by_type_or_tag"
+    ],
+    [
+     140,
+     "get_all_edges"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "helper tests/test_code_index_ingest_fixes.py::_tool"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the hosted arm is an in-process ASGI route that publishes inline into the same store: no worker"
+   },
+   "file": "tests/test_code_index_ingest_fixes.py",
+   "function": "test_remote_parser_dependency_arms.<locals>.upload",
+   "key": "tests/test_code_index_ingest_fixes.py::test_remote_parser_dependency_arms.<locals>.upload",
+   "line": 79,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     81,
+     "publish_bundle"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; the retained index is read back in the same test"
+   },
+   "file": "tests/test_code_index_repo_key.py",
+   "function": "test_explicit_name_owned_by_another_checkout_is_refused",
+   "key": "tests/test_code_index_repo_key.py::test_explicit_name_owned_by_another_checkout_is_refused",
+   "line": 90,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_code_index_ingest_fixes.py::_tool"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the upload route is a recording stub: the payload is captured, nothing is stored and no worker exists"
+   },
+   "file": "tests/test_code_index_repo_key.py",
+   "function": "test_remote_backend_upload_carries_provenance_and_identity",
+   "key": "tests/test_code_index_repo_key.py::test_remote_backend_upload_carries_provenance_and_identity",
+   "line": 127,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_code_index_ingest_fixes.py::_tool"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; the stored repo keys are read back in the same test"
+   },
+   "file": "tests/test_code_index_repo_key.py",
+   "function": "test_same_basename_checkouts_get_distinct_remote_keys",
+   "key": "tests/test_code_index_repo_key.py::test_same_basename_checkouts_get_distinct_remote_keys",
+   "line": 71,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_code_index_ingest_fixes.py::_tool"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; the empty store is asserted after the refusal"
+   },
+   "file": "tests/test_code_index_repo_key.py",
+   "function": "test_without_core_repo_name_is_required",
+   "key": "tests/test_code_index_repo_key.py::test_without_core_repo_name_is_required",
+   "line": 107,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/test_code_index_ingest_fixes.py::_tool"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; publish_bundle then the public dead-code read"
+   },
+   "file": "tests/test_dead_code_options.py",
+   "function": "test_local_lite_store_honours_all_four_combinations",
+   "key": "tests/test_dead_code_options.py::test_local_lite_store_honours_all_four_combinations",
+   "line": 74,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     90,
+     "publish_bundle"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_dist_lite_quiet_local_origin.py",
+   "function": "test_add_respects_caller_supplied_origin",
+   "key": "tests/test_dist_lite_quiet_local_origin.py::test_add_respects_caller_supplied_origin",
+   "line": 42,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     46,
+     "add"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_dist_lite_quiet_local_origin.py",
+   "function": "test_add_sets_mcp_memory_add_origin",
+   "key": "tests/test_dist_lite_quiet_local_origin.py::test_add_sets_mcp_memory_add_origin",
+   "line": 29,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     33,
+     "add"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_dist_lite_quiet_local_origin.py",
+   "function": "test_ingest_passes_mcp_memory_ingest_origin",
+   "key": "tests/test_dist_lite_quiet_local_origin.py::test_ingest_passes_mcp_memory_ingest_origin",
+   "line": 54,
+   "reads": [
+    [
+     71,
+     "get"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [
+    [
+     68,
+     "ingest"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_dist_lite_quiet_local_origin.py",
+   "function": "test_ingest_respects_caller_supplied_origin",
+   "key": "tests/test_dist_lite_quiet_local_origin.py::test_ingest_respects_caller_supplied_origin",
+   "line": 76,
+   "reads": [
+    [
+     89,
+     "get"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [
+    [
+     88,
+     "ingest"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; the hosted arm is an in-process ASGI route over the same store"
+   },
+   "file": "tests/test_edge_tool_output.py",
+   "function": "test_edge_tool_exposes_persisted_evidence",
+   "key": "tests/test_edge_tool_output.py::test_edge_tool_exposes_persisted_evidence",
+   "line": 22,
+   "reads": [
+    [
+     54,
+     "code_search"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [
+    [
+     26,
+     "ingest_code"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin"
+   },
+   "file": "tests/test_edge_tool_output.py",
+   "function": "test_legacy_code_warns_about_missing_source_evidence",
+   "key": "tests/test_edge_tool_output.py::test_legacy_code_warns_about_missing_source_evidence",
+   "line": 75,
+   "reads": [
+    [
+     96,
+     "code_search"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [
+    [
+     77,
+     "ingest_structured"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; publish_bundle then the public dead-code read"
+   },
+   "file": "tests/test_framework_semantics.py",
+   "function": "test_local_dead_code_preserves_components_hooks_and_jsx",
+   "key": "tests/test_framework_semantics.py::test_local_dead_code_preserves_components_hooks_and_jsx",
+   "line": 14,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     40,
+     "publish_bundle"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "CodeIndexer.publish_bundle inline into a real FalkorDB-backed memory (no worker) then the public dead-code read; needs a track port, classified by source, not executed"
+   },
+   "file": "tests/test_framework_semantics.py",
+   "function": "test_local_falkordb_dead_code_selects_indexed_memory_type",
+   "key": "tests/test_framework_semantics.py::test_local_falkordb_dead_code_selects_indexed_memory_type",
+   "line": 57,
+   "reads": [
+    [
+     71,
+     "get"
+    ],
+    [
+     72,
+     "get"
+    ],
+    [
+     119,
+     "get"
+    ],
+    [
+     142,
+     "search_nodes"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [
+    [
+     141,
+     "publish_bundle"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_ingest_document.py",
+   "function": "test_local_ingest_document",
+   "key": "tests/test_ingest_document.py::test_local_ingest_document",
+   "line": 28,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     35,
+     "ingest_document"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_ingest_document.py",
+   "function": "test_local_ingest_document_propagates_loader_error",
+   "key": "tests/test_ingest_document.py::test_local_ingest_document_propagates_loader_error",
+   "line": 122,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     127,
+     "ingest_document"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_ingest_document.py",
+   "function": "test_remote_ingest_document",
+   "key": "tests/test_ingest_document.py::test_remote_ingest_document",
+   "line": 66,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     84,
+     "ingest_document"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_ingest_document.py",
+   "function": "test_remote_ingest_document_surfaces_service_error",
+   "key": "tests/test_ingest_document.py::test_remote_ingest_document_surfaces_service_error",
+   "line": 106,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     119,
+     "ingest_document"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "not_a_save",
+    "why": "tools/list only; storage is a stub that fails if touched, and no tool is called"
+   },
+   "file": "tests/test_local_backend_lazy.py",
+   "function": "test_pro_tools_list_does_not_call_storage_get_memory",
+   "key": "tests/test_local_backend_lazy.py::test_pro_tools_list_does_not_call_storage_get_memory",
+   "line": 55,
+   "reads": [
+    [
+     85,
+     "code_read_transcript"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [
+    [
+     85,
+     "memory_save_document"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_receipt_the_wrapper_cannot_read_is_one_marked_refusal_and_never_an_id",
+   "key": "tests/test_local_save_call.py::test_a_receipt_the_wrapper_cannot_read_is_one_marked_refusal_and_never_an_id",
+   "line": 362,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     371,
+     "ingest_structured"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "the save goes to a real Lite core under a recording save manager (no worker) and the test asserts the request or the typed refusal, it never reads the item back"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_rejected_admission_is_save_rejected_with_one_warning",
+   "key": "tests/test_local_save_call.py::test_a_rejected_admission_is_save_rejected_with_one_warning",
+   "line": 216,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     228,
+     "save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "the save goes to a real Lite core under a recording save manager (no worker) and the test asserts the request or the typed refusal, it never reads the item back"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request",
+   "key": "tests/test_local_save_call.py::test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request",
+   "line": 128,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     132,
+     "save_call"
+    ],
+    [
+     137,
+     "submit_save"
+    ],
+    [
+     138,
+     "submit_save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "the save goes to a real Lite core under a recording save manager (no worker) and the test asserts the request or the typed refusal, it never reads the item back"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_an_unreachable_wait_is_cores_typed_refusal_and_the_manager_is_untouched",
+   "key": "tests/test_local_save_call.py::test_an_unreachable_wait_is_cores_typed_refusal_and_the_manager_is_untouched",
+   "line": 186,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     190,
+     "save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "the save goes to a real Lite core under a recording save manager (no worker) and the test asserts the request or the typed refusal, it never reads the item back"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_data_saves_do_not_extract_by_default",
+   "key": "tests/test_local_save_call.py::test_data_saves_do_not_extract_by_default",
+   "line": 176,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     177,
+     "save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_legacy_returns_are_unchanged_and_import_nothing",
+   "key": "tests/test_local_save_call.py::test_ingest_structured_legacy_returns_are_unchanged_and_import_nothing",
+   "line": 340,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     353,
+     "ingest_structured"
+    ],
+    [
+     354,
+     "ingest_structured_with_receipt"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_never_turns_a_rejection_into_an_id",
+   "key": "tests/test_local_save_call.py::test_ingest_structured_never_turns_a_rejection_into_an_id",
+   "line": 389,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     402,
+     "ingest_structured"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it",
+   "key": "tests/test_local_save_call.py::test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it",
+   "line": 379,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     383,
+     "ingest_structured"
+    ],
+    [
+     384,
+     "ingest_structured_with_receipt"
+    ],
+    [
+     386,
+     "ingest_structured"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "the save goes to a real Lite core under a recording save manager (no worker) and the test asserts the request or the typed refusal, it never reads the item back"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_save_mints_a_key_in_cores_alphabet_and_names_the_mcp_local_producer",
+   "key": "tests/test_local_save_call.py::test_save_mints_a_key_in_cores_alphabet_and_names_the_mcp_local_producer",
+   "line": 114,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     117,
+     "save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "the save goes to a real Lite core under a recording save manager (no worker) and the test asserts the request or the typed refusal, it never reads the item back"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_save_passes_each_field_to_core_unjudged",
+   "key": "tests/test_local_save_call.py::test_save_passes_each_field_to_core_unjudged",
+   "line": 165,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     169,
+     "save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "the save goes to a real Lite core under a recording save manager (no worker) and the test asserts the request or the typed refusal, it never reads the item back"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_the_facade_off_is_cores_refusal_and_never_add_or_ingest",
+   "key": "tests/test_local_save_call.py::test_the_facade_off_is_cores_refusal_and_never_add_or_ingest",
+   "line": 197,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     208,
+     "save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_the_structured_save_tool_reads_both_arms",
+   "key": "tests/test_local_save_call.py::test_the_structured_save_tool_reads_both_arms",
+   "line": 443,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     449,
+     "memory_save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "the save goes to a real Lite core under a recording save manager (no worker) and the test asserts the request or the typed refusal, it never reads the item back"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_two_calls_without_a_key_mint_two_keys",
+   "key": "tests/test_local_save_call.py::test_two_calls_without_a_key_mint_two_keys",
+   "line": 147,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     149,
+     "save_call"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_legacy_returns_are_unchanged_and_import_nothing",
+   "key": "tests/test_local_save_return_compat.py::test_legacy_returns_are_unchanged_and_import_nothing",
+   "line": 101,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     111,
+     "add"
+    ],
+    [
+     112,
+     "add_with_receipt"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_memory_ingest_tool_reads_the_id_on_both_arms",
+   "key": "tests/test_local_save_return_compat.py::test_memory_ingest_tool_reads_the_id_on_both_arms",
+   "line": 1399,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     1416,
+     "memory_save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_receipt_reads_as_id_and_keeps_the_receipt",
+   "key": "tests/test_local_save_return_compat.py::test_receipt_reads_as_id_and_keeps_the_receipt",
+   "line": 132,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     136,
+     "add"
+    ],
+    [
+     137,
+     "add_with_receipt"
+    ],
+    [
+     143,
+     "add"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_receipt_without_the_wrapper_reader_is_one_warning_and_a_typed_error",
+   "key": "tests/test_local_save_return_compat.py::test_receipt_without_the_wrapper_reader_is_one_warning_and_a_typed_error",
+   "line": 172,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     181,
+     "add"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_rejected_receipt_is_typed_logged_and_never_an_id",
+   "key": "tests/test_local_save_return_compat.py::test_rejected_receipt_is_typed_logged_and_never_an_id",
+   "line": 146,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     150,
+     "add"
+    ],
+    [
+     150,
+     "add_with_receipt"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_unreadable_receipt_is_refused",
+   "key": "tests/test_local_save_return_compat.py::test_unreadable_receipt_is_refused",
+   "line": 160,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     163,
+     "add"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_origin_context.py",
+   "function": "test_local_context",
+   "key": "tests/test_origin_context.py::test_local_context",
+   "line": 26,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     30,
+     "add"
+    ],
+    [
+     35,
+     "ingest"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_origin_context.py",
+   "function": "test_remote_context",
+   "key": "tests/test_origin_context.py::test_remote_context",
+   "line": 11,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     15,
+     "ingest"
+    ],
+    [
+     20,
+     "ingest_conversation_sync"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_portability.py",
+   "function": "test_local_backend_import_constructs_direct_corpus_importer",
+   "key": "tests/test_portability.py::test_local_backend_import_constructs_direct_corpus_importer",
+   "line": 163,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     172,
+     "import_okf"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_portability.py",
+   "function": "test_remote_import_passes_active_workspace_to_headers_and_request",
+   "key": "tests/test_portability.py::test_remote_import_passes_active_workspace_to_headers_and_request",
+   "line": 193,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     216,
+     "import_okf"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "fixture: an in-memory pending store admits one row and add_node seeds one legacy row in a real Lite graph (a real store seeded by the test itself (no worker, no admission pipeline), read back in the same test)"
+   },
+   "file": "tests/test_read_status_normalizers.py",
+   "function": "local_backend",
+   "key": "tests/test_read_status_normalizers.py::local_backend",
+   "line": 236,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     251,
+     "add_node"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "consumes local_backend: the admitted and seeded rows are read through get, search and list with no wait"
+   },
+   "file": "tests/test_read_status_normalizers.py",
+   "function": "test_local_backend_get_search_list_follow_the_gate",
+   "key": "tests/test_read_status_normalizers.py::test_local_backend_get_search_list_follow_the_gate",
+   "line": 269,
+   "reads": [
+    [
+     273,
+     "search"
+    ],
+    [
+     278,
+     "list_memories"
+    ],
+    [
+     280,
+     "get"
+    ],
+    [
+     281,
+     "get"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "fixture tests/test_read_status_normalizers.py::local_backend"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "consumes local_backend: the unreadable carrier is read back through the real local backend with no wait"
+   },
+   "file": "tests/test_read_status_normalizers.py",
+   "function": "test_local_backend_refuses_an_unreadable_core_carrier",
+   "key": "tests/test_read_status_normalizers.py::test_local_backend_refuses_an_unreadable_core_carrier",
+   "line": 319,
+   "reads": [
+    [
+     324,
+     "get_memory"
+    ],
+    [
+     325,
+     "get"
+    ],
+    [
+     325,
+     "search"
+    ]
+   ],
+   "reads_after_save": true,
+   "saves": [],
+   "via": [
+    "fixture tests/test_read_status_normalizers.py::local_backend"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_remote_code_ingest.py",
+   "function": "test_remote_ingest_code_preserves_upload_payload",
+   "key": "tests/test_remote_code_ingest.py::test_remote_ingest_code_preserves_upload_payload",
+   "line": 13,
+   "reads": [
+    [
+     26,
+     "read_text"
+    ]
+   ],
+   "reads_after_save": false,
+   "saves": [
+    [
+     49,
+     "ingest_code"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_remote_error_surfacing.py",
+   "function": "test_add_raises_instead_of_returning_the_error_dict_as_an_item_id",
+   "key": "tests/test_remote_error_surfacing.py::test_add_raises_instead_of_returning_the_error_dict_as_an_item_id",
+   "line": 231,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     241,
+     "add"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_remote_error_surfacing.py",
+   "function": "test_add_raises_when_no_item_id_comes_back",
+   "key": "tests/test_remote_error_surfacing.py::test_add_raises_when_no_item_id_comes_back",
+   "line": 244,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     249,
+     "add"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_remote_error_surfacing.py",
+   "function": "test_add_returns_id_from_the_id_key",
+   "key": "tests/test_remote_error_surfacing.py::test_add_returns_id_from_the_id_key",
+   "line": 252,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     259,
+     "add"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_save_tools.py",
+   "function": "test_g166_the_three_save_tools_are_listed",
+   "key": "tests/test_save_tools.py::test_g166_the_three_save_tools_are_listed",
+   "line": 1264,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     1266,
+     "memory_save"
+    ],
+    [
+     1266,
+     "memory_save_conversation"
+    ],
+    [
+     1266,
+     "memory_save_document"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "key": "tests/test_save_tools.py::test_remote_backend_reads_the_wire",
+   "line": 1160,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     1172,
+     "add_with_receipt"
+    ],
+    [
+     1172,
+     "ingest_conversation_with_receipt"
+    ],
+    [
+     1172,
+     "ingest_document_with_receipt"
+    ],
+    [
+     1172,
+     "ingest_structured_with_receipt"
+    ],
+    [
+     1172,
+     "ingest_with_receipt"
+    ],
+    [
+     1177,
+     "add_with_receipt"
+    ],
+    [
+     1177,
+     "ingest_conversation_with_receipt"
+    ],
+    [
+     1177,
+     "ingest_document_with_receipt"
+    ],
+    [
+     1177,
+     "ingest_structured_with_receipt"
+    ],
+    [
+     1177,
+     "ingest_with_receipt"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_save_tools.py",
+   "function": "test_save_does_not_mutate_the_callers_metadata",
+   "key": "tests/test_save_tools.py::test_save_does_not_mutate_the_callers_metadata",
+   "line": 864,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     868,
+     "memory_save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_save_tools.py",
+   "function": "test_typed_wire_refusals_propagate_to_the_agent",
+   "key": "tests/test_save_tools.py::test_typed_wire_refusals_propagate_to_the_agent",
+   "line": 659,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     667,
+     "memory_save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "not_a_save",
+    "why": "counts registered tool names; saves nothing"
+   },
+   "file": "tests/test_tier_registration.py",
+   "function": "TestToolRegistration.test_pro_plus_tier_tool_count",
+   "key": "tests/test_tier_registration.py::TestToolRegistration.test_pro_plus_tier_tool_count",
+   "line": 156,
+   "reads": [
+    [
+     165,
+     "code_read_transcript"
+    ]
+   ],
+   "reads_after_save": false,
+   "saves": [
+    [
+     168,
+     "memory_save_document"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "not_a_save",
+    "why": "counts registered tool names; saves nothing"
+   },
+   "file": "tests/test_tier_registration.py",
+   "function": "TestToolRegistration.test_pro_tier_tool_count",
+   "key": "tests/test_tier_registration.py::TestToolRegistration.test_pro_tier_tool_count",
+   "line": 141,
+   "reads": [
+    [
+     148,
+     "code_read_transcript"
+    ]
+   ],
+   "reads_after_save": false,
+   "saves": [
+    [
+     151,
+     "memory_save_document"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  }
+ ],
+ "vocab": {
+  "read_tools": [
+   "code_read_transcript",
+   "code_search",
+   "dev_load_context",
+   "dev_query_decisions",
+   "evolution_status",
+   "insight_ground",
+   "insight_health",
+   "insight_maintenance_status",
+   "memory_explain",
+   "memory_get",
+   "memory_list",
+   "memory_recall",
+   "memory_recall_pack",
+   "memory_search",
+   "memory_search_by_metadata",
+   "memory_stats",
+   "read_around",
+   "reasoning_query_traces"
+  ],
+  "save_methods": [
+   "add",
+   "add_with_receipt",
+   "import_okf",
+   "ingest",
+   "ingest_code",
+   "ingest_conversation_sync",
+   "ingest_conversation_with_receipt",
+   "ingest_document",
+   "ingest_document_with_receipt",
+   "ingest_structured",
+   "ingest_structured_with_receipt",
+   "ingest_with_receipt",
+   "save",
+   "save_call",
+   "submit_save"
+  ],
+  "save_tools": [
+   "code_index",
+   "dev_log_friction",
+   "dev_record_decision",
+   "dev_record_pattern",
+   "dev_save_session",
+   "memory_save",
+   "memory_save_conversation",
+   "memory_save_document"
+  ]
+ }
+}

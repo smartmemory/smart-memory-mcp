@@ -55,12 +55,17 @@ def held(core, content="Test knowledge.", **kwargs):
 @pytest.mark.parametrize(
     "name,kwargs",
     [
-        ("memory_ingest", {"content": "Test knowledge."}),
+        ("memory_save", {"content": "Test knowledge."}),
         ("dev_save_session", {"summary": "Test knowledge."}),
-        ("memory_add", {"content": "Test knowledge."}),
+        ("memory_save", {"content": "Test knowledge.", "memory_type": "pending"}),
         (
-            "memory_distill",
-            {"user_turn": "Test knowledge.", "assistant_turn": "Understood."},
+            "memory_save_conversation",
+            {
+                "turns": [
+                    {"role": "user", "content": "Test knowledge."},
+                    {"role": "assistant", "content": "Understood."},
+                ]
+            },
         ),
         (
             "dev_record_decision",
@@ -80,7 +85,8 @@ def held(core, content="Test knowledge.", **kwargs):
 )
 def test_tools_report_real_hold_without_success(core, monkeypatch, name, kwargs):
     from types import SimpleNamespace
-    from smartmemory_mcp.tools import memory_tools, dev_tools
+    from smartmemory_mcp.backends.local import SaveReturn
+    from smartmemory_mcp.tools import save_tools, dev_tools
 
     class MCP:
         def __init__(self):
@@ -96,14 +102,20 @@ def test_tools_report_real_hold_without_success(core, monkeypatch, name, kwargs)
     backend = SimpleNamespace(
         ingest=lambda content, **kw: held(core, content),
         add=lambda content, **kw: held(core, content),
+        ingest_with_receipt=lambda content, **kw: SaveReturn(held(core, content)),
+        add_with_receipt=lambda content, **kw: SaveReturn(held(core, content)),
     )
-    for module in (memory_tools, dev_tools):
+    for module in (save_tools, dev_tools):
         monkeypatch.setattr(module, "get_backend", lambda: backend)
     mcp = MCP()
-    memory_tools.register_free(mcp)
-    memory_tools.register_pro(mcp)
+    save_tools.register_free(mcp)
+    save_tools.register_pro(mcp)
     dev_tools.register(mcp)
-    text = mcp.tools[name](**kwargs)
+    result = mcp.tools[name](**kwargs)
+    # the save tools return a ToolResult (text + structured status), the dev tools a string
+    text = result if isinstance(result, str) else result.content[0].text
+    if not isinstance(result, str):
+        assert result.structured_content["status"] == "held"
     assert "held" in text.lower() and "low_confidence" in text
     assert not any(
         word in text.lower()
@@ -139,7 +151,8 @@ def test_conversation_formatter_preserves_real_chunk_hold(core, monkeypatch):
     from dataclasses import asdict
     from types import SimpleNamespace
     from smartmemory.conversation.bulk_ingest import ingest_conversation
-    from smartmemory_mcp.tools import memory_tools
+    from smartmemory_mcp.backends.local import SaveReturn
+    from smartmemory_mcp.tools import save_tools
 
     response = asyncio.run(
         ingest_conversation(
@@ -161,11 +174,15 @@ def test_conversation_formatter_preserves_real_chunk_hold(core, monkeypatch):
             return register
 
     for value in [response, asdict(response)]:
-        backend = SimpleNamespace(ingest_conversation_sync=lambda **kw: value)
-        monkeypatch.setattr(memory_tools, "get_backend", lambda: backend)
+        backend = SimpleNamespace(
+            ingest_conversation_with_receipt=lambda *a, **kw: SaveReturn(value)
+        )
+        monkeypatch.setattr(save_tools, "get_backend", lambda: backend)
         mcp = MCP()
-        memory_tools.register_pro(mcp)
-        text = mcp.tools["memory_ingest_conversation"](turns=[])
+        save_tools.register_pro(mcp)
+        result = mcp.tools["memory_save_conversation"](turns=[])
+        assert result.structured_content["status"] == "held"
+        text = result.content[0].text
         assert (
             "0 chunks ingested, 0 failed" in text and "1 held: low_confidence" in text
         )

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
+import sys
 import threading
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NoReturn
 
 from .interface import LOCAL_BROKEN_TOOLS, BackendCapabilities
 from .models import MemoryResult, normalize_item, normalize_items
@@ -48,18 +51,84 @@ class SaveReturn:
     summary: str | None = None
 
 
-def _is_receipt_arm(value: Any) -> bool:
-    """Whether a core save return is a save receipt (object or wire dict) rather than a legacy shape.
+#: Core's receipt classes, by name (mirrors ``smartmemory_app.save_return.RECEIPT_CLASS_NAMES``).
+_RECEIPT_CLASS_NAMES = frozenset({"Receipt", "ReceiptRefusal"})
 
-    A core without receipts cannot return one, so an ImportError reads as the legacy arm.
+
+def _is_receipt_arm(value: Any) -> bool:
+    """Whether a core save return is a save receipt (object or wire mapping) rather than a legacy shape.
+
+    The wrapper's one rule (``smartmemory_app.save_return.is_receipt_arm``, U4.42 r2 N1, r3 F1), mirrored here so the
+    legacy arm needs neither the wrapper nor core. Receipt identity is decided FIRST: an object whose class or a base is
+    named ``Receipt``/``ReceiptRefusal``, or that is an instance of an already-imported ``smartmemory.save.receipt``'s
+    classes, is a receipt even when it also is a ``str`` or a ``Mapping``. Only then: ``str`` and a mapping without
+    ``schema_version`` are legacy, a mapping with it is a wire receipt. Never an exact class-name equality and never
+    ``dict`` only. The wrapper's resolver then refuses any receipt-arm object that is not this core's receipt.
     """
-    if isinstance(value, dict):
-        return "schema_version" in value
-    try:
-        from smartmemory.save.receipt import Receipt, ReceiptRefusal
-    except ImportError:
+    if any(
+        getattr(cls, "__name__", None) in _RECEIPT_CLASS_NAMES
+        for cls in type(value).__mro__
+    ):
+        return True
+    try:  # read, never imported: a core that never loaded its receipts cannot have returned one
+        module = sys.modules["smartmemory.save.receipt"]
+    except KeyError:
+        module = None
+    classes = tuple(
+        cls
+        for cls in (
+            getattr(module, "Receipt", None),
+            getattr(module, "ReceiptRefusal", None),
+        )
+        if isinstance(cls, type)
+    )
+    if classes and isinstance(value, classes):
+        return True
+    if isinstance(value, str):
         return False
-    return isinstance(value, (Receipt, ReceiptRefusal))
+    if isinstance(value, Mapping):
+        return "schema_version" in value
+    return False
+
+
+def _logged(exc: SaveReturnUnavailable) -> SaveReturnUnavailable:
+    """Mark ``exc`` logged with core's own ``mark_refusal_logged``; a core without it has no boundary that reads one."""
+    try:
+        from smartmemory.refusal_logging import mark_refusal_logged
+    except ImportError:
+        return exc
+    return mark_refusal_logged(exc)
+
+
+def _receipt_unreadable(
+    op: str, cause: BaseException | None = None
+) -> SaveReturnUnavailable:
+    """Log the one WARNING for a receipt this install cannot read and return the marked refusal to raise.
+
+    A ``cause`` that already carries core's logged mark (an inspection failure its writer logged) adds no second WARNING.
+    """
+    if not _cause_logged(cause):
+        log.warning(
+            "Save return %s refused: smartmemory_app.save_return is not installed, so a save receipt "
+            "cannot be read; no id returned",
+            op,
+        )
+    return _logged(
+        SaveReturnUnavailable(
+            "Local save returned a receipt but the installed smartmemory wrapper cannot read it"
+        )
+    )
+
+
+def _cause_logged(cause: BaseException | None) -> bool:
+    """Whether ``cause`` already carries core's logged mark (``refusal_logged``): its writer logged the one WARNING."""
+    if cause is None:
+        return False
+    try:
+        from smartmemory.refusal_logging import refusal_logged
+    except ImportError:  # a core without the mark has no marked cause
+        return False
+    return refusal_logged(cause)
 
 
 def _resolve_save_return(value: Any, *, op: str) -> SaveReturn:
@@ -67,21 +136,25 @@ def _resolve_save_return(value: Any, *, op: str) -> SaveReturn:
 
     Every legacy return (id string, held or queued dict, anything else) is the legacy arm: returned as it is,
     the wrapper not imported. A receipt is read by the wrapper's one resolver, which raises a typed, logged
-    refusal instead of turning a rejected or unreadable receipt into an id.
+    refusal instead of turning a rejected or unreadable receipt into an id. A return that cannot be inspected is
+    refused on that first failure (U4.42 r3 F3): it is never inspected again and never read as legacy.
     """
-    if not _is_receipt_arm(value):
+    try:
+        receipt_arm = _is_receipt_arm(value)
+    except Exception as exc:  # a return that cannot even be told apart is never an id: the wrapper's one refusal ends it
+        try:
+            from smartmemory_app.save_return import refuse_uninspectable
+        except ImportError:
+            raise _receipt_unreadable(
+                op, exc
+            ) from exc  # the inspection failure stays the cause
+        refuse_uninspectable(op, exc)
+    if not receipt_arm:
         return SaveReturn(value)
     try:
         from smartmemory_app.save_return import resolve_save_return
     except ImportError as exc:
-        log.warning(
-            "Save return %s refused: smartmemory_app.save_return is not installed, so a save receipt "
-            "cannot be read; no id returned",
-            op,
-        )
-        raise SaveReturnUnavailable(
-            "Local save returned a receipt but the installed smartmemory wrapper cannot read it"
-        ) from exc
+        raise _receipt_unreadable(op) from exc
     resolved = resolve_save_return(value, op=op)
     return SaveReturn(resolved.value, resolved.receipt, resolved.summary)
 
@@ -360,7 +433,19 @@ class LocalBackend(BackendCapabilities):
     # -- Ingest & Recall --
 
     def ingest(self, content: str, memory_type: str = "episodic", **kwargs: Any) -> str:
-        """Full pipeline ingestion."""
+        """Full pipeline ingestion. Returns what core returns, unread (dev tools still call this)."""
+        return self._ingest_raw(content, memory_type, **kwargs)
+
+    def ingest_with_receipt(
+        self, content: str, memory_type: str = "episodic", **kwargs: Any
+    ) -> SaveReturn:
+        """Full pipeline ingestion that keeps the save receipt when core returns one (see ``SaveReturn``)."""
+        return _resolve_save_return(
+            self._ingest_raw(content, memory_type, **kwargs), op="ingest"
+        )
+
+    def _ingest_raw(self, content: str, memory_type: str, **kwargs: Any) -> Any:
+        """The full-pipeline save, unread: an id string or result dict today, a receipt after the producer flip."""
         from smartmemory_app.storage import ingest
 
         # storage.ingest() uses 'properties' not 'metadata'
@@ -404,6 +489,20 @@ class LocalBackend(BackendCapabilities):
             reference=reference,
         )
 
+    def ingest_document_with_receipt(self, source: str, **kwargs: Any) -> SaveReturn:
+        """Document ingestion that keeps the save receipt when core returns one (a legacy result dict is the legacy arm)."""
+        return _resolve_save_return(
+            self.ingest_document(source, **kwargs), op="ingest_document"
+        )
+
+    def ingest_conversation_with_receipt(
+        self, turns: list, **kwargs: Any
+    ) -> SaveReturn:
+        """Conversation ingestion that keeps the save receipt when core returns one (a legacy result dict is the legacy arm)."""
+        return _resolve_save_return(
+            self.ingest_conversation_sync(turns, **kwargs), op="ingest_conversation"
+        )
+
     def ingest_structured(
         self,
         data: dict,
@@ -411,9 +510,113 @@ class LocalBackend(BackendCapabilities):
         schema_name: str | None = None,
         **kwargs: Any,
     ) -> str:
-        """Structured data ingestion."""
-        name = schema or schema_name
-        return self._mem.ingest_structured(data, schema=name)
+        """Structured data ingestion. Returns the id, whichever arm core returns (a receipt reads as its subject id)."""
+        return _save_value(
+            self._ingest_structured_raw(data, schema, schema_name),
+            op="ingest_structured",
+        )
+
+    def ingest_structured_with_receipt(
+        self,
+        data: dict,
+        schema: str | None = None,
+        schema_name: str | None = None,
+        **kwargs: Any,
+    ) -> SaveReturn:
+        """Structured data ingestion that keeps the save receipt when core returns one (see ``SaveReturn``)."""
+        return _resolve_save_return(
+            self._ingest_structured_raw(data, schema, schema_name),
+            op="ingest_structured",
+        )
+
+    def _ingest_structured_raw(
+        self, data: dict, schema: str | None, schema_name: str | None
+    ) -> Any:
+        """The core structured save, unread: an id string today, a receipt after the producer flip."""
+        return self._mem.ingest_structured(data, schema=schema or schema_name)
+
+    # -- Receipt save (C-01.activate.save.local-adapters) --
+    # Dormant: no tool calls these. Core refuses ``SmartMemory.save`` with ``SaveNotEnabled`` until the common-receipt
+    # facade is enabled (U20.S2); the legacy add/ingest above never reach it and it never falls back to them.
+
+    #: This backend's registered producer namespace (core ``PRODUCER_NAMESPACES``), the G158 first-party identity.
+    SAVE_NAMESPACE = "mcp.local"
+    #: The retry-key prefix a minted key carries (``mcp:<uuid4 hex>``).
+    SAVE_SEAM = "mcp"
+
+    def save_call(
+        self,
+        content: Any = None,
+        *,
+        data: Any = None,
+        memory_type: Any = None,
+        extract: Any = None,
+        wait: Any = None,
+        requested_links: Any = None,
+        context: Any = None,
+        idempotency_key: Any = None,
+    ) -> Any:
+        """Build one frozen save call carrying a stable retry key: the supplied one verbatim, or a minted one.
+
+        Submit the returned call again (``submit_save``) to retry with the same key and request. Every field is
+        passed to core unjudged; only ``None`` means omitted.
+        """
+        build_save_call = self._save_caller("build_save_call")
+        return build_save_call(
+            seam=self.SAVE_SEAM,
+            content=content,
+            data=data,
+            memory_type=memory_type,
+            extract=extract,
+            wait=wait,
+            requested_links=requested_links,
+            context=context,
+            idempotency_key=idempotency_key,
+            adapter_namespace=self.SAVE_NAMESPACE,
+        )
+
+    def submit_save(self, call: Any) -> SaveReturn:
+        """Submit a ``save_call`` through ``SmartMemory.save`` and return the read receipt (see ``SaveReturn``).
+
+        Core's typed refusals (``SaveNotEnabled``, ``SaveRequestError``, ``IncompatibleWait``) and the wrapper's
+        (``SaveRejected``, ``SaveReturnRefused``, ``SaveCallRefused``) pass through unchanged, each already logged once.
+        """
+        try:
+            from smartmemory_app.storage import save
+        except ImportError as exc:
+            self._save_unavailable(exc)
+        resolved = save(call, memory=self._mem)
+        return SaveReturn(resolved.value, resolved.receipt, resolved.summary)
+
+    def save(self, content: Any = None, **kwargs: Any) -> SaveReturn:
+        """Build and submit one receipt save. Keyword fields are those of ``save_call``."""
+        return self.submit_save(self.save_call(content, **kwargs))
+
+    def _save_caller(self, name: str) -> Any:
+        try:
+            caller = importlib.import_module("smartmemory_app.save_caller")
+        except ImportError as exc:
+            self._save_unavailable(exc)
+        symbol = getattr(caller, name, None)
+        if (
+            symbol is None
+        ):  # a wrapper whose save_caller lacks the export is the same unavailable seam
+            self._save_unavailable(
+                AttributeError(f"smartmemory_app.save_caller has no {name}")
+            )
+        return symbol
+
+    @staticmethod
+    def _save_unavailable(exc: BaseException) -> NoReturn:
+        log.warning(
+            "Save refused: the installed smartmemory wrapper has no receipt save (smartmemory_app.save_caller and "
+            "storage.save), so a receipt save cannot be made; nothing was saved and add/ingest were not used"
+        )
+        raise _logged(
+            SaveReturnUnavailable(
+                "Local receipt save needs a smartmemory wrapper with save_caller; nothing was saved"
+            )
+        ) from exc
 
     def ingest_conversation_sync(
         self,

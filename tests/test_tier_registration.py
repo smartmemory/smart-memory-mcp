@@ -110,7 +110,7 @@ FREE_TOOLS = sorted(
         "login",
         "whoami",
         "switch_team",
-        "memory_ingest",
+        "memory_save",
         "memory_search",
         "memory_recall",
         "memory_get",
@@ -139,33 +139,33 @@ class TestToolRegistration:
         assert data["names"] == FREE_TOOLS
 
     def test_pro_tier_tool_count(self):
-        """PRO tier registers exactly 68 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
+        """PRO tier registers exactly 65 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
         data = _run_snippet(env)
-        assert data["count"] == 68, (
-            f"Expected 68 remote PRO tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 65, (
+            f"Expected 65 remote PRO tools, got {data['count']}: {data['names']}"
         )
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]
         )
-        assert "memory_ingest_document" in data["names"]
+        assert "memory_save_document" in data["names"]
         # Verify FREE tools are a subset of PRO tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
 
     def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 99 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
+        """PRO_PLUS tier registers exactly 96 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
         env = _clean_env(
             SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true"
         )
         data = _run_snippet(env)
-        assert data["count"] == 99, (
-            f"Expected 99 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 96, (
+            f"Expected 96 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
         )
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]
         )
-        assert "memory_ingest_document" in data["names"]
+        assert "memory_save_document" in data["names"]
         # Verify FREE tools are a subset of PRO_PLUS tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], (

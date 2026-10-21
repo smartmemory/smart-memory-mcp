@@ -434,11 +434,6 @@ def _format_catalog(query: str, results: list) -> str:
     return "\n".join(lines)
 
 
-def _format_turn_content(user_turn: str, assistant_turn: str) -> str:
-    """Format a user/assistant turn pair for storage."""
-    return f"USER: {user_turn.strip()}\nASSISTANT: {assistant_turn.strip()}"
-
-
 def _format_recall(
     query: str,
     results: list,
@@ -503,30 +498,6 @@ def _format_recall(
 
 def register_free(mcp):
     """Register FREE-tier memory tools (ingest, search, recall, get)."""
-
-    @mcp.tool(
-        title="Ingest a memory",
-        annotations=ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=False,
-            openWorldHint=False,
-        ),
-    )
-    @graceful
-    def memory_ingest(content: str, memory_type: str = "semantic") -> str:
-        """Ingest content through the full NLP pipeline with entity extraction."""
-        backend = get_backend()
-        result = backend.ingest(content, memory_type=memory_type)
-        if isinstance(result, dict):
-            if result.get("status") == "held":
-                return f"Memory held: {result.get('reason')}. Details: {result.get('reasons', [])}"
-            if "error" in result:
-                return f"Ingest failed: {result['error']}"
-            item_id = result.get("item_id", "unknown")
-        else:
-            item_id = str(result)
-        return f"Memory ingested (pipeline). Item ID: {item_id}"
 
     @mcp.tool(
         title="Search memories",
@@ -1088,32 +1059,6 @@ def register_pro(mcp):
     """Register PRO-tier memory tools."""
 
     @mcp.tool(
-        title="Add a memory",
-        annotations=ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=False,
-            openWorldHint=False,
-        ),
-    )
-    @graceful
-    def memory_add(
-        content: str,
-        memory_type: str = "semantic",
-        metadata: Optional[Dict[str, Any]] = None,
-        tags: Optional[List[str]] = None,
-    ) -> str:
-        """Add a memory item directly without the NLP pipeline."""
-        backend = get_backend()
-        item_metadata = metadata or {}
-        if tags:
-            item_metadata["tags"] = tags
-        item_id = backend.add(content, memory_type=memory_type, metadata=item_metadata)
-        if isinstance(item_id, dict) and item_id.get("status") == "held":
-            return f"Memory held: {item_id.get('reason')}. Details: {item_id.get('reasons', [])}"
-        return f"Memory added (direct). Item ID: {item_id}"
-
-    @mcp.tool(
         title="Update a memory",
         annotations=ToolAnnotations(
             readOnlyHint=False,
@@ -1374,90 +1319,6 @@ def register_pro(mcp):
             output.append(f"  - {mtype}: {count}")
 
         return "\n".join(output)
-
-    @mcp.tool(
-        title="Distill a conversation turn",
-        annotations=ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=False,
-            openWorldHint=False,
-        ),
-    )
-    @graceful
-    def memory_distill(
-        user_turn: str, assistant_turn: str, session_id: Optional[str] = None
-    ) -> str:
-        """Ingest a conversation turn pair into pending memory for later recall."""
-        backend = get_backend()
-        content = _format_turn_content(user_turn, assistant_turn)
-        meta: Dict[str, Any] = {"role": "turn", "distill_version": "1"}
-        if session_id:
-            meta["conversation_id"] = session_id
-        item_id = backend.add(content, memory_type="pending", metadata=meta)
-        if isinstance(item_id, dict) and item_id.get("status") == "held":
-            return f"Turn held: {item_id.get('reason')}. Details: {item_id.get('reasons', [])}"
-        return f"Turn stored: {item_id}"
-
-    @mcp.tool(
-        title="Ingest a conversation",
-        annotations=ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=False,
-            openWorldHint=False,
-        ),
-    )
-    @graceful
-    def memory_ingest_conversation(
-        turns: list,
-        session_boundaries: Optional[list] = None,
-        conversation_id: Optional[str] = None,
-        session_dates: Optional[list] = None,
-        turns_per_chunk: int = 15,
-        max_chunk_chars: int = 12000,
-    ) -> str:
-        """Ingest a conversation as session chunks with full pipeline processing (RLM-1g).
-
-        Groups turns into sessions (by explicit boundaries or auto-chunking),
-        runs each chunk through the full extraction pipeline, and creates
-        a conversation container node with PART_OF edges.
-
-        Args:
-            turns: List of dicts with "role"/"speaker" and "content" keys.
-            session_boundaries: Turn indices where sessions start (e.g. [0, 50, 120]).
-            conversation_id: User-supplied ID (auto-generated if None).
-            session_dates: ISO date per session for metadata.
-            turns_per_chunk: Max turns per auto-chunk (default 15).
-            max_chunk_chars: Safety split for oversized chunks (default 12000).
-        """
-        backend = get_backend()
-        response = backend.ingest_conversation_sync(
-            turns=turns,
-            session_boundaries=session_boundaries,
-            conversation_id=conversation_id,
-            session_dates=session_dates,
-            turns_per_chunk=turns_per_chunk,
-            max_chunk_chars=max_chunk_chars,
-        )
-        from dataclasses import asdict
-
-        r = asdict(response) if hasattr(response, "__dataclass_fields__") else response
-        if isinstance(r, dict):
-            held_chunks = [
-                chunk
-                for chunk in r.get("chunk_results", [])
-                if chunk.get("status") == "held"
-            ]
-            ingested = r.get("chunks_ingested", 0)
-            failed = r.get("chunks_failed", 0) - len(held_chunks)
-            message = f"Conversation {r.get('conversation_id', '')}: {ingested} chunks ingested, {failed} failed."
-            if held_chunks:
-                message += f" {len(held_chunks)} held: " + ", ".join(
-                    str(chunk.get("reason")) for chunk in held_chunks
-                )
-            return message
-        return f"Conversation ingest result: {r}"
 
     @mcp.tool(
         title="Search memories with graph traversal",

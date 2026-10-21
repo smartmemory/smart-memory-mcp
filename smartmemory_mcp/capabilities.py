@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # Keep the mapping explicit: REST's `request` is a branch with local fallbacks,
 # whereas these tools depend on a specific backend operation in every mode.
 TOOL_CAPABILITIES = {
-    "memory_ingest_document": "ingest_document",
+    "memory_save_document": "ingest_document_with_receipt",
     "code_blame": "blame_code",
     "code_read_transcript": "read_transcript_centered",
     "peer_chat": "peer_chat",
