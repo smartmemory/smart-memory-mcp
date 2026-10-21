@@ -426,7 +426,12 @@ STRUCTURED_TOOL_ROWS = [
         "Structured item saved. Schema: test_schema. Item ID: test-id-1",
     ),
     ("receipt", receipt(), "test_item", "Structured item: test_item (stored)"),
-    ("receipt wire", receipt().to_dict(), "test_item", "Structured item: test_item (stored)"),
+    (
+        "receipt wire",
+        receipt().to_dict(),
+        "test_item",
+        "Structured item: test_item (stored)",
+    ),
 ]
 
 

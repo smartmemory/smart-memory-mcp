@@ -750,21 +750,59 @@ for _key in (
 
 SAVE_ONLY = "the save goes to a real Lite core under a recording save manager (no worker) and the test asserts the request or the typed refusal, it never reads the item back"
 for _key, _class in (
-    ("test_local_save_call.py::test_save_mints_a_key_in_cores_alphabet_and_names_the_mcp_local_producer", "save_only"),
-    ("test_local_save_call.py::test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request", "save_only"),
-    ("test_local_save_call.py::test_two_calls_without_a_key_mint_two_keys", "save_only"),
-    ("test_local_save_call.py::test_save_passes_each_field_to_core_unjudged", "save_only"),
+    (
+        "test_local_save_call.py::test_save_mints_a_key_in_cores_alphabet_and_names_the_mcp_local_producer",
+        "save_only",
+    ),
+    (
+        "test_local_save_call.py::test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request",
+        "save_only",
+    ),
+    (
+        "test_local_save_call.py::test_two_calls_without_a_key_mint_two_keys",
+        "save_only",
+    ),
+    (
+        "test_local_save_call.py::test_save_passes_each_field_to_core_unjudged",
+        "save_only",
+    ),
     ("test_local_save_call.py::test_data_saves_do_not_extract_by_default", "save_only"),
-    ("test_local_save_call.py::test_an_unreachable_wait_is_cores_typed_refusal_and_the_manager_is_untouched", "save_only"),
-    ("test_local_save_call.py::test_the_facade_off_is_cores_refusal_and_never_add_or_ingest", "save_only"),
-    ("test_local_save_call.py::test_a_rejected_admission_is_save_rejected_with_one_warning", "save_only"),
-    ("test_local_save_call.py::test_ingest_structured_legacy_returns_are_unchanged_and_import_nothing", "mocked_seam"),
-    ("test_local_save_call.py::test_a_receipt_the_wrapper_cannot_read_is_one_marked_refusal_and_never_an_id", "mocked_seam"),
-    ("test_local_save_call.py::test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it", "mocked_seam"),
-    ("test_local_save_call.py::test_ingest_structured_never_turns_a_rejection_into_an_id", "mocked_seam"),
-    ("test_local_save_call.py::test_the_structured_save_tool_reads_both_arms", "mocked_seam"),
+    (
+        "test_local_save_call.py::test_an_unreachable_wait_is_cores_typed_refusal_and_the_manager_is_untouched",
+        "save_only",
+    ),
+    (
+        "test_local_save_call.py::test_the_facade_off_is_cores_refusal_and_never_add_or_ingest",
+        "save_only",
+    ),
+    (
+        "test_local_save_call.py::test_a_rejected_admission_is_save_rejected_with_one_warning",
+        "save_only",
+    ),
+    (
+        "test_local_save_call.py::test_ingest_structured_legacy_returns_are_unchanged_and_import_nothing",
+        "mocked_seam",
+    ),
+    (
+        "test_local_save_call.py::test_a_receipt_the_wrapper_cannot_read_is_one_marked_refusal_and_never_an_id",
+        "mocked_seam",
+    ),
+    (
+        "test_local_save_call.py::test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it",
+        "mocked_seam",
+    ),
+    (
+        "test_local_save_call.py::test_ingest_structured_never_turns_a_rejection_into_an_id",
+        "mocked_seam",
+    ),
+    (
+        "test_local_save_call.py::test_the_structured_save_tool_reads_both_arms",
+        "mocked_seam",
+    ),
 ):
-    DISPOSITIONS["tests/" + _key] = D(_class, SAVE_ONLY if _class == "save_only" else MOCKED)
+    DISPOSITIONS["tests/" + _key] = D(
+        _class, SAVE_ONLY if _class == "save_only" else MOCKED
+    )
 
 # --- COMMON BEGIN (byte-identical in smart-memory-client and smart-memory-mcp scripts/save_then_read_census.py) ---
 

@@ -483,7 +483,7 @@
    "call": "memory_save",
    "file": "tests/test_local_save_call.py",
    "function": "test_the_structured_save_tool_reads_both_arms",
-   "line": 444,
+   "line": 449,
    "memory_like": true,
    "receiver": "<tool-name>"
   },
@@ -1788,12 +1788,12 @@
    "file": "tests/test_local_save_call.py",
    "function": "test_the_structured_save_tool_reads_both_arms",
    "key": "tests/test_local_save_call.py::test_the_structured_save_tool_reads_both_arms",
-   "line": 438,
+   "line": 443,
    "reads": [],
    "reads_after_save": false,
    "saves": [
     [
-     444,
+     449,
      "memory_save"
     ]
    ],

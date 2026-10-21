@@ -551,7 +551,9 @@ def test_the_static_u4_42_list_is_retired_and_its_file_units_have_dispositions()
     doc = census.build(ROOT)
     assert doc["owned_by_u4_42"] == {}
     owned = [
-        u for u in doc["units"] if u["key"].startswith("tests/test_local_save_call.py::")
+        u
+        for u in doc["units"]
+        if u["key"].startswith("tests/test_local_save_call.py::")
     ]
     assert len(owned) == 13 and all(u["disposition"]["class"] for u in owned)
     assert census.problems(doc, ROOT) == []
