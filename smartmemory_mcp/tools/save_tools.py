@@ -74,25 +74,24 @@ def _receipt_status(receipt: Dict[str, Any]) -> str:
     return "saved" if receipt.get("terminal") else "queued"
 
 
-def _item_result(saved: SaveReturn, *, label: str) -> ToolResult:
-    """One item save (or one item-shaped pipeline result) as a ``ToolResult``."""
+def _item_result(saved: SaveReturn, *, noun: str, detail: str = "") -> ToolResult:
+    """One item save (or one item-shaped pipeline result) as a ``ToolResult``. ``detail`` follows ``<noun> saved.``"""
+    label = f"{noun} saved.{detail}"
     value, receipt = saved.value, saved.receipt
     fields: Dict[str, Any] = {"receipt": receipt, "summary": saved.summary}
     if receipt is not None:
         fields["item_id"] = str(value)
         fields["status"] = _receipt_status(receipt)
-        return ToolResult(
-            content=f"{label}: {saved.summary}", structured_content=fields
-        )
+        return ToolResult(content=f"{noun}: {saved.summary}", structured_content=fields)
     if isinstance(value, dict):
         if value.get("status") == "held":
             return ToolResult(
-                content=f"{label} held: {value.get('reason')}. Details: {value.get('reasons', [])}",
+                content=f"{noun} held: {value.get('reason')}. Details: {value.get('reasons', [])}",
                 structured_content={**fields, "status": "held", **_held_fields(value)},
             )
         if "error" in value:
             return ToolResult(
-                content=f"{label} failed: {value['error']}",
+                content=f"{noun} save failed: {value['error']}",
                 structured_content={
                     **fields,
                     "status": "failed",
@@ -103,13 +102,13 @@ def _item_result(saved: SaveReturn, *, label: str) -> ToolResult:
         if not item_id:
             logger.warning(
                 "%s: the backend returned no item id (%r); reporting none rather than inventing one",
-                label,
+                noun,
                 value,
             )
         return ToolResult(
-            content=f"{label}. Item ID: {item_id}"
+            content=f"{label} Item ID: {item_id}"
             if item_id
-            else f"{label}. No item id returned",
+            else f"{label} No item id returned",
             structured_content={
                 **fields,
                 "status": "saved",
@@ -118,7 +117,7 @@ def _item_result(saved: SaveReturn, *, label: str) -> ToolResult:
             },
         )
     return ToolResult(
-        content=f"{label}. Item ID: {value}",
+        content=f"{label} Item ID: {value}",
         structured_content={**fields, "status": "saved", "item_id": str(value)},
     )
 
@@ -161,11 +160,17 @@ def _conversation_result(
             content=f"Conversation: {saved.summary}", structured_content=fields
         )
     if not isinstance(value, dict):
-        raise RuntimeError(f"Conversation save returned an unreadable result: {value!r}")
+        raise RuntimeError(
+            f"Conversation save returned an unreadable result: {value!r}"
+        )
     if "error" in value:
         return ToolResult(
             content=f"Conversation save failed: {value['error']}",
-            structured_content={**fields, "status": "failed", "error": str(value["error"])},
+            structured_content={
+                **fields,
+                "status": "failed",
+                "error": str(value["error"]),
+            },
         )
     held = [c for c in value.get("chunk_results") or [] if c.get("status") == "held"]
     saved_n = value.get("chunks_ingested", 0)
@@ -177,11 +182,11 @@ def _conversation_result(
         if held and not saved_n
         else "saved"
     )
-    message = (
-        f"Conversation {value.get('conversation_id', '')}: {saved_n} chunks ingested, {failed_n} failed."
-    )
+    message = f"Conversation {value.get('conversation_id', '')}: {saved_n} chunks ingested, {failed_n} failed."
     if held:
-        message += f" {len(held)} held: " + ", ".join(str(c.get("reason")) for c in held)
+        message += f" {len(held)} held: " + ", ".join(
+            str(c.get("reason")) for c in held
+        )
     return ToolResult(
         content=message,
         structured_content={
@@ -223,7 +228,9 @@ def register_free(mcp):
             if metadata or tags:
                 raise ToolError("metadata and tags apply to content, not data.")
             saved = backend.ingest_structured_with_receipt(data, schema=memory_type)
-            return _item_result(saved, label=f"Structured item saved. Schema: {memory_type}")
+            return _item_result(
+                saved, noun="Structured item", detail=f" Schema: {memory_type}."
+            )
         item_metadata = dict(metadata or {})
         if tags:
             item_metadata["tags"] = list(tags)
@@ -233,7 +240,7 @@ def register_free(mcp):
             saved = backend.add_with_receipt(content, memory_type=mtype, **kwargs)
         else:
             saved = backend.ingest_with_receipt(content, memory_type=mtype, **kwargs)
-        return _item_result(saved, label="Memory saved")
+        return _item_result(saved, noun="Memory")
 
 
 def register_pro(mcp):
@@ -303,7 +310,7 @@ def register_pro(mcp):
                 memory_type="pending",
                 metadata=meta,
             )
-            return _item_result(saved, label="Turn saved")
+            return _item_result(saved, noun="Turn")
         saved = backend.ingest_conversation_with_receipt(
             turns,
             session_boundaries=session_boundaries,

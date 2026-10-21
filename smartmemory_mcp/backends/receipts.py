@@ -119,6 +119,4 @@ def read_wire_save(result: Any, *, op: str) -> SaveReturn:
             ),
             op,
         )
-    return SaveReturn(
-        str(subject_id), dict(result), _summary(str(subject_id), result)
-    )
+    return SaveReturn(str(subject_id), dict(result), _summary(str(subject_id), result))

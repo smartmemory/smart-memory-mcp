@@ -82,7 +82,7 @@ def test_pro_tools_list_does_not_call_storage_get_memory(monkeypatch, hide_peer)
             return {tool.name for tool in await client.list_tools()}
 
     names = asyncio.run(list_tools())
-    assert {"memory_ingest_document", "code_blame", "code_read_transcript"} <= names
+    assert {"memory_save_document", "code_blame", "code_read_transcript"} <= names
     assert ("peer_chat" in names) is not hide_peer
     assert isinstance(dispatch.resolve_backend(), LocalBackend)
     assert dispatch.resolve_backend()._memory is None

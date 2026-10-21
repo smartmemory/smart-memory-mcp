@@ -29,7 +29,7 @@ SNAPSHOT = SERVICE_REPO / "tests" / "contracts" / "snapshots" / "openapi_schema.
 # The route each hosted tool reaches, read off the backend method it calls.
 # `None` means the tool makes no svc-api call of its own.
 TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
-    "memory_ingest": ("post", "/memory/ingest"),
+    "memory_save": ("post", "/memory/ingest"),  # pending: POST /memory/add
     "memory_search": ("post", "/memory/search"),
     # The hosted variant always takes RemoteBackend.recall, which is search.
     "memory_recall": ("post", "/memory/search"),
@@ -38,13 +38,14 @@ TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
     "memory_explain": ("get", "/memory/{memory_id}/explain"),
     "memory_recall_pack": ("post", "/memory/recall/pack"),
     "memory_policy_bundle": ("get", "/memory/policy/bundle"),
-    "memory_add": ("post", "/memory/add"),
     "memory_update": ("patch", "/memory/{item_id}"),
     "memory_delete": ("delete", "/memory/{item_id}"),
     "memory_list": ("get", "/memory/list"),
     "memory_stats": ("get", "/memory/health"),
-    "memory_distill": ("post", "/memory/add"),
-    "memory_ingest_conversation": ("post", "/memory/ingest/conversation"),
+    "memory_save_conversation": (
+        "post",
+        "/memory/ingest/conversation",
+    ),  # a turn pair: POST /memory/add
     "memory_search_by_metadata": ("get", "/memory/by-metadata"),
     "memory_feedback": ("post", "/memory/result-feedback"),
     "code_effects": ("get", "/memory/list"),

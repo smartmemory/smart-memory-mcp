@@ -110,7 +110,7 @@ FREE_TOOLS = sorted(
         "login",
         "whoami",
         "switch_team",
-        "memory_ingest",
+        "memory_save",
         "memory_search",
         "memory_recall",
         "memory_get",
@@ -148,7 +148,7 @@ class TestToolRegistration:
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]
         )
-        assert "memory_ingest_document" in data["names"]
+        assert "memory_save_document" in data["names"]
         # Verify FREE tools are a subset of PRO tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
@@ -165,7 +165,7 @@ class TestToolRegistration:
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]
         )
-        assert "memory_ingest_document" in data["names"]
+        assert "memory_save_document" in data["names"]
         # Verify FREE tools are a subset of PRO_PLUS tools
         for tool in FREE_TOOLS:
             assert tool in data["names"], (

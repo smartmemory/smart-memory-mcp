@@ -70,8 +70,7 @@ EXCLUDED_TOOLS = (
     "decision_create",  # requires _mem
     "peer_chat",  # parked remotely
     "transcript_search",  # local transcript store
-    "memory_ingest_document",  # not audited for hosted
-    "memory_ingest_structured",  # not audited for hosted
+    "memory_save_document",  # path-taking, not audited for hosted
 )
 
 FORBIDDEN_RESULT_FRAGMENTS = (
