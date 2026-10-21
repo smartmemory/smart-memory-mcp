@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""Pre-push hook: verify cross-repo Python imports resolve against origin/main of sibling repos.
+"""Pre-push hook: verify cross-repo Python imports resolve against the push-target branch of sibling repos.
 
 Catches the failure mode where a push to this repo introduces `from <sibling>.X import Y`
 referencing a symbol that exists in the local working copy of the sibling but not yet on
-the sibling's origin/main. Such pushes silently break CI (which checks out each repo at
+the sibling's remote branch. Such pushes silently break CI (which checks out each repo at
 its remote-tracked state) while passing local dev.
+
+The branch compared against follows the push target (OPS-PREPUSH-HOOK-TARGET-BRANCH-1): a push to
+`refs/heads/2.0` is checked against `origin/2.0` of this repo and of each sibling, a push to
+`refs/heads/main` against `origin/main`. A target that is not a branch (a tag, no stdin) or a sibling
+that has no such branch falls back to `origin/main` with one WARNING. Kill switch:
+`PREPUSH_TARGET_BRANCH=0` restores the old always-`origin/main` behaviour.
 
 Usage: install via scripts/install-git-hooks.sh.
 Skip with `git push --no-verify` (DO NOT make a habit of it).
@@ -13,6 +19,7 @@ Skip with `git push --no-verify` (DO NOT make a habit of it).
 from __future__ import annotations
 
 import ast
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -25,7 +32,17 @@ SIBLING_REPOS = {
 
 # Source dirs to inspect (production code; skip tests/scripts/venvs).
 PRODUCTION_DIRS = ("memory_service", "smartmemory_mcp")
-SKIP_PATH_PARTS = {"tests", "test", "scripts", ".git", "__pycache__", ".venv", "venv", "build", "dist"}
+SKIP_PATH_PARTS = {
+    "tests",
+    "test",
+    "scripts",
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+}
 
 
 def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> str:
@@ -36,10 +53,83 @@ def repo_root() -> Path:
     return Path(run(["git", "rev-parse", "--show-toplevel"]).strip())
 
 
-def files_changed_in_push(root: Path) -> list[Path]:
-    """Python files that differ between local HEAD and origin/main."""
+DEFAULT_BRANCH = "main"
+ZERO_SHA = "0" * 40
+
+
+def target_branches(stdin_text: str, warnings: list[str]) -> list[str]:
+    """Branches this push updates, from the hook's stdin (`<local ref> <local sha> <remote ref> <remote sha>` per line).
+
+    Deletes are skipped. A remote ref that is not `refs/heads/<name>`, or no usable stdin at all, resolves to
+    `main` with one WARNING. `PREPUSH_TARGET_BRANCH=0` forces `["main"]` with no warning (old behaviour)."""
+    if os.environ.get("PREPUSH_TARGET_BRANCH") == "0":
+        return [DEFAULT_BRANCH]
+    branches: list[str] = []
+    unknown: list[str] = []
+    for line in stdin_text.splitlines():
+        parts = line.split()
+        if len(parts) != 4 or set(parts[1]) == {"0"}:
+            continue  # blank, malformed, or a delete (local sha all zeros)
+        remote_ref = parts[2]
+        if remote_ref.startswith("refs/heads/"):
+            branch = remote_ref[len("refs/heads/") :]
+        else:
+            branch = DEFAULT_BRANCH
+            unknown.append(remote_ref)
+        if branch not in branches:
+            branches.append(branch)
+    if not branches and not stdin_text.strip():
+        unknown.append("<no push target on stdin>")
+        branches.append(DEFAULT_BRANCH)
+    for ref in unknown:
+        warnings.append(
+            f"  push target {ref} is not a branch: comparing against origin/{DEFAULT_BRANCH}"
+        )
+    return branches
+
+
+def read_stdin() -> str:
     try:
-        out = run(["git", "diff", "--name-only", "origin/main..HEAD", "--", "*.py"], cwd=root)
+        return "" if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
+    except (OSError, ValueError):
+        return ""
+
+
+def has_remote_ref(repo: Path, ref: str) -> bool:
+    try:
+        run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                ref + "^{commit}",
+            ]
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def own_base_ref(root: Path, branch: str, warnings: list[str]) -> str:
+    """origin/<branch> of this repo if it exists locally, else origin/main with one WARNING."""
+    ref = f"origin/{branch}"
+    if branch == DEFAULT_BRANCH or has_remote_ref(root, ref):
+        return ref
+    warnings.append(
+        f"  this repo has no {ref}: comparing new imports against origin/{DEFAULT_BRANCH}"
+    )
+    return f"origin/{DEFAULT_BRANCH}"
+
+
+def files_changed_in_push(root: Path, base_ref: str = "origin/main") -> list[Path]:
+    """Python files that differ between local HEAD and `base_ref`."""
+    try:
+        out = run(
+            ["git", "diff", "--name-only", f"{base_ref}..HEAD", "--", "*.py"], cwd=root
+        )
     except subprocess.CalledProcessError:
         return []
     paths = []
@@ -69,37 +159,92 @@ def imports_from_file(path: Path) -> list[tuple[str, str]]:
     return out
 
 
-def fetch_origin(sibling: Path) -> bool:
+def _fetch(sibling: Path, branch: str) -> bool:
     try:
-        run(["git", "-C", str(sibling), "fetch", "origin", "main", "--quiet"])
+        run(["git", "-C", str(sibling), "fetch", "origin", branch, "--quiet"])
         return True
     except subprocess.CalledProcessError:
         return False
 
 
-def _origin_object_type(sibling: Path, relpath: str) -> str | None:
-    """Git object type of `relpath` in the sibling's origin/main tree (`blob` or `tree`), None if absent."""
+def fetch_origin(
+    sibling: Path, branch: str = DEFAULT_BRANCH, warnings: list[str] | None = None
+) -> str | None:
+    """Fetch `branch` of the sibling's origin and return the ref to compare against: `origin/<branch>`, or
+    `origin/main` with one WARNING when the sibling has no such branch. None when the remote is unreachable."""
+    if _fetch(sibling, branch):
+        return f"origin/{branch}"
+    if branch != DEFAULT_BRANCH and _fetch(
+        sibling, DEFAULT_BRANCH
+    ):  # main reachable, so the branch is missing
+        if warnings is not None:
+            warnings.append(
+                f"  {sibling.name} has no origin/{branch}: comparing against origin/{DEFAULT_BRANCH}"
+            )
+        return f"origin/{DEFAULT_BRANCH}"
+    return None
+
+
+def _module_defines(nodes, name: str) -> bool:
+    """True if `name` is bound at module-execution scope, including inside
+    module-level if/try/with/for/while blocks (e.g. a conditional singleton
+    `try: limiter = Limiter() except ...: limiter = _Shim()`). Does not descend
+    into def/class scopes (those names are not importable from the module)."""
+    for node in nodes:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name == name:
+                return True
+            continue
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == name:
+                    return True
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == name
+        ):
+            return True
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if (alias.asname or alias.name) == name:
+                    return True
+        for attr in ("body", "orelse", "finalbody"):
+            block = getattr(node, attr, None)
+            if isinstance(block, list) and _module_defines(block, name):
+                return True
+        if isinstance(node, ast.Try):
+            for handler in node.handlers:
+                if _module_defines(handler.body, name):
+                    return True
+    return False
+
+
+def _origin_object_type(
+    sibling: Path, relpath: str, ref: str = "origin/main"
+) -> str | None:
+    """Git object type of `relpath` in the sibling's `ref` tree (`blob` or `tree`), None if absent."""
     try:
         return run(
-            ["git", "-C", str(sibling), "cat-file", "-t", f"origin/main:{relpath}"]
+            ["git", "-C", str(sibling), "cat-file", "-t", f"{ref}:{relpath}"]
         ).strip()
     except subprocess.CalledProcessError:
         return None
 
 
-def _dotted_kind(sibling: Path, parts: list[str]) -> str:
-    """How Python resolves the dotted path on the sibling's origin/main: `package` (x/__init__.py), `module` (x.py),
+def _dotted_kind(sibling: Path, parts: list[str], ref: str = "origin/main") -> str:
+    """How Python resolves the dotted path on the sibling's `ref`: `package` (x/__init__.py), `module` (x.py),
     `namespace` (a directory x/ with no `__init__.py`) or `missing`. Per component the order is package, then module
     file, then namespace directory, so x.py shadows an x/ without `__init__.py`. A module has no children: any
     component below one is `missing`."""
     kind = "missing"
     for depth in range(1, len(parts) + 1):
         base = "/".join(parts[:depth])
-        if _origin_object_type(sibling, base + "/__init__.py") == "blob":
+        if _origin_object_type(sibling, base + "/__init__.py", ref) == "blob":
             kind = "package"
-        elif _origin_object_type(sibling, base + ".py") == "blob":
+        elif _origin_object_type(sibling, base + ".py", ref) == "blob":
             kind = "module"
-        elif _origin_object_type(sibling, base) == "tree":
+        elif _origin_object_type(sibling, base, ref) == "tree":
             kind = "namespace"
         else:
             return "missing"
@@ -108,85 +253,125 @@ def _dotted_kind(sibling: Path, parts: list[str]) -> str:
     return kind
 
 
-def symbol_exists_at_origin(sibling: Path, module: str, name: str) -> bool | None:
+def symbol_exists_at_origin(
+    sibling: Path, module: str, name: str, ref: str = "origin/main"
+) -> bool | None:
     """True if `name` is defined in `module`, or is a child (submodule, subpackage, namespace directory) of a
-    package `module`, on the sibling's origin/main. False if the module is there but has no such name, None if the
-    module is not at origin/main at all. Resolution follows Python's import precedence (`_dotted_kind`), so a file
+    package `module`, on the sibling's `ref`. False if the module is there but has no such name, None if the
+    module is not at `ref` at all. Resolution follows Python's import precedence (`_dotted_kind`), so a file
     module is never searched for children."""
     parts = module.split(".")
-    kind = _dotted_kind(sibling, parts)
+    kind = _dotted_kind(sibling, parts, ref)
     if kind == "missing":
         return None  # module not found at origin
     if kind != "namespace":  # a namespace package has no source to read
         relpath = "/".join(parts) + (".py" if kind == "module" else "/__init__.py")
-        content = run(["git", "-C", str(sibling), "show", f"origin/main:{relpath}"])
+        content = run(["git", "-C", str(sibling), "show", f"{ref}:{relpath}"])
         try:
             tree = ast.parse(content)
         except SyntaxError:
             return True  # parse failure: be lenient, let CI catch it
         for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == name:
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                and node.name == name
+            ):
                 return True
             if isinstance(node, ast.Assign):
                 for target in node.targets:
                     if isinstance(target, ast.Name) and target.id == name:
                         return True
-            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == name:
+            if (
+                isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and node.target.id == name
+            ):
                 return True
             if isinstance(node, ast.ImportFrom):
                 for alias in node.names:
                     if (alias.asname or alias.name) == name:
                         return True
-    return kind != "module" and _dotted_kind(sibling, parts + [name]) != "missing"
+    return kind != "module" and _dotted_kind(sibling, parts + [name], ref) != "missing"
 
 
-def main() -> int:
-    root = repo_root()
-    changed = files_changed_in_push(root)
+def validate_target(
+    root: Path, branch: str, warnings: list[str], skipped: list[str]
+) -> list[tuple[Path, str, str, Path, str]]:
+    """Cross-repo imports of a push to `branch` that do not resolve on the sibling's matching branch."""
+    changed = files_changed_in_push(root, own_base_ref(root, branch, warnings))
+    failures: list[tuple[Path, str, str, Path, str]] = []
     if not changed:
-        return 0  # nothing to validate
-
-    failures: list[tuple[Path, str, str, Path]] = []
-    skipped: list[str] = []
+        return failures  # nothing to validate
 
     for prefix, sib_relpath in SIBLING_REPOS.items():
         sibling = (root / sib_relpath).resolve()
         if not sibling.exists():
             skipped.append(f"  {prefix}: sibling not checked out at {sib_relpath}")
             continue
-        if not fetch_origin(sibling):
-            skipped.append(f"  {prefix}: could not fetch origin/main from {sib_relpath} (offline?)")
+        sib_ref = fetch_origin(sibling, branch, warnings)
+        if sib_ref is None:
+            skipped.append(
+                f"  {prefix}: could not fetch origin/{branch} from {sib_relpath} (offline?)"
+            )
             continue
 
         for py_file in changed:
             for module, name in imports_from_file(py_file):
                 if not module.split(".")[0] == prefix:
                     continue
-                exists = symbol_exists_at_origin(sibling, module, name)
-                if exists is False:
-                    failures.append((py_file, module, name, sibling))
-                # exists is None (module file missing) is also a failure
-                elif exists is None:
-                    failures.append((py_file, module, name, sibling))
+                if (
+                    symbol_exists_at_origin(sibling, module, name, sib_ref) is not True
+                ):  # False or None (module absent)
+                    failures.append((py_file, module, name, sibling, sib_ref))
+    return failures
+
+
+def main(stdin_text: str | None = None) -> int:
+    root = repo_root()
+    warnings: list[str] = []
+    skipped: list[str] = []
+    failures: list[tuple[Path, str, str, Path, str]] = []
+    for branch in target_branches(
+        read_stdin() if stdin_text is None else stdin_text, warnings
+    ):
+        for failure in validate_target(root, branch, warnings, skipped):
+            if failure not in failures:
+                failures.append(failure)
+
+    if warnings:
+        print(
+            "\n[pre-push] WARNING: push target / sibling branch fallback:",
+            file=sys.stderr,
+        )
+        for line in dict.fromkeys(warnings):
+            print(line, file=sys.stderr)
 
     if skipped:
         print("\n[pre-push] Cross-repo checks partially skipped:", file=sys.stderr)
-        for line in skipped:
+        for line in dict.fromkeys(skipped):
             print(line, file=sys.stderr)
 
     if failures:
-        print("\n\033[31m[pre-push] BLOCKED: cross-repo imports will fail in CI\033[0m\n", file=sys.stderr)
-        print("These imports reference symbols not yet on origin/main of sibling repos:\n", file=sys.stderr)
-        for py_file, module, name, sibling in failures:
+        print(
+            "\n\033[31m[pre-push] BLOCKED: cross-repo imports will fail in CI\033[0m\n",
+            file=sys.stderr,
+        )
+        print(
+            "These imports reference symbols not yet on the push-target branch of sibling repos:\n",
+            file=sys.stderr,
+        )
+        for py_file, module, name, sibling, sib_ref in failures:
             try:
                 rel = py_file.relative_to(root)
             except ValueError:
                 rel = py_file
-            sib_name = sibling.name
             print(f"  {rel}", file=sys.stderr)
             print(f"    from {module} import {name}", file=sys.stderr)
-            print(f"    └─ not found in {sib_name}@origin/main\n", file=sys.stderr)
-        print("Fix: push the sibling repo first, or revert the new dependency.", file=sys.stderr)
+            print(f"    └─ not found in {sibling.name}@{sib_ref}\n", file=sys.stderr)
+        print(
+            "Fix: push the sibling repo first, or revert the new dependency.",
+            file=sys.stderr,
+        )
         print("Bypass (last resort): git push --no-verify\n", file=sys.stderr)
         return 1
 
