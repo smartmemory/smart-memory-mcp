@@ -799,6 +799,22 @@ for _key, _class in (
         "test_local_save_call.py::test_the_structured_save_tool_reads_both_arms",
         "mocked_seam",
     ),
+    (
+        "test_save_tools.py::test_g166_the_three_save_tools_are_listed",
+        "mocked_seam",
+    ),
+    (
+        "test_save_tools.py::test_remote_backend_reads_the_wire",
+        "mocked_seam",
+    ),
+    (
+        "test_save_tools.py::test_save_does_not_mutate_the_callers_metadata",
+        "mocked_seam",
+    ),
+    (
+        "test_save_tools.py::test_typed_wire_refusals_propagate_to_the_agent",
+        "mocked_seam",
+    ),
 ):
     DISPOSITIONS["tests/" + _key] = D(
         _class, SAVE_ONLY if _class == "save_only" else MOCKED

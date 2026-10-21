@@ -688,6 +688,126 @@
    "receiver": "backend"
   },
   {
+   "call": "memory_save",
+   "file": "tests/test_save_tools.py",
+   "function": "test_typed_wire_refusals_propagate_to_the_agent",
+   "line": 667,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "memory_save",
+   "file": "tests/test_save_tools.py",
+   "function": "test_save_does_not_mutate_the_callers_metadata",
+   "line": 868,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "add_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1172,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_conversation_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1172,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_document_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1172,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_structured_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1172,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1172,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "add_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1177,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_conversation_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1177,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_document_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1177,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_structured_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1177,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "ingest_with_receipt",
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "line": 1177,
+   "memory_like": true,
+   "receiver": "backend"
+  },
+  {
+   "call": "memory_save",
+   "file": "tests/test_save_tools.py",
+   "function": "test_g166_the_three_save_tools_are_listed",
+   "line": 1266,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "memory_save_conversation",
+   "file": "tests/test_save_tools.py",
+   "function": "test_g166_the_three_save_tools_are_listed",
+   "line": 1266,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "memory_save_document",
+   "file": "tests/test_save_tools.py",
+   "function": "test_g166_the_three_save_tools_are_listed",
+   "line": 1266,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
    "call": "memory_save_document",
    "file": "tests/test_tier_registration.py",
    "function": "TestToolRegistration.test_pro_tier_tool_count",
@@ -2222,6 +2342,134 @@
     [
      259,
      "add"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_save_tools.py",
+   "function": "test_g166_the_three_save_tools_are_listed",
+   "key": "tests/test_save_tools.py::test_g166_the_three_save_tools_are_listed",
+   "line": 1264,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     1266,
+     "memory_save"
+    ],
+    [
+     1266,
+     "memory_save_conversation"
+    ],
+    [
+     1266,
+     "memory_save_document"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_save_tools.py",
+   "function": "test_remote_backend_reads_the_wire",
+   "key": "tests/test_save_tools.py::test_remote_backend_reads_the_wire",
+   "line": 1160,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     1172,
+     "add_with_receipt"
+    ],
+    [
+     1172,
+     "ingest_conversation_with_receipt"
+    ],
+    [
+     1172,
+     "ingest_document_with_receipt"
+    ],
+    [
+     1172,
+     "ingest_structured_with_receipt"
+    ],
+    [
+     1172,
+     "ingest_with_receipt"
+    ],
+    [
+     1177,
+     "add_with_receipt"
+    ],
+    [
+     1177,
+     "ingest_conversation_with_receipt"
+    ],
+    [
+     1177,
+     "ingest_document_with_receipt"
+    ],
+    [
+     1177,
+     "ingest_structured_with_receipt"
+    ],
+    [
+     1177,
+     "ingest_with_receipt"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_save_tools.py",
+   "function": "test_save_does_not_mutate_the_callers_metadata",
+   "key": "tests/test_save_tools.py::test_save_does_not_mutate_the_callers_metadata",
+   "line": 864,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     868,
+     "memory_save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_save_tools.py",
+   "function": "test_typed_wire_refusals_propagate_to_the_agent",
+   "key": "tests/test_save_tools.py::test_typed_wire_refusals_propagate_to_the_agent",
+   "line": 659,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     667,
+     "memory_save"
     ]
    ],
    "via": [
