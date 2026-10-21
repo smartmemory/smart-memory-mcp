@@ -479,53 +479,23 @@ SAVE_METHOD = re.compile(
 NON_MEMORY = [
     "tests/test_code_index_repo_key.py:67",
     "tests/test_hosted_tools_allowlist.py:300",
-    "tests/test_local_save_return_compat.py:283",
-    "tests/test_local_save_return_compat.py:300",
-    "tests/test_local_save_return_compat.py:455",
+    "tests/test_local_save_return_compat.py:948",
+    "tests/test_local_save_return_compat.py:965",
+    "tests/test_local_save_return_compat.py:1120",
     "tests/test_portability.py:55",
     "tests/test_code_index_ingest_fixes.py:183",
 ]
 DYNAMIC = {
     "tests/test_backend_conformance.py:37": "an audit that checks the backend class defines each called method, it never calls it",
+    "tests/test_local_save_call.py:200": "a wrapper around the memory's own add, ingest, ingest_structured and direct_store that records which one runs; the test asserts none does",
 }
 WAIT_USERS = {
     "tests/test_hosted_identity.py": "an asyncio Event barrier between concurrent tool calls, no save",
     "tests/test_local_backend_lazy.py": "a thread Event handshake around lazy storage init, no save",
     "tests/test_windows_credential_store.py": "a lock-contention sleep around key storage, no memory save",
 }
-# U4.42 (worktree wt-mcp-U4.42, head ce73ac5, merge-base 915bbdb) adds tests/test_local_save_call.py. Until it lands
-# these 13 units are its rows; the check fails the moment the file appears, so each gets a disposition then.
-OWNED_BY_U4_42 = {
-    "file": "tests/test_local_save_call.py",
-    "head": "ce73ac5",
-    "units": [
-        [
-            "test_save_mints_a_key_in_cores_alphabet_and_names_the_mcp_local_producer",
-            114,
-        ],
-        [
-            "test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request",
-            128,
-        ],
-        ["test_two_calls_without_a_key_mint_two_keys", 147],
-        ["test_save_passes_each_field_to_core_unjudged", 165],
-        ["test_data_saves_do_not_extract_by_default", 176],
-        [
-            "test_an_unreachable_wait_is_cores_typed_refusal_and_the_manager_is_untouched",
-            186,
-        ],
-        ["test_the_facade_off_is_cores_refusal_and_never_add_or_ingest", 197],
-        ["test_a_rejected_admission_is_save_rejected_with_one_warning", 216],
-        ["test_ingest_structured_legacy_returns_are_unchanged_and_import_nothing", 340],
-        [
-            "test_a_receipt_the_wrapper_cannot_read_is_one_marked_refusal_and_never_an_id",
-            362,
-        ],
-        ["test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it", 379],
-        ["test_ingest_structured_never_turns_a_rejection_into_an_id", 389],
-        ["test_the_structured_tool_text_is_the_same_for_both_arms", 433],
-    ],
-}
+# U4.42 landed (2026-10-21): its 13 units in tests/test_local_save_call.py have dispositions below.
+OWNED_BY_U4_42 = {}
 WORKER_OWNER = "C49-RW-HARNESS-1"
 
 
@@ -775,6 +745,26 @@ for _key in (
     "test_remote_error_surfacing.py::test_add_raises_instead_of_returning_the_error_dict_as_an_item_id",
     "test_remote_error_surfacing.py::test_add_raises_when_no_item_id_comes_back",
     "test_remote_error_surfacing.py::test_add_returns_id_from_the_id_key",
+):
+    DISPOSITIONS["tests/" + _key] = D("mocked_seam", MOCKED)
+SAVE_CALL_ONLY = "a real Lite core with a recording save manager: the test asserts the hand-off or the refusal and never reads the item back, so no worker is involved"
+for _key in (
+    "test_local_save_call.py::test_save_mints_a_key_in_cores_alphabet_and_names_the_mcp_local_producer",
+    "test_local_save_call.py::test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request",
+    "test_local_save_call.py::test_two_calls_without_a_key_mint_two_keys",
+    "test_local_save_call.py::test_save_passes_each_field_to_core_unjudged",
+    "test_local_save_call.py::test_data_saves_do_not_extract_by_default",
+    "test_local_save_call.py::test_an_unreachable_wait_is_cores_typed_refusal_and_the_manager_is_untouched",
+    "test_local_save_call.py::test_the_facade_off_is_cores_refusal_and_never_add_or_ingest",
+    "test_local_save_call.py::test_a_rejected_admission_is_save_rejected_with_one_warning",
+):
+    DISPOSITIONS["tests/" + _key] = D("save_only", SAVE_CALL_ONLY)
+for _key in (
+    "test_local_save_call.py::test_ingest_structured_legacy_returns_are_unchanged_and_import_nothing",
+    "test_local_save_call.py::test_a_receipt_the_wrapper_cannot_read_is_one_marked_refusal_and_never_an_id",
+    "test_local_save_call.py::test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it",
+    "test_local_save_call.py::test_ingest_structured_never_turns_a_rejection_into_an_id",
+    "test_local_save_call.py::test_the_structured_tool_text_is_the_same_for_both_arms",
 ):
     DISPOSITIONS["tests/" + _key] = D("mocked_seam", MOCKED)
 

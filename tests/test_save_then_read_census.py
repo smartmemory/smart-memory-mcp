@@ -3,7 +3,7 @@
 ``scripts/save_then_read_census.py`` derives the save vocabulary from the backend classes and the registered tool
 bodies, scans every test for the units that save, and holds one authored disposition per unit. These rows pin that
 census: it is complete, the fixture is current, every defect is one named problem, each deferred unit's prepared
-wait runs, and the units U4.42 will add are owned until its test file lands.
+wait runs.
 """
 
 import copy
@@ -492,6 +492,10 @@ SAVE_METHODS = {
     "ingest_conversation_sync",
     "ingest_document",
     "ingest_structured",
+    "ingest_structured_with_receipt",
+    "save",
+    "save_call",
+    "submit_save",
 }
 SAVE_TOOLS = {
     "code_index",
@@ -539,21 +543,6 @@ def test_a_new_backend_save_and_its_tool_join_the_vocabulary_without_an_edit(tmp
         ["tool_save"],
         ["tool_read"],
     )
-
-
-def test_the_static_u4_42_list_is_valid_only_while_its_file_is_absent(tmp_path):
-    owned = census.OWNED_BY_U4_42
-    assert not (ROOT / owned["file"]).exists(), (
-        "U4.42 landed: give its units dispositions and delete OWNED_BY_U4_42"
-    )
-    names = [name for name, _ in owned["units"]]
-    assert len(names) == len(set(names)) == 13 and all(
-        isinstance(line, int) for _, line in owned["units"]
-    )
-    (tmp_path / "tests").mkdir()
-    (tmp_path / owned["file"]).write_text("")
-    doc = census.build(ROOT)
-    assert any("landed" in problem for problem in census.problems(doc, tmp_path))
 
 
 def test_each_prepared_wait_runs_against_the_public_helpers():

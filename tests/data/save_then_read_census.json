@@ -1,7 +1,8 @@
 {
  "blind_spots": {
   "dynamic_dispatch": {
-   "tests/test_backend_conformance.py:37": "an audit that checks the backend class defines each called method, it never calls it"
+   "tests/test_backend_conformance.py:37": "an audit that checks the backend class defines each called method, it never calls it",
+   "tests/test_local_save_call.py:200": "a wrapper around the memory's own add, ingest, ingest_structured and direct_store that records which one runs; the test asserts none does"
   },
   "non_python": [
    "tests/fixtures/code_upload_before_move.json",
@@ -60,70 +61,13 @@
  "non_memory_sites": [
   "tests/test_code_index_repo_key.py:67",
   "tests/test_hosted_tools_allowlist.py:300",
-  "tests/test_local_save_return_compat.py:283",
-  "tests/test_local_save_return_compat.py:300",
-  "tests/test_local_save_return_compat.py:455",
+  "tests/test_local_save_return_compat.py:948",
+  "tests/test_local_save_return_compat.py:965",
+  "tests/test_local_save_return_compat.py:1120",
   "tests/test_portability.py:55",
   "tests/test_code_index_ingest_fixes.py:183"
  ],
- "owned_by_u4_42": {
-  "file": "tests/test_local_save_call.py",
-  "head": "ce73ac5",
-  "units": [
-   [
-    "test_save_mints_a_key_in_cores_alphabet_and_names_the_mcp_local_producer",
-    114
-   ],
-   [
-    "test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request",
-    128
-   ],
-   [
-    "test_two_calls_without_a_key_mint_two_keys",
-    147
-   ],
-   [
-    "test_save_passes_each_field_to_core_unjudged",
-    165
-   ],
-   [
-    "test_data_saves_do_not_extract_by_default",
-    176
-   ],
-   [
-    "test_an_unreachable_wait_is_cores_typed_refusal_and_the_manager_is_untouched",
-    186
-   ],
-   [
-    "test_the_facade_off_is_cores_refusal_and_never_add_or_ingest",
-    197
-   ],
-   [
-    "test_a_rejected_admission_is_save_rejected_with_one_warning",
-    216
-   ],
-   [
-    "test_ingest_structured_legacy_returns_are_unchanged_and_import_nothing",
-    340
-   ],
-   [
-    "test_a_receipt_the_wrapper_cannot_read_is_one_marked_refusal_and_never_an_id",
-    362
-   ],
-   [
-    "test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it",
-    379
-   ],
-   [
-    "test_ingest_structured_never_turns_a_rejection_into_an_id",
-    389
-   ],
-   [
-    "test_the_structured_tool_text_is_the_same_for_both_arms",
-    433
-   ]
-  ]
- },
+ "owned_by_u4_42": {},
  "parse_errors": [],
  "repo": "smart-memory-mcp",
  "sites": [
@@ -400,42 +344,186 @@
    "receiver": "<tool-name>"
   },
   {
-   "call": "add",
-   "file": "tests/test_local_save_return_compat.py",
-   "function": "test_legacy_returns_are_unchanged_and_import_nothing",
-   "line": 106,
+   "call": "save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_save_mints_a_key_in_cores_alphabet_and_names_the_mcp_local_producer",
+   "line": 117,
    "memory_like": true,
-   "receiver": "be"
+   "receiver": "local(memory)"
   },
   {
-   "call": "add_with_receipt",
-   "file": "tests/test_local_save_return_compat.py",
-   "function": "test_legacy_returns_are_unchanged_and_import_nothing",
-   "line": 107,
-   "memory_like": true,
-   "receiver": "be"
-  },
-  {
-   "call": "add",
-   "file": "tests/test_local_save_return_compat.py",
-   "function": "test_receipt_reads_as_id_and_keeps_the_receipt",
-   "line": 131,
-   "memory_like": true,
-   "receiver": "be"
-  },
-  {
-   "call": "add_with_receipt",
-   "file": "tests/test_local_save_return_compat.py",
-   "function": "test_receipt_reads_as_id_and_keeps_the_receipt",
+   "call": "save_call",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request",
    "line": 132,
    "memory_like": true,
    "receiver": "be"
   },
   {
+   "call": "submit_save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request",
+   "line": 137,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "submit_save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request",
+   "line": 138,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "save_call",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_two_calls_without_a_key_mint_two_keys",
+   "line": 149,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_save_passes_each_field_to_core_unjudged",
+   "line": 169,
+   "memory_like": true,
+   "receiver": "local(memory)"
+  },
+  {
+   "call": "save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_data_saves_do_not_extract_by_default",
+   "line": 177,
+   "memory_like": true,
+   "receiver": "local(memory)"
+  },
+  {
+   "call": "save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_an_unreachable_wait_is_cores_typed_refusal_and_the_manager_is_untouched",
+   "line": 190,
+   "memory_like": true,
+   "receiver": "local(memory)"
+  },
+  {
+   "call": "save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_the_facade_off_is_cores_refusal_and_never_add_or_ingest",
+   "line": 208,
+   "memory_like": true,
+   "receiver": "local(memory)"
+  },
+  {
+   "call": "save",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_rejected_admission_is_save_rejected_with_one_warning",
+   "line": 228,
+   "memory_like": true,
+   "receiver": "local(memory)"
+  },
+  {
+   "call": "ingest_structured",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_legacy_returns_are_unchanged_and_import_nothing",
+   "line": 353,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest_structured_with_receipt",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_legacy_returns_are_unchanged_and_import_nothing",
+   "line": 354,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest_structured",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_receipt_the_wrapper_cannot_read_is_one_marked_refusal_and_never_an_id",
+   "line": 371,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest_structured",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it",
+   "line": 383,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest_structured_with_receipt",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it",
+   "line": 384,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest_structured",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it",
+   "line": 386,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "ingest_structured",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_never_turns_a_rejection_into_an_id",
+   "line": 402,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "memory_ingest_structured",
+   "file": "tests/test_local_save_call.py",
+   "function": "test_the_structured_tool_text_is_the_same_for_both_arms",
+   "line": 440,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_legacy_returns_are_unchanged_and_import_nothing",
+   "line": 111,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add_with_receipt",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_legacy_returns_are_unchanged_and_import_nothing",
+   "line": 112,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
    "call": "add",
    "file": "tests/test_local_save_return_compat.py",
    "function": "test_receipt_reads_as_id_and_keeps_the_receipt",
-   "line": 138,
+   "line": 136,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add_with_receipt",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_receipt_reads_as_id_and_keeps_the_receipt",
+   "line": 137,
+   "memory_like": true,
+   "receiver": "be"
+  },
+  {
+   "call": "add",
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "test_receipt_reads_as_id_and_keeps_the_receipt",
+   "line": 143,
    "memory_like": true,
    "receiver": "be"
   },
@@ -443,7 +531,7 @@
    "call": "add",
    "file": "tests/test_local_save_return_compat.py",
    "function": "test_rejected_receipt_is_typed_logged_and_never_an_id",
-   "line": 145,
+   "line": 150,
    "memory_like": true,
    "receiver": "be"
   },
@@ -451,7 +539,7 @@
    "call": "add_with_receipt",
    "file": "tests/test_local_save_return_compat.py",
    "function": "test_rejected_receipt_is_typed_logged_and_never_an_id",
-   "line": 145,
+   "line": 150,
    "memory_like": true,
    "receiver": "be"
   },
@@ -459,7 +547,7 @@
    "call": "add",
    "file": "tests/test_local_save_return_compat.py",
    "function": "test_unreadable_receipt_is_refused",
-   "line": 158,
+   "line": 163,
    "memory_like": true,
    "receiver": "be"
   },
@@ -467,7 +555,7 @@
    "call": "add",
    "file": "tests/test_local_save_return_compat.py",
    "function": "test_receipt_without_the_wrapper_reader_is_one_warning_and_a_typed_error",
-   "line": 176,
+   "line": 181,
    "memory_like": true,
    "receiver": "be"
   },
@@ -475,7 +563,7 @@
    "call": "memory_add",
    "file": "tests/test_local_save_return_compat.py",
    "function": "memory_add.<locals>.arm",
-   "line": 224,
+   "line": 889,
    "memory_like": true,
    "receiver": "<tool-name>"
   },
@@ -483,7 +571,7 @@
    "call": "add",
    "file": "tests/test_local_save_return_compat.py",
    "function": "ingest_callers",
-   "line": 283,
+   "line": 948,
    "memory_like": false,
    "receiver": "aliases.setdefault(bound, set())"
   },
@@ -491,7 +579,7 @@
    "call": "add",
    "file": "tests/test_local_save_return_compat.py",
    "function": "ingest_callers",
-   "line": 300,
+   "line": 965,
    "memory_like": false,
    "receiver": "aliases.setdefault(a.asname or a.name, s"
   },
@@ -499,7 +587,7 @@
    "call": "add",
    "file": "tests/test_local_save_return_compat.py",
    "function": "ingest_callers",
-   "line": 455,
+   "line": 1120,
    "memory_like": false,
    "receiver": "found"
   },
@@ -507,7 +595,7 @@
    "call": "memory_ingest",
    "file": "tests/test_local_save_return_compat.py",
    "function": "test_memory_ingest_tool_reads_the_id_on_both_arms",
-   "line": 746,
+   "line": 1411,
    "memory_like": true,
    "receiver": "<tool-name>"
   },
@@ -1454,15 +1542,308 @@
     "class": "mocked_seam",
     "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
    },
-   "file": "tests/test_local_save_return_compat.py",
-   "function": "memory_add.<locals>.arm",
-   "key": "tests/test_local_save_return_compat.py::memory_add.<locals>.arm",
-   "line": 220,
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_receipt_the_wrapper_cannot_read_is_one_marked_refusal_and_never_an_id",
+   "key": "tests/test_local_save_call.py::test_a_receipt_the_wrapper_cannot_read_is_one_marked_refusal_and_never_an_id",
+   "line": 362,
    "reads": [],
    "reads_after_save": false,
    "saves": [
     [
-     224,
+     371,
+     "ingest_structured"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "a real Lite core with a recording save manager: the test asserts the hand-off or the refusal and never reads the item back, so no worker is involved"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_rejected_admission_is_save_rejected_with_one_warning",
+   "key": "tests/test_local_save_call.py::test_a_rejected_admission_is_save_rejected_with_one_warning",
+   "line": 216,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     228,
+     "save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "a real Lite core with a recording save manager: the test asserts the hand-off or the refusal and never reads the item back, so no worker is involved"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request",
+   "key": "tests/test_local_save_call.py::test_a_supplied_key_is_carried_and_a_resubmitted_call_sends_the_same_request",
+   "line": 128,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     132,
+     "save_call"
+    ],
+    [
+     137,
+     "submit_save"
+    ],
+    [
+     138,
+     "submit_save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "a real Lite core with a recording save manager: the test asserts the hand-off or the refusal and never reads the item back, so no worker is involved"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_an_unreachable_wait_is_cores_typed_refusal_and_the_manager_is_untouched",
+   "key": "tests/test_local_save_call.py::test_an_unreachable_wait_is_cores_typed_refusal_and_the_manager_is_untouched",
+   "line": 186,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     190,
+     "save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "a real Lite core with a recording save manager: the test asserts the hand-off or the refusal and never reads the item back, so no worker is involved"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_data_saves_do_not_extract_by_default",
+   "key": "tests/test_local_save_call.py::test_data_saves_do_not_extract_by_default",
+   "line": 176,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     177,
+     "save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_legacy_returns_are_unchanged_and_import_nothing",
+   "key": "tests/test_local_save_call.py::test_ingest_structured_legacy_returns_are_unchanged_and_import_nothing",
+   "line": 340,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     353,
+     "ingest_structured"
+    ],
+    [
+     354,
+     "ingest_structured_with_receipt"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_never_turns_a_rejection_into_an_id",
+   "key": "tests/test_local_save_call.py::test_ingest_structured_never_turns_a_rejection_into_an_id",
+   "line": 389,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     402,
+     "ingest_structured"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it",
+   "key": "tests/test_local_save_call.py::test_ingest_structured_reads_a_receipt_as_its_subject_id_and_keeps_it",
+   "line": 379,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     383,
+     "ingest_structured"
+    ],
+    [
+     384,
+     "ingest_structured_with_receipt"
+    ],
+    [
+     386,
+     "ingest_structured"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "a real Lite core with a recording save manager: the test asserts the hand-off or the refusal and never reads the item back, so no worker is involved"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_save_mints_a_key_in_cores_alphabet_and_names_the_mcp_local_producer",
+   "key": "tests/test_local_save_call.py::test_save_mints_a_key_in_cores_alphabet_and_names_the_mcp_local_producer",
+   "line": 114,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     117,
+     "save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "a real Lite core with a recording save manager: the test asserts the hand-off or the refusal and never reads the item back, so no worker is involved"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_save_passes_each_field_to_core_unjudged",
+   "key": "tests/test_local_save_call.py::test_save_passes_each_field_to_core_unjudged",
+   "line": 165,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     169,
+     "save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "a real Lite core with a recording save manager: the test asserts the hand-off or the refusal and never reads the item back, so no worker is involved"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_the_facade_off_is_cores_refusal_and_never_add_or_ingest",
+   "key": "tests/test_local_save_call.py::test_the_facade_off_is_cores_refusal_and_never_add_or_ingest",
+   "line": 197,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     208,
+     "save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_the_structured_tool_text_is_the_same_for_both_arms",
+   "key": "tests/test_local_save_call.py::test_the_structured_tool_text_is_the_same_for_both_arms",
+   "line": 433,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     440,
+     "memory_ingest_structured"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "save_only",
+    "why": "a real Lite core with a recording save manager: the test asserts the hand-off or the refusal and never reads the item back, so no worker is involved"
+   },
+   "file": "tests/test_local_save_call.py",
+   "function": "test_two_calls_without_a_key_mint_two_keys",
+   "key": "tests/test_local_save_call.py::test_two_calls_without_a_key_mint_two_keys",
+   "line": 147,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     149,
+     "save_call"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "mocked_seam",
+    "why": "the backend, core or transport is stubbed or a fake: no worker exists, so there is nothing to wait for"
+   },
+   "file": "tests/test_local_save_return_compat.py",
+   "function": "memory_add.<locals>.arm",
+   "key": "tests/test_local_save_return_compat.py::memory_add.<locals>.arm",
+   "line": 885,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     889,
      "memory_add"
     ]
    ],
@@ -1478,16 +1859,16 @@
    "file": "tests/test_local_save_return_compat.py",
    "function": "test_legacy_returns_are_unchanged_and_import_nothing",
    "key": "tests/test_local_save_return_compat.py::test_legacy_returns_are_unchanged_and_import_nothing",
-   "line": 96,
+   "line": 101,
    "reads": [],
    "reads_after_save": false,
    "saves": [
     [
-     106,
+     111,
      "add"
     ],
     [
-     107,
+     112,
      "add_with_receipt"
     ]
    ],
@@ -1503,12 +1884,12 @@
    "file": "tests/test_local_save_return_compat.py",
    "function": "test_memory_ingest_tool_reads_the_id_on_both_arms",
    "key": "tests/test_local_save_return_compat.py::test_memory_ingest_tool_reads_the_id_on_both_arms",
-   "line": 728,
+   "line": 1393,
    "reads": [],
    "reads_after_save": false,
    "saves": [
     [
-     746,
+     1411,
      "memory_ingest"
     ]
    ],
@@ -1524,20 +1905,20 @@
    "file": "tests/test_local_save_return_compat.py",
    "function": "test_receipt_reads_as_id_and_keeps_the_receipt",
    "key": "tests/test_local_save_return_compat.py::test_receipt_reads_as_id_and_keeps_the_receipt",
-   "line": 127,
+   "line": 132,
    "reads": [],
    "reads_after_save": false,
    "saves": [
     [
-     131,
+     136,
      "add"
     ],
     [
-     132,
+     137,
      "add_with_receipt"
     ],
     [
-     138,
+     143,
      "add"
     ]
    ],
@@ -1553,12 +1934,12 @@
    "file": "tests/test_local_save_return_compat.py",
    "function": "test_receipt_without_the_wrapper_reader_is_one_warning_and_a_typed_error",
    "key": "tests/test_local_save_return_compat.py::test_receipt_without_the_wrapper_reader_is_one_warning_and_a_typed_error",
-   "line": 167,
+   "line": 172,
    "reads": [],
    "reads_after_save": false,
    "saves": [
     [
-     176,
+     181,
      "add"
     ]
    ],
@@ -1574,16 +1955,16 @@
    "file": "tests/test_local_save_return_compat.py",
    "function": "test_rejected_receipt_is_typed_logged_and_never_an_id",
    "key": "tests/test_local_save_return_compat.py::test_rejected_receipt_is_typed_logged_and_never_an_id",
-   "line": 141,
+   "line": 146,
    "reads": [],
    "reads_after_save": false,
    "saves": [
     [
-     145,
+     150,
      "add"
     ],
     [
-     145,
+     150,
      "add_with_receipt"
     ]
    ],
@@ -1599,12 +1980,12 @@
    "file": "tests/test_local_save_return_compat.py",
    "function": "test_unreadable_receipt_is_refused",
    "key": "tests/test_local_save_return_compat.py::test_unreadable_receipt_is_refused",
-   "line": 155,
+   "line": 160,
    "reads": [],
    "reads_after_save": false,
    "saves": [
     [
-     158,
+     163,
      "add"
     ]
    ],
@@ -1958,7 +2339,11 @@
    "ingest_code",
    "ingest_conversation_sync",
    "ingest_document",
-   "ingest_structured"
+   "ingest_structured",
+   "ingest_structured_with_receipt",
+   "save",
+   "save_call",
+   "submit_save"
   ],
   "save_tools": [
    "code_index",
