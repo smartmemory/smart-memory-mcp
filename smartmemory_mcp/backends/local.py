@@ -41,7 +41,9 @@ class _FrozenListPage(list):
     """A gate-ON list page: the plain list ``list_memories`` always returned, plus the walk's frozen ``total`` and the
     names (``partial``, as ``PartialRows``) of why core called it degraded. ``total`` is None when core gave none."""
 
-    def __init__(self, rows: Any, *, total: int | None, partial: tuple[str, ...]) -> None:
+    def __init__(
+        self, rows: Any, *, total: int | None, partial: tuple[str, ...]
+    ) -> None:
         super().__init__(rows)
         self.total = total
         self.partial = partial
@@ -751,10 +753,14 @@ class LocalBackend(BackendCapabilities):
         """One page of the gate-ON list from a frozen walk: membership and ``total`` are fixed at the walk's first page."""
         from collections import OrderedDict
 
+        from smartmemory.refusal_logging import mark_refusal_logged
+        from smartmemory.search.direct_lists import REFUSALS
         from smartmemory.search.visibility_pages import CursorRejected
 
         if limit < 1:
-            return _FrozenListPage([], total=None, partial=())  # inherited: limit=0 is accepted, an empty page
+            return _FrozenListPage(
+                [], total=None, partial=()
+            )  # inherited: limit=0 is accepted, an empty page
         walks = self.__dict__.setdefault("_walks", OrderedDict())
         key = (mkey, None if mval is None else str(mval))
         offsets: dict[int, str] = walks.setdefault(key, {})
@@ -789,7 +795,8 @@ class LocalBackend(BackendCapabilities):
                 break
             except CursorRejected as exc:
                 if attempt:
-                    raise
+                    # Core logged this rejection where it raised it: the tool must not log it again.
+                    raise mark_refusal_logged(exc)
                 log.warning(
                     "list_memories lost its frozen walk at offset %d (%s); the page is cut from a new walk, so its "
                     "membership and total may differ from the earlier pages.",
@@ -798,17 +805,43 @@ class LocalBackend(BackendCapabilities):
                 )
                 offsets.clear()
                 cursor = None
+            except REFUSALS as exc:
+                # Core's typed refusals are logged once where raised (direct_lists docstring: callers log nothing more).
+                raise mark_refusal_logged(exc)
         rows = page.rows[skip:]
         if page.next_cursor:
             offsets[offset + len(rows)] = page.next_cursor
             while len(offsets) > self._WALK_OFFSETS_KEPT:
                 offsets.pop(next(iter(offsets)))
         partial = ("read_gate_scan_budget_spent",) if page.degraded else ()
+        try:
+            rows = [self._with_read_status(raw) for raw in rows]
+        except REFUSALS as exc:
+            raise mark_refusal_logged(exc)
         return _FrozenListPage(
             [normalize_item(raw) for raw in rows],
             total=page.total_visible,
             partial=partial,
         )
+
+    @staticmethod
+    def _with_read_status(raw: Mapping[str, Any]) -> dict[str, Any]:
+        """A frozen-walk row with core's response-only ``read_status`` (U5.22), built from the stored node alone.
+
+        The roots walk lists graph roots and reads no admission record, so a row's status is the graph row's: merged
+        intake status for a landed row is U5.8's (``direct_lists`` docstring).
+        """
+        from smartmemory.models.read_status import READ_STATUS_KEY, read_status
+        from smartmemory.search.pending_facade import extraction_status
+
+        row = dict(raw)
+        if (
+            READ_STATUS_KEY in row
+        ):  # a carrier core already attached is kept, and normalize_item refuses it if unreadable
+            return row
+        revision = 1 if row.get("revision") is None else row["revision"]
+        row[READ_STATUS_KEY] = read_status(extraction_status(row, None), revision)
+        return row
 
     def clear_user_memories(self, confirm: bool = False, **kwargs: Any) -> str:
         """Clear all user memories.

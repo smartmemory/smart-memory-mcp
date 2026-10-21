@@ -484,7 +484,7 @@ def test_memory_list_pages_under_both_coverage_states(
     if not shown:
         assert "No memories returned for this page (offset 9); 6 memories exist." in out
     else:
-        assert f"of 6 memories" in out
+        assert "of 6 memories" in out
     assert answer_log(caplog) == []
 
 
@@ -508,7 +508,10 @@ def test_memory_list_off_arm_is_the_legacy_page(world, caplog):
     # four rows of six, one visible (5): at least three are rows the gate hides ON
     assert PARTIAL_PHRASE not in out
     assert len(shown(out)) == 4 and len(shown(out) - {5}) >= 3
-    assert answer_log(caplog) == [OFF_SWITCH_WARNING, LIST_TOTAL_LOST]  # OFF is the base's page and lines
+    assert answer_log(caplog) == [
+        OFF_SWITCH_WARNING,
+        LIST_TOTAL_LOST,
+    ]  # OFF is the base's page and lines
 
 
 # -- memory_list refusals: logged once by the origin when the gate is ON, the base's lines when it is OFF (F3, F4) -------
@@ -554,11 +557,24 @@ def _odd_text():
 
 
 def _core_unreadable(world, monkeypatch):
-    """The real core path: the frozen walk's own refusal (``direct_lists._refuse``: one WARNING, a typed error)."""
+    """The real core path, one stand-in per arm. ON: the frozen walk's own refusal (``direct_lists._refuse``: one
+    WARNING, a typed error). OFF: the legacy page's search returns coverage core could not have written (no real
+    search runs, so core's one-time switch-OFF notices stay out of the row)."""
     from smartmemory.search import direct_lists
+    from smartmemory.search.results import SearchDiagnostics, SearchResults
+
+    monkeypatch.setattr(
+        world.mem,
+        "search",
+        lambda *a, **k: SearchResults(
+            [], SearchDiagnostics(coverage={"complete": "no"})
+        ),
+    )
 
     def refuse(**kwargs):
-        raise direct_lists._refuse("the root read failed (test); the read was not completed")
+        raise direct_lists._refuse(
+            "the root read failed (test); the read was not completed"
+        )
 
     monkeypatch.setattr(world.mem, "read_gated_roots_page", refuse)
 
@@ -866,7 +882,9 @@ def test_r11d_paging_is_frozen_across_pages(
 ):
     """R11(d): membership and total are the walk's first-page values, whatever lands between pages."""
     seed(world.mem, "semantic", visible={0, 1, 2, 3, 4, 5})
-    expected = _listed(world, limit=10, offset=0)  # a walk of its own: the fixed membership
+    expected = _listed(
+        world, limit=10, offset=0
+    )  # a walk of its own: the fixed membership
     assert len(expected) == 6
     pages = []
     with switch_override(SWITCH, True):

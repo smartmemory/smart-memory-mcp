@@ -280,16 +280,15 @@ def test_local_backend_get_search_list_follow_the_gate(local_backend, on):
         legacy = local_backend.get("test_legacy")
         pending = local_backend.get("test_pending")
     assert ("test_pending" in found) is on
-    assert ("test_pending" in listed) is on
+    # LOCAL-FROZEN-PAGE-1: gate ON, the list is core's frozen roots walk, which reads graph roots only. A row still
+    # pending in the intake store is not a root yet, so it is not listed until it lands (merged pending pagination is
+    # U5.8, ``direct_lists`` docstring); search and get still carry it.
+    assert "test_pending" not in listed
     assert ("read_status" in legacy) is on
     assert (pending is not None) is on
     if on:
         assert (
             found["test_pending"]["read_status"]["extraction_state"]
-            == "extraction_pending"
-        )
-        assert (
-            listed["test_pending"]["read_status"]["extraction_state"]
             == "extraction_pending"
         )
         assert listed["test_legacy"]["read_status"]["extraction_state"] == "unavailable"
@@ -302,7 +301,7 @@ def test_local_backend_get_search_list_follow_the_gate(local_backend, on):
 # list normalize in this package, search through the wrapper's storage.search). One row per path.
 BACKEND_ROWS = [
     ("get", "get", lambda b: b.get("test_legacy")),
-    ("list", "search", lambda b: b.list_memories(limit=20, offset=0)),
+    ("list", "read_gated_roots_page", lambda b: b.list_memories(limit=20, offset=0)),
     (
         "search",
         "search",
@@ -326,6 +325,13 @@ def test_local_backend_refuses_an_unreadable_core_carrier(
 
     def stamped(*args, **kwargs):
         value = real(*args, **kwargs)
+        if hasattr(
+            value, "rows"
+        ):  # the frozen roots page (gate-ON list): raw row dicts
+            for row in value.rows:
+                if row.get("item_id") == "test_legacy":
+                    row["read_status"] = "extraction_pending"
+            return value
         for hit in value if isinstance(value, list) else [value]:
             if getattr(hit, "item_id", None) == "test_legacy":
                 hit.__dict__["read_status"] = "extraction_pending"
