@@ -20,7 +20,7 @@ import pytest
 
 from smartmemory_mcp.backends import local
 from smartmemory_mcp.backends.local import LocalBackend
-from smartmemory_mcp.tools import memory_tools
+from smartmemory_mcp.tools import save_tools
 
 receipt_mod = pytest.importorskip("smartmemory.save.receipt")
 save_return = pytest.importorskip("smartmemory_app.save_return")
@@ -881,28 +881,33 @@ class FakeMCP:
 
 
 @pytest.fixture
-def memory_add(monkeypatch):
+def memory_save(monkeypatch):
+    """``memory_save(memory_type="pending")``: the raw doorway (old ``memory_add``) over a scripted core ``add``."""
+
     def arm(result):
-        monkeypatch.setattr(memory_tools, "get_backend", lambda: backend(result))
+        monkeypatch.setattr(save_tools, "get_backend", lambda: backend(result))
         mcp = FakeMCP()
-        memory_tools.register_pro(mcp)
-        return mcp.fns["memory_add"]
+        save_tools.register_free(mcp)
+        return lambda content: mcp.fns["memory_save"](
+            content=content, memory_type="pending"
+        )
 
     return arm
 
 
-def test_memory_add_tool_text_is_the_same_for_both_arms(memory_add):
-    assert (
-        memory_add("test-id-1")("test content")
-        == "Memory added (direct). Item ID: test-id-1"
-    )
-    held = memory_add(HELD)("test content")
-    assert held == "Memory held: low_confidence. Details: ['r']"
+def test_memory_save_pending_tool_reads_both_arms(memory_save):
+    legacy = memory_save("test-id-1")("test content")
+    assert legacy.content[0].text == "Memory saved. Item ID: test-id-1"
+    assert legacy.structured_content["status"] == "saved"
+    assert legacy.structured_content["receipt"] is None
+    held = memory_save(HELD)("test content")
+    assert held.content[0].text == "Memory held: low_confidence. Details: ['r']"
+    assert held.structured_content["status"] == "held"
     for shape in (receipt(), receipt().to_dict()):
-        assert (
-            memory_add(shape)("test content")
-            == "Memory added (direct). Item ID: test_item"
-        )
+        out = memory_save(shape)("test content")
+        assert out.structured_content["item_id"] == "test_item"
+        assert out.structured_content["receipt"]["subject"]["item_id"] == "test_item"
+        assert out.structured_content["status"] in ("saved", "queued")
 
 
 # -- every consumer of the wrapper's ingest in this package, enumerated by AST (review r1 F3) --------------------
@@ -1125,12 +1130,13 @@ def ingest_callers(root, allowed_dynamic=()):
 
 
 def test_every_mcp_ingest_consumer_is_assessed():
-    """One row: ``LocalBackend.ingest`` returns the wrapper's value (an id string from ``storage.ingest`` with
-    ``sync`` left True) and the ``memory_ingest`` tool reads a dict's ``item_id`` or ``str(result)``."""
+    """One row: ``LocalBackend._ingest_raw`` (behind ``ingest`` and ``ingest_with_receipt``) returns the wrapper's
+    value (an id string from ``storage.ingest`` with ``sync`` left True) and the ``memory_save`` tool reads a dict's
+    ``item_id`` or ``str(result)``."""
     from pathlib import Path
 
     root = Path(local.__file__).parent.parent
-    assert ingest_callers(root) == {("backends/local.py", "ingest", "returned")}
+    assert ingest_callers(root) == {("backends/local.py", "_ingest_raw", "returned")}
 
 
 # -- the census helper itself, over every import form (review r2 F3): in-memory source, no repository file written ----
@@ -1403,11 +1409,9 @@ def test_memory_ingest_tool_reads_the_id_on_both_arms(
     monkeypatch.setattr(storage, "get_memory", lambda: ScriptedMemory())
     monkeypatch.setattr(storage, "llm_extraction_warning", lambda: None)
     monkeypatch.setattr(
-        memory_tools, "get_backend", lambda: LocalBackend.__new__(LocalBackend)
+        save_tools, "get_backend", lambda: LocalBackend.__new__(LocalBackend)
     )
     mcp = FakeMCP()
-    memory_tools.register_free(mcp)
-    assert (
-        mcp.fns["memory_ingest"]("test content")
-        == f"Memory ingested (pipeline). Item ID: {expected}"
-    )
+    save_tools.register_free(mcp)
+    out = mcp.fns["memory_save"](content="test content")
+    assert out.structured_content["item_id"] == expected

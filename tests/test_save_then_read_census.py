@@ -35,7 +35,7 @@ def load_census():
 census = load_census()
 VOCAB = {
     "save_methods": {"add"},
-    "save_tools": {"memory_add"},
+    "save_tools": {"memory_save"},
     "read_tools": {"memory_get"},
 }
 
@@ -103,7 +103,7 @@ ENGINE_ROWS = [
     ),
     (
         "a tool name constant is a save and a read",
-        "def test_f(call):\n    call('memory_add', {})\n    call('memory_get', {})\n",
+        "def test_f(call):\n    call('memory_save', {})\n    call('memory_get', {})\n",
         {"test_f": True},
         0,
     ),
@@ -490,8 +490,15 @@ SAVE_METHODS = {
     "ingest",
     "ingest_code",
     "ingest_conversation_sync",
+    "ingest_conversation_with_receipt",
     "ingest_document",
+    "ingest_document_with_receipt",
     "ingest_structured",
+    "ingest_structured_with_receipt",
+    "ingest_with_receipt",
+    "save",
+    "save_call",
+    "submit_save",
 }
 SAVE_TOOLS = {
     "code_index",
@@ -499,12 +506,9 @@ SAVE_TOOLS = {
     "dev_record_decision",
     "dev_record_pattern",
     "dev_save_session",
-    "memory_add",
-    "memory_distill",
-    "memory_ingest",
-    "memory_ingest_conversation",
-    "memory_ingest_document",
-    "memory_ingest_structured",
+    "memory_save",
+    "memory_save_conversation",
+    "memory_save_document",
 }
 
 
@@ -541,19 +545,16 @@ def test_a_new_backend_save_and_its_tool_join_the_vocabulary_without_an_edit(tmp
     )
 
 
-def test_the_static_u4_42_list_is_valid_only_while_its_file_is_absent(tmp_path):
-    owned = census.OWNED_BY_U4_42
-    assert not (ROOT / owned["file"]).exists(), (
-        "U4.42 landed: give its units dispositions and delete OWNED_BY_U4_42"
-    )
-    names = [name for name, _ in owned["units"]]
-    assert len(names) == len(set(names)) == 13 and all(
-        isinstance(line, int) for _, line in owned["units"]
-    )
-    (tmp_path / "tests").mkdir()
-    (tmp_path / owned["file"]).write_text("")
+def test_the_static_u4_42_list_is_retired_and_its_file_units_have_dispositions():
+    assert census.OWNED_BY_U4_42 == {}
+    assert (ROOT / "tests/test_local_save_call.py").exists()
     doc = census.build(ROOT)
-    assert any("landed" in problem for problem in census.problems(doc, tmp_path))
+    assert doc["owned_by_u4_42"] == {}
+    owned = [
+        u for u in doc["units"] if u["key"].startswith("tests/test_local_save_call.py::")
+    ]
+    assert len(owned) == 13 and all(u["disposition"]["class"] for u in owned)
+    assert census.problems(doc, ROOT) == []
 
 
 def test_each_prepared_wait_runs_against_the_public_helpers():

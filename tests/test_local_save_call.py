@@ -32,7 +32,7 @@ from smartmemory_mcp.backends.local import (
 )
 from smartmemory_mcp.backends.remote import RemoteBackend
 from smartmemory_mcp.hosted.backend import HostedRemoteBackend
-from smartmemory_mcp.tools import structured_tools
+from smartmemory_mcp.tools import save_tools
 
 receipt_mod = pytest.importorskip("smartmemory.save.receipt")
 save_caller = pytest.importorskip("smartmemory_app.save_caller")
@@ -260,8 +260,8 @@ def test_the_unsupported_set_is_unchanged():
 
 
 def test_no_tool_calls_the_receipt_save_yet():
-    names = {"save", "save_call", "submit_save", "ingest_structured_with_receipt"}
-    root = Path(structured_tools.__file__).parent
+    names = {"save", "save_call", "submit_save"}
+    root = Path(save_tools.__file__).parent
     called = {
         (path.name, node.func.attr)
         for path in root.glob("*.py")
@@ -417,29 +417,33 @@ class FakeMCP:
         return deco
 
 
-# (label, core return, the id the tool prints)
+# (label, core return, the id the tool returns, its text)
 STRUCTURED_TOOL_ROWS = [
-    ("legacy id", "test-id-1", "test-id-1"),
-    ("receipt", receipt(), "test_item"),
-    ("receipt wire", receipt().to_dict(), "test_item"),
+    (
+        "legacy id",
+        "test-id-1",
+        "test-id-1",
+        "Structured item saved. Schema: test_schema. Item ID: test-id-1",
+    ),
+    ("receipt", receipt(), "test_item", "Structured item: test_item (stored)"),
+    ("receipt wire", receipt().to_dict(), "test_item", "Structured item: test_item (stored)"),
 ]
 
 
 @pytest.mark.parametrize(
-    "label, result, expected",
+    "label, result, expected, text",
     STRUCTURED_TOOL_ROWS,
     ids=[r[0] for r in STRUCTURED_TOOL_ROWS],
 )
-def test_the_structured_tool_text_is_the_same_for_both_arms(
-    label, result, expected, monkeypatch
+def test_the_structured_save_tool_reads_both_arms(
+    label, result, expected, text, monkeypatch
 ):
-    monkeypatch.setattr(structured_tools, "get_backend", lambda: structured(result))
+    monkeypatch.setattr(save_tools, "get_backend", lambda: structured(result))
     mcp = FakeMCP()
-    structured_tools.register(mcp)
-    assert (
-        mcp.fns["memory_ingest_structured"]({"k": 1}, "test_schema")
-        == f"Structured item ingested. Schema: test_schema, Item ID: {expected}"
-    )
+    save_tools.register_free(mcp)
+    out = mcp.fns["memory_save"](data={"k": 1}, memory_type="test_schema")
+    assert out.structured_content["item_id"] == expected
+    assert out.content[0].text == text
 
 
 # --- fix round 1 (F3): every new failure boundary is a typed, marked, single-WARNING refusal ---------------------------
