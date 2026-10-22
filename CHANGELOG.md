@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- DEPS-LATEST-2.0-1-py (2026-10-22): no exact pins and no lock or Dockerfile in this repo; `fastmcp>=4.0,<5` already admits the latest 4.1.3 (the `<5` major cap is deliberate) and `httpx>=0.27` admits 0.28.1, so nothing was bumped. Verified `tests/` on fastmcp 4.1.3 / starlette 1.9.0 against fastmcp 4.0.0 / starlette 0.52.1: the same 30 failures and 16 errors on both (spaCy model, `memory_service` and `smartmemory_app` not installed in the test venv), none new.
+
 ## 1.5.22
 
 - LOCAL-FROZEN-PAGE-1 (R11(d)): gate ON, local `list_memories` pages on core's frozen walk (`read_gated_roots_page`) instead of re-running the wildcard search per page, so membership and `total` are fixed at a walk's first page whatever is written or deleted between pages. `memory_list` keeps `limit`/`offset` (no cursor reaches a client): the backend remembers, per metadata filter, the cursor that continues each page it served, offset 0 starts a new walk, an offset with no page on record starts a walk and skips to it, and a rejected cursor logs one WARNING and restarts. The page carries the frozen total, so `memory_list` prints `Showing N of TOTAL`; the 200-row fetch window no longer applies ON. Rows carry core's `read_status` built from the stored node. A row still pending in the intake store is not a graph root, so it is not listed until it lands (merged pending listing is U5.8); search and get still return it. A core refusal is logged once by core and marked so the tool does not log it again. Gate OFF is unchanged.
