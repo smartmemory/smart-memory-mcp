@@ -12,6 +12,12 @@ The branch compared against follows the push target (OPS-PREPUSH-HOOK-TARGET-BRA
 that has no such branch falls back to `origin/main` with one WARNING. Kill switch:
 `PREPUSH_TARGET_BRANCH=0` restores the old always-`origin/main` behaviour.
 
+A name counts as exported (OPS-PREPUSH-HOOK-DYNAMIC-EXPORTS-1) when the sibling module binds it (def, class,
+assignment, `import`, `from m import x` re-export), lists it in `__all__`, answers it from a module `__getattr__`
+that names it in a string literal (`if name == "x"`, `name in _LAZY`, `_LAZY[name]`), or star-imports it from a
+module that exports it. A `__getattr__` or star import that cannot be read statically accepts the name with one
+WARNING line saying so; a name no rule finds is still refused.
+
 Usage: install via scripts/install-git-hooks.sh.
 Skip with `git push --no-verify` (DO NOT make a habit of it).
 """
@@ -185,39 +191,217 @@ def fetch_origin(
     return None
 
 
-def _module_defines(nodes, name: str) -> bool:
-    """True if `name` is bound at module-execution scope, including inside
-    module-level if/try/with/for/while blocks (e.g. a conditional singleton
-    `try: limiter = Limiter() except ...: limiter = _Shim()`). Does not descend
-    into def/class scopes (those names are not importable from the module)."""
+def _target_names(target) -> list[str]:
+    """Names bound by an assignment, loop or `with` target (tuple, list and starred unpacking included)."""
+    if isinstance(target, ast.Name):
+        return [target.id]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return [n for elt in target.elts for n in _target_names(elt)]
+    if isinstance(target, ast.Starred):
+        return _target_names(target.value)
+    return []
+
+
+def _module_statements(nodes):
+    """Every statement executed at module scope, descending into if/try/with/for/while blocks but not into
+    def/class bodies (the names those bind are not importable from the module)."""
     for node in nodes:
+        yield node
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        for attr in ("body", "orelse", "finalbody"):
+            block = getattr(node, attr, None)
+            if isinstance(block, list):
+                yield from _module_statements(block)
+        if isinstance(node, ast.Try):
+            for handler in node.handlers:
+                yield from _module_statements(handler.body)
+
+
+def _module_defines(nodes, name: str) -> bool:
+    """True if `name` is bound at module-execution scope: def/class, plain, annotated or unpacked assignment,
+    `import x [as y]`, `from m import x [as y]` (the static re-export), or a module-level loop/`with` target,
+    including inside module-level if/try/with/for/while blocks (e.g. a conditional singleton
+    `try: limiter = Limiter() except ...: limiter = _Shim()`)."""
+    for node in _module_statements(nodes):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             if node.name == name:
                 return True
-            continue
+        elif isinstance(node, ast.Assign):
+            if any(name in _target_names(target) for target in node.targets):
+                return True
+        elif isinstance(node, ast.AnnAssign):
+            if name in _target_names(node.target):
+                return True
+        elif isinstance(node, (ast.For, ast.AsyncFor)):
+            if name in _target_names(node.target):
+                return True
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            if any(
+                item.optional_vars is not None
+                and name in _target_names(item.optional_vars)
+                for item in node.items
+            ):
+                return True
+        elif isinstance(node, ast.ImportFrom):
+            if any((alias.asname or alias.name) == name for alias in node.names):
+                return True
+        elif isinstance(node, ast.Import):
+            if any(
+                (alias.asname or alias.name.split(".")[0]) == name
+                for alias in node.names
+            ):
+                return True
+    return False
+
+
+def _string_items(node) -> list[str]:
+    """String literals in a list/tuple/set display, or in a `+` of them (`__all__ = [...] + [...]`)."""
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return [
+            e.value
+            for e in node.elts
+            if isinstance(e, ast.Constant) and isinstance(e.value, str)
+        ]
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _string_items(node.left) + _string_items(node.right)
+    return []
+
+
+def _container_keys(node) -> list[str]:
+    """String keys of a dict display, else the string items of a list/tuple/set display."""
+    if isinstance(node, ast.Dict):
+        return [
+            k.value
+            for k in node.keys
+            if isinstance(k, ast.Constant) and isinstance(k.value, str)
+        ]
+    return _string_items(node)
+
+
+def _declared_all(nodes) -> set[str]:
+    """Names listed in a module-level `__all__` (`=`, `+=`, `.extend([...])`, `.append("x")`), literals only."""
+    out: set[str] = set()
+    for node in _module_statements(nodes):
         if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == name:
-                    return True
+            if any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
+                out.update(_string_items(node.value))
+        elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
+            if (
+                isinstance(node.target, ast.Name)
+                and node.target.id == "__all__"
+                and node.value is not None
+            ):
+                out.update(_string_items(node.value))
+        elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+            call = node.value
+            func = call.func
+            if (
+                isinstance(func, ast.Attribute)
+                and isinstance(func.value, ast.Name)
+                and func.value.id == "__all__"
+                and func.attr in ("extend", "append")
+            ):
+                for arg in call.args:
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                        out.add(arg.value)
+                    else:
+                        out.update(_string_items(arg))
+    return out
+
+
+def _getattr_literals(nodes) -> set[str] | None:
+    """Names a module-level `def __getattr__(name)` answers, read from the string literals its body compares the
+    parameter with: `name == "x"`, `name in ("x", "y")`, `name in _LAZY` / `_LAZY[name]` / `_LAZY.get(name)` where
+    `_LAZY` is a module-level dict, list, tuple or set of string literals. None when the module has no
+    `__getattr__`. An empty set means the function is opaque (it delegates, imports by name, ...): nothing
+    can be listed."""
+    func = next(
+        (
+            n
+            for n in _module_statements(nodes)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and n.name == "__getattr__"
+        ),
+        None,
+    )
+    if func is None:
+        return None
+    if not func.args.args:
+        return set()
+    param = func.args.args[0].arg
+    containers: dict[str, list[str]] = {}
+    for node in _module_statements(nodes):
         if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            containers[node.targets[0].id] = _container_keys(node.value)
+        elif (
             isinstance(node, ast.AnnAssign)
             and isinstance(node.target, ast.Name)
-            and node.target.id == name
+            and node.value is not None
         ):
-            return True
-        if isinstance(node, ast.ImportFrom):
-            for alias in node.names:
-                if (alias.asname or alias.name) == name:
-                    return True
-        for attr in ("body", "orelse", "finalbody"):
-            block = getattr(node, attr, None)
-            if isinstance(block, list) and _module_defines(block, name):
-                return True
-        if isinstance(node, ast.Try):
-            for handler in node.handlers:
-                if _module_defines(handler.body, name):
-                    return True
-    return False
+            containers[node.target.id] = _container_keys(node.value)
+
+    def is_param(n) -> bool:
+        return isinstance(n, ast.Name) and n.id == param
+
+    names: set[str] = set()
+    for sub in ast.walk(func):
+        if isinstance(sub, ast.Compare) and any(
+            is_param(n) for n in (sub.left, *sub.comparators)
+        ):
+            for operand in (sub.left, *sub.comparators):
+                if is_param(operand):
+                    continue
+                if isinstance(operand, ast.Constant) and isinstance(operand.value, str):
+                    names.add(operand.value)
+                elif isinstance(operand, ast.Name):
+                    names.update(containers.get(operand.id, ()))
+                else:
+                    names.update(_container_keys(operand))
+        elif (
+            isinstance(sub, ast.Subscript)
+            and is_param(sub.slice)
+            and isinstance(sub.value, ast.Name)
+        ):
+            names.update(containers.get(sub.value.id, ()))
+        elif (
+            isinstance(sub, ast.Call)
+            and isinstance(sub.func, ast.Attribute)
+            and sub.func.attr in ("get", "pop")
+            and isinstance(sub.func.value, ast.Name)
+            and sub.args
+            and is_param(sub.args[0])
+        ):
+            names.update(containers.get(sub.func.value.id, ()))
+    return names
+
+
+def _star_imports(nodes) -> list[tuple[str | None, int]]:
+    """`(module, level)` of every module-scope `from m import *`."""
+    return [
+        (node.module, node.level)
+        for node in _module_statements(nodes)
+        if isinstance(node, ast.ImportFrom)
+        and any(alias.name == "*" for alias in node.names)
+    ]
+
+
+def _star_target(
+    parts: list[str], kind: str, module: str | None, level: int
+) -> list[str] | None:
+    """Dotted path (as parts) a `from <module> import *` at `level` dots in module `parts` (of `kind` package or
+    module) refers to, None if it cannot be formed."""
+    if level == 0:
+        return module.split(".") if module else None
+    base = list(parts) if kind == "package" else list(parts[:-1])
+    if level - 1 > len(base):
+        return None
+    base = base[: len(base) - (level - 1)]
+    return base + (module.split(".") if module else [])
 
 
 def _origin_object_type(
@@ -253,45 +437,92 @@ def _dotted_kind(sibling: Path, parts: list[str], ref: str = "origin/main") -> s
     return kind
 
 
-def symbol_exists_at_origin(
-    sibling: Path, module: str, name: str, ref: str = "origin/main"
+MAX_STAR_MODULES = 16
+
+
+def _lookup(
+    sibling: Path,
+    parts: list[str],
+    name: str,
+    ref: str,
+    notes: list[str],
+    seen: set[tuple[str, ...]],
+    children: bool,
 ) -> bool | None:
-    """True if `name` is defined in `module`, or is a child (submodule, subpackage, namespace directory) of a
-    package `module`, on the sibling's `ref`. False if the module is there but has no such name, None if the
-    module is not at `ref` at all. Resolution follows Python's import precedence (`_dotted_kind`), so a file
-    module is never searched for children."""
-    parts = module.split(".")
+    """`symbol_exists_at_origin` for the dotted path `parts`. `seen` guards star-import cycles; `children` is False
+    when following a `from m import *` (a star import does not bring in submodules)."""
     kind = _dotted_kind(sibling, parts, ref)
     if kind == "missing":
         return None  # module not found at origin
+    dotted = ".".join(parts)
     if kind != "namespace":  # a namespace package has no source to read
+        key = tuple(parts)
+        if key in seen:
+            return False
+        seen.add(key)
         relpath = "/".join(parts) + (".py" if kind == "module" else "/__init__.py")
-        content = run(["git", "-C", str(sibling), "show", f"{ref}:{relpath}"])
         try:
+            content = run(["git", "-C", str(sibling), "show", f"{ref}:{relpath}"])
             tree = ast.parse(content)
-        except SyntaxError:
+        except (SyntaxError, UnicodeDecodeError):
             return True  # parse failure: be lenient, let CI catch it
-        for node in tree.body:
-            if (
-                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-                and node.name == name
-            ):
+        if _module_defines(tree.body, name) or name in _declared_all(tree.body):
+            return True
+        dynamic = _getattr_literals(tree.body)  # names served by a module `__getattr__`
+        if dynamic is not None:
+            if name in dynamic:
                 return True
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == name:
-                        return True
-            if (
-                isinstance(node, ast.AnnAssign)
-                and isinstance(node.target, ast.Name)
-                and node.target.id == name
-            ):
+            if not dynamic:
+                notes.append(
+                    f"  {dotted}@{ref}: its __getattr__ is opaque (no literal names), `{name}` accepted unverified"
+                )
                 return True
-            if isinstance(node, ast.ImportFrom):
-                for alias in node.names:
-                    if (alias.asname or alias.name) == name:
-                        return True
-    return kind != "module" and _dotted_kind(sibling, parts + [name], ref) != "missing"
+        for module, level in _star_imports(tree.body):
+            target = _star_target(parts, kind, module, level)
+            found = (
+                None
+                if target is None or len(seen) > MAX_STAR_MODULES
+                else _lookup(sibling, target, name, ref, notes, seen, False)
+            )
+            if (
+                found is None
+            ):  # a star source outside the sibling (stdlib, third party) or too deep: unlistable
+                notes.append(
+                    f"  {dotted}@{ref}: `from {'.' * level}{module or ''} import *` cannot be resolved here, `{name}` accepted unverified"
+                )
+                return True
+            if found and not name.startswith("_"):
+                return True
+    return (
+        children
+        and kind != "module"
+        and _dotted_kind(sibling, parts + [name], ref) != "missing"
+    )
+
+
+def symbol_exists_at_origin(
+    sibling: Path,
+    module: str,
+    name: str,
+    ref: str = "origin/main",
+    notes: list[str] | None = None,
+) -> bool | None:
+    """True if `name` is exported by `module`, or is a child (submodule, subpackage, namespace directory) of a
+    package `module`, on the sibling's `ref`. Exported means: bound at module scope (def, class, assignment, import
+    or re-export), listed in `__all__`, answered by a module `__getattr__` that names it in a literal, or brought in
+    by a `from m import *` of a module that exports it. False if the module is there but has no such name, None if
+    the module is not at `ref` at all. A module whose `__getattr__` or star import cannot be read statically accepts
+    the name and appends one line to `notes` saying so (no silent degradation). Resolution follows Python's import
+    precedence (`_dotted_kind`), so a file module is never searched for children."""
+    return _lookup(
+        sibling,
+        module.split("."),
+        name,
+        ref,
+        [] if notes is None else notes,
+        set(),
+        True,
+    )
 
 
 def validate_target(
@@ -320,7 +551,8 @@ def validate_target(
                 if not module.split(".")[0] == prefix:
                     continue
                 if (
-                    symbol_exists_at_origin(sibling, module, name, sib_ref) is not True
+                    symbol_exists_at_origin(sibling, module, name, sib_ref, warnings)
+                    is not True
                 ):  # False or None (module absent)
                     failures.append((py_file, module, name, sibling, sib_ref))
     return failures
@@ -340,7 +572,7 @@ def main(stdin_text: str | None = None) -> int:
 
     if warnings:
         print(
-            "\n[pre-push] WARNING: push target / sibling branch fallback:",
+            "\n[pre-push] WARNING: fallback or unverified export (not a failure):",
             file=sys.stderr,
         )
         for line in dict.fromkeys(warnings):
