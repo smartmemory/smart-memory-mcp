@@ -230,8 +230,19 @@ def register(mcp: Any) -> None:
         if target not in ("local", "remote"):
             return f"Invalid target: {target}. Must be 'local' or 'remote'."
 
+        from smartmemory_mcp.backends import dispatch
         from smartmemory_mcp.backends.dispatch import reset_backend
         from smartmemory_mcp.tools.common import reset_backend as reset_common_backend
+
+        # The MCP's backend follows SMARTMEMORY_MCP_MODE, not the config file, so the
+        # source is whatever this process runs on; migrating onto itself would just
+        # duplicate every memory.
+        source_mode = dispatch.requested_mode()
+        if source_mode == target:
+            return (
+                f"Already on the '{target}' backend ({dispatch.MODE_ENV}={source_mode}). "
+                "Nothing to migrate."
+            )
 
         temp_root = Path(tempfile.mkdtemp(prefix="smartmemory_migrate_"))
         bundle_path = temp_root / "bundle"
@@ -255,6 +266,7 @@ def register(mcp: Any) -> None:
 
         cfg.mode = target
         save_config(cfg)
+        dispatch.set_process_mode(target)
         reset_backend()
         reset_common_backend()
 
@@ -264,6 +276,7 @@ def register(mcp: Any) -> None:
             if failed > 0 and imported == 0:
                 cfg.mode = original_mode
                 save_config(cfg)
+                dispatch.set_process_mode(source_mode)
                 reset_backend()
                 reset_common_backend()
                 return (
@@ -276,6 +289,7 @@ def register(mcp: Any) -> None:
         except Exception as exc:
             cfg.mode = original_mode
             save_config(cfg)
+            dispatch.set_process_mode(source_mode)
             reset_backend()
             reset_common_backend()
             return f"Migration failed: {exc}\nConfig reverted to '{original_mode}'. Temp bundle: {bundle_path}"

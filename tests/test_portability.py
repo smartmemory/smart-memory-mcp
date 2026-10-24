@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import tarfile
 import types
@@ -297,6 +298,7 @@ def test_extract_rejects_symlink_before_any_write(tmp_path):
 def test_migrate_reverts_config_on_total_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("SMARTMEMORY_MCP_MODE", "local")  # source = in-process store
     tools = _registered_tools()
     source_backend = object()
     target_backend = object()
@@ -324,6 +326,30 @@ def test_migrate_reverts_config_on_total_failure(
 
     assert "Config reverted to 'local'" in result
     assert saved_modes == ["remote", "local"]
+    assert os.environ["SMARTMEMORY_MCP_MODE"] == "local"  # process mode reverted too
+
+
+@pytest.mark.parametrize(
+    "mode_env,target",
+    [(None, "remote"), ("remote", "remote"), ("local", "local")],
+    ids=["unset->remote", "remote->remote", "local->local"],
+)
+def test_migrate_onto_own_backend_is_refused(
+    monkeypatch: pytest.MonkeyPatch, mode_env, target
+) -> None:
+    """MCP-PERF-1: the source is the MCP's own mode, never the config file's."""
+    if mode_env is None:
+        monkeypatch.setenv("SMARTMEMORY_MCP_MODE", "x")
+        monkeypatch.delenv("SMARTMEMORY_MCP_MODE")
+    else:
+        monkeypatch.setenv("SMARTMEMORY_MCP_MODE", mode_env)
+    exported: list[object] = []
+    monkeypatch.setattr(
+        portability_tools, "_export_okf", lambda backend, path: exported.append(1)
+    )
+    result = _registered_tools()["memory_migrate"](target)
+    assert "Nothing to migrate" in result
+    assert exported == []
 
 
 def test_migrate_rejects_invalid_target() -> None:

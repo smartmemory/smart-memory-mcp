@@ -53,6 +53,7 @@ def test_constructor_and_capabilities_do_not_import_storage(monkeypatch):
 
 @pytest.mark.parametrize("hide_peer", [False, True])
 def test_pro_tools_list_does_not_call_storage_get_memory(monkeypatch, hide_peer):
+    monkeypatch.setenv("SMARTMEMORY_MCP_MODE", "local")  # in-process opt-in
     import smartmemory_mcp.server as server
 
     storage = ModuleType("smartmemory_app.storage")

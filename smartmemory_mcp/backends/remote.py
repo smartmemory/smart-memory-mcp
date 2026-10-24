@@ -23,6 +23,9 @@ from .path_guard import path_id
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_API_URL = "https://api.smartmemory.ai"
+
+
 class RemoteBackend(BackendCapabilities):
     # POST /memory/add defaults use_pipeline=True service-side, so add() runs extraction.
     add_runs_extraction = True
@@ -39,8 +42,7 @@ class RemoteBackend(BackendCapabilities):
         team_id: str | None = None,
     ) -> None:
         self._api_url = (
-            api_url
-            or os.environ.get("SMARTMEMORY_API_URL", "https://api.smartmemory.ai")
+            api_url or os.environ.get("SMARTMEMORY_API_URL", DEFAULT_API_URL)
         ).rstrip("/")
         self._session: dict[str, str | bool] = {
             "access_token": api_key or os.environ.get("SMARTMEMORY_API_KEY", ""),

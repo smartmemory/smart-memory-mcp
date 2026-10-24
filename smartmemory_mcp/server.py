@@ -291,10 +291,18 @@ def main():
     # cross-encoder returns UNRANKED results for the first query of the process — which
     # for an MCP server is the first search of the session. Non-blocking, gated on a
     # transcript store actually existing; see transcript_tools.schedule_warm_start.
-    if _TRANSCRIPT_TOOLS_REGISTERED:
+    # Only on the explicit in-process opt-in (MCP-PERF-1): in the default REST mode a
+    # boot warm-up loaded ~600 MB of models into every session that never searched.
+    from smartmemory_mcp.backends import dispatch
+
+    if (
+        _TRANSCRIPT_TOOLS_REGISTERED
+        and dispatch.requested_mode() == dispatch.MODE_LOCAL
+    ):
         from smartmemory_mcp.tools import transcript_tools
 
         transcript_tools.schedule_warm_start()
+    dispatch.start_reachability_probe()
 
     if "--http" in sys.argv:
         _register_http_health(mcp)

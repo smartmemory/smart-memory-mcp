@@ -27,6 +27,25 @@ Tests:
 pytest tests/ -v
 ```
 
+## Backend: REST by default, in-process only on opt-in
+
+The stdio and `--http` servers talk to a SmartMemory service over REST
+(`SMARTMEMORY_API_URL`, `SMARTMEMORY_API_KEY`, `SMARTMEMORY_TEAM_ID`). Having the
+`smartmemory` package importable does **not** switch them to an in-process store
+any more (MCP-PERF-1): that loaded the embedding model, spaCy and the reranker into
+every MCP process, 1.6-4 GB per Claude Code session.
+
+| `SMARTMEMORY_MCP_MODE` | Backend |
+|------|---------|
+| unset or `remote` | REST. A service that does not answer is logged once at WARNING with its URL, and tools return a clear error; nothing falls back to an in-process store. |
+| `local` | In-process store (`pip install smartmemory`), models load on first use. Also warms the transcript-search models at boot. |
+| `hosted` | the multi-tenant server below |
+| anything else | one WARNING, then REST |
+
+The `smartmemory` CLI config's `mode = "local"` is not an opt-in for the MCP; it is
+logged once. The transcript tools (`transcript_search` and friends) read a local
+store, so they still open it in-process on first use, with a WARNING.
+
 ## Hosted mode
 
 `--hosted` serves the multi-tenant, OAuth-protected endpoint that runs at

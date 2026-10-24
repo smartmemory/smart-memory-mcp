@@ -159,6 +159,18 @@ def _get_memory() -> Any:
     from smartmemory.pipeline.config import PipelineConfig
     from smartmemory.tools.factory import create_lite_memory
 
+    from smartmemory_mcp.backends import dispatch
+
+    if dispatch.requested_mode() != dispatch.MODE_LOCAL:
+        # The transcript store is local-only (no REST surface), so these tools open it
+        # in-process whatever the backend mode. Say so: in REST mode this is the one
+        # path that loads embedding/reranker models into the MCP process (MCP-PERF-1).
+        logger.warning(
+            "Transcript tools: opening the local transcript store at %s in-process "
+            "(loads the embedding and reranker models into this MCP process; the "
+            "memory backend stays REST).",
+            data_dir,
+        )
     _memory = create_lite_memory(str(data_dir), pipeline_profile=PipelineConfig.lite())
     _memory_dir = data_dir
     return _memory
