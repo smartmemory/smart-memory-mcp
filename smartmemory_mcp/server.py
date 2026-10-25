@@ -27,7 +27,7 @@ from smartmemory_mcp.capabilities import BackendCapabilityMiddleware
 from smartmemory_mcp.health import register_health
 from smartmemory_mcp.instructions import LOCAL_INSTRUCTIONS
 from smartmemory_mcp.tier import Tier, resolve_tier, store_api_key
-from smartmemory_mcp.tools.common import get_backend, graceful
+from smartmemory_mcp.tools.common import commit_if_current, get_backend, graceful
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,11 @@ def _switch_workspace(workspace: str, save_as_default: bool = False) -> str:
 
     `get_backend()` returns the process backend the memory tools call, which is
     the one `backends/dispatch.py` built and caches; mutating its session makes
-    the next request from any tool carry the new `X-Workspace-Id`.
+    the next request from any tool carry the new `X-Workspace-Id`. The name is
+    resolved over the network first, then committed under `rebuild_lock` only if
+    that object is still the process backend: a `memory_migrate` rebuild in
+    between would otherwise take the write onto an orphan and leave a false
+    "Switched" reply (MCP-SWITCH-INFLIGHT-REBUILD-1).
     """
     from smartmemory_mcp.workspace_select import refuse
 
@@ -134,10 +138,34 @@ def _switch_workspace(workspace: str, save_as_default: bool = False) -> str:
         backend = get_backend()
     except RuntimeError as exc:
         return refuse(f"no backend is available ({exc}).", "").message
-    result = backend.switch_workspace(workspace)
-    if not result.ok or not save_as_default:
+    result = backend.resolve_switch(workspace)
+    if not result.ok:
+        return result.message
+    if not commit_if_current(
+        backend, lambda: backend.set_active_workspace(result.workspace_id)
+    ):
+        return refuse(
+            "memory_migrate replaced the backend while this switch was looking up "
+            "your workspaces, so it was not applied. Run switch_workspace again.",
+            _active_workspace_label(),
+        ).message
+    if not save_as_default:
         return result.message
     return f"{result.message}\n{_save_default_workspace(result.workspace_id)}"
+
+
+def _active_workspace_label() -> str:
+    """The workspace the current process backend's next request uses, for a refusal."""
+    from smartmemory_mcp.backends.local import LOCAL_WORKSPACE, LocalBackend
+
+    try:
+        current = get_backend()
+    except RuntimeError:
+        return ""
+    if isinstance(current, LocalBackend):
+        return f"{LOCAL_WORKSPACE} (local mode)"
+    workspace = getattr(current, "active_workspace_id", "")
+    return workspace if isinstance(workspace, str) else ""
 
 
 def _save_default_workspace(workspace_id: str) -> str:

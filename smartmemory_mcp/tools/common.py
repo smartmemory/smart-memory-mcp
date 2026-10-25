@@ -2,7 +2,7 @@
 
 import functools
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from smartmemory_mcp.backends.dispatch import rebuild_lock, resolve_backend
 from smartmemory_mcp.hosted.identity import resolve_hosted_backend
@@ -28,6 +28,23 @@ def get_backend() -> Any:
         if _backend is None:
             _backend = resolve_backend()
         return _backend
+
+
+def commit_if_current(backend: Any, apply: Callable[[], None]) -> bool:
+    """Run ``apply()`` under ``rebuild_lock`` only while ``backend`` is still the one
+    every tool gets; return whether it ran.
+
+    A tool that took ``get_backend()`` and then waited on the network can come back
+    after ``memory_migrate`` rebuilt the process backend; writing onto the old
+    object then changes nothing anyone uses (MCP-SWITCH-INFLIGHT-REBUILD-1). The
+    rebuild clears this cache under the same lock, so the check and the write are
+    atomic against it.
+    """
+    with rebuild_lock:
+        if _backend is not backend:
+            return False
+        apply()
+        return True
 
 
 def reset_backend() -> None:

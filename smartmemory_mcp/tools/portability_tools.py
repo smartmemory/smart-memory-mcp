@@ -334,22 +334,26 @@ def register(mcp: Any) -> None:
         carried = (
             _parked["remote_workspace"] if target == dispatch.MODE_REMOTE else None
         )
-        _rebuild_process_backend(target, carried)
 
         def revert() -> str:
             cfg.mode = original_mode
             save_config(cfg)
-            # Read at revert time: a switch_workspace that ran during the export
-            # mutated source_backend, and it is the caller's latest word. After the
-            # forward rebuild nothing can reach source_backend, so this is its last
-            # live value. (The park on success keeps the pre-export `live_workspace`:
+            # Read at revert time: a switch_workspace that committed during the
+            # export mutated source_backend, and it is the caller's latest word.
+            # After the forward rebuild nothing writes source_backend any more: the
+            # stdio switch commits only onto the current process backend, under
+            # rebuild_lock (`common.commit_if_current`), so one still resolving
+            # across the rebuild is refused, not applied to this orphan
+            # (MCP-SWITCH-INFLIGHT-REBUILD-1). The lock is held from the read to the
+            # rebuild. (The park on success keeps the pre-export `live_workspace`:
             # that is where the exported data came from.)
-            now = (
-                _live_workspace(source_backend)
-                if source_mode == dispatch.MODE_REMOTE
-                else None
-            )
-            _rebuild_process_backend(source_mode, now)
+            with dispatch.rebuild_lock:
+                now = (
+                    _live_workspace(source_backend)
+                    if source_mode == dispatch.MODE_REMOTE
+                    else None
+                )
+                _rebuild_process_backend(source_mode, now)
             if source_mode == dispatch.MODE_LOCAL:
                 return f"Still on workspace: {LOCAL_WORKSPACE} (local mode). "
             if now:
@@ -357,6 +361,10 @@ def register(mcp: Any) -> None:
             return ""
 
         try:
+            # Inside the try (review L2): a forward rebuild that raises, such as a
+            # local -> remote build carrying the parked workspace, reverts the
+            # config and the process mode like a failed import does.
+            _rebuild_process_backend(target, carried)
             target_backend = get_backend()
             result = _import_okf(target_backend, bundle_path)
             imported, failed = _import_counts(result)

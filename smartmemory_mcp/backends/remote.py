@@ -556,13 +556,13 @@ class RemoteBackend(BackendCapabilities):
             )
         return [r for r in rows if isinstance(r, dict) and r.get("workspace_id")], ""
 
-    def switch_workspace(self, workspace: str) -> SwitchResult:
-        """Point this live session at another of the caller's workspaces.
+    def resolve_switch(self, workspace: str) -> SwitchResult:
+        """Resolve `workspace` against the caller's listing without changing anything.
 
-        Takes effect on the next request from this process (the dispatch-held
-        backend is this object). The service still refuses a workspace the caller
-        is not a member of on every request; the listing here only resolves a name
-        and refuses early. On any failure the previous workspace stays active.
+        `ok=True` carries the resolved id and the success message; the caller commits
+        it with `set_active_workspace`. Split from the write so the stdio tool can
+        commit under `dispatch.rebuild_lock`, only onto the backend that is still the
+        process backend (MCP-SWITCH-INFLIGHT-REBUILD-1).
         """
         previous = self.active_workspace_id  # bootstraps the discovered default
         if not workspace or not workspace.strip():
@@ -575,12 +575,28 @@ class RemoteBackend(BackendCapabilities):
         workspace_id, detail = resolve_workspace(rows, workspace, id_key="workspace_id")
         if workspace_id is None:
             return refuse(detail, previous)
-        self._session["team_id"] = workspace_id
         return SwitchResult(
             ok=True,
             message=f"Switched to workspace: {detail}. The next request uses it.",
             workspace_id=workspace_id,
         )
+
+    def set_active_workspace(self, workspace_id: str) -> None:
+        """Make `workspace_id` the `X-Workspace-Id` of this session's next request."""
+        self._session["team_id"] = workspace_id
+
+    def switch_workspace(self, workspace: str) -> SwitchResult:
+        """Point this live session at another of the caller's workspaces.
+
+        Takes effect on the next request from this process (the dispatch-held
+        backend is this object). The service still refuses a workspace the caller
+        is not a member of on every request; the listing here only resolves a name
+        and refuses early. On any failure the previous workspace stays active.
+        """
+        result = self.resolve_switch(workspace)
+        if result.ok:
+            self.set_active_workspace(result.workspace_id)
+        return result
 
     # --- MemoryBackend protocol: implemented (have REST routes) ------------------
 

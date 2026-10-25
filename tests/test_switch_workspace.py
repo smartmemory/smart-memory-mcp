@@ -360,6 +360,7 @@ REBUILD_ROWS = [
         ["local"],
         [],
         True,
+        None,
         id="forward-remote-to-local-says-ws-b-left",
     ),
     pytest.param(
@@ -369,6 +370,7 @@ REBUILD_ROWS = [
         ["local"],
         ["ws-b"],
         False,
+        None,
         id="total-failure-revert-keeps-ws-b",
     ),
     pytest.param(
@@ -378,6 +380,7 @@ REBUILD_ROWS = [
         ["local"],
         ["ws-b"],
         False,
+        None,
         id="exception-revert-keeps-ws-b",
     ),
     pytest.param(
@@ -387,6 +390,7 @@ REBUILD_ROWS = [
         ["local"],
         ["ws-a"],
         False,
+        None,
         id="switch-during-export-then-revert-keeps-the-latest-switch",
     ),
     pytest.param(
@@ -396,6 +400,7 @@ REBUILD_ROWS = [
         ["local", "ws-b"],
         ["ws-b"],
         True,
+        None,
         id="round-trip-returns-to-ws-b",
     ),
     pytest.param(
@@ -405,6 +410,7 @@ REBUILD_ROWS = [
         ["local", "ws-b"],
         [],
         True,
+        None,
         id="round-trip-exception-revert-stays-local",
     ),
     pytest.param(
@@ -414,6 +420,7 @@ REBUILD_ROWS = [
         ["local", "ws-b", "ws-b"],
         ["ws-b"],
         True,
+        None,
         id="round-trip-after-failed-return-still-ws-b",
     ),
     pytest.param(
@@ -423,13 +430,59 @@ REBUILD_ROWS = [
         ["ws-a"],
         ["ws-a"],
         False,
+        None,
         id="forward-local-to-remote-names-config-default",
+    ),
+    pytest.param(
+        "remote",
+        [("local", "switch-in-flight-then-raise")],
+        ["Config reverted to 'remote'", "Still on workspace: ws-b."],
+        ["local"],
+        ["ws-b"],
+        False,
+        ["Workspace not switched: memory_migrate replaced the backend", "ws-b"],
+        id="switch-in-flight-across-the-rebuild-is-refused-not-orphaned",
+    ),
+    pytest.param(
+        "remote",
+        [("local", "switch-in-flight-then-ok")],
+        ["Workspace changed: now default", "Remote workspace ws-b is no longer active"],
+        ["local"],
+        [],
+        True,
+        [
+            "Workspace not switched: memory_migrate replaced the backend",
+            "Still using workspace: default (local mode).",
+        ],
+        id="switch-in-flight-across-a-successful-move-is-refused",
+    ),
+    pytest.param(
+        "remote",
+        [("local", "ok"), ("remote", "build-raises")],
+        [
+            "Migration failed: remote store unavailable",
+            "Config reverted to 'local'",
+            "Still on workspace: default (local mode).",
+        ],
+        ["local"],
+        [],
+        True,
+        None,
+        id="forward-rebuild-carrying-the-park-raises-and-reverts",
     ),
 ]
 
 
 @pytest.mark.parametrize(
-    ("start", "steps", "message_has", "imported_into", "next_header", "warns_ws_b"),
+    (
+        "start",
+        "steps",
+        "message_has",
+        "imported_into",
+        "next_header",
+        "warns_ws_b",
+        "switch_reply_has",
+    ),
     REBUILD_ROWS,
 )
 def test_a_backend_rebuild_after_a_live_switch_never_drops_it_silently(
@@ -442,8 +495,10 @@ def test_a_backend_rebuild_after_a_live_switch_never_drops_it_silently(
     imported_into,
     next_header,
     warns_ws_b,
+    switch_reply_has,
 ) -> None:
     import tempfile
+    import threading
 
     from smartmemory_mcp.tools import portability_tools
 
@@ -488,7 +543,11 @@ def test_a_backend_rebuild_after_a_live_switch_never_drops_it_silently(
             if isinstance(backend, LocalBackend)
             else backend.active_workspace_id
         )
-        if outcome["now"] in ("raise", "switch-during-export-then-raise"):
+        if outcome["now"] in (
+            "raise",
+            "switch-during-export-then-raise",
+            "switch-in-flight-then-raise",
+        ):
             raise RuntimeError("import failed")
         return (
             {"imported": 0, "failed": 3}
@@ -496,20 +555,65 @@ def test_a_backend_rebuild_after_a_live_switch_never_drops_it_silently(
             else {"imported": 3}
         )
 
+    # The in-flight rows (review M2): a switch_workspace("Alpha") on another thread
+    # has taken the source backend and is held inside GET /memory/workspaces when the
+    # export ends; it is released only after memory_migrate has replied. Events, no
+    # sleeps; every wait is bounded so a deadlock fails instead of hanging.
+    listing_started = threading.Event()
+    release_listing = threading.Event()
+    replies: dict[str, str] = {}
+
+    def gated(method, url, **kwargs):
+        if threading.current_thread().name == "switcher" and url.endswith(
+            "/memory/workspaces"
+        ):
+            listing_started.set()
+            assert release_listing.wait(5)
+        return service(method, url, **kwargs)
+
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", gated)
+    switcher = threading.Thread(
+        name="switcher",
+        target=lambda: replies.__setitem__(
+            "switch", tool_fn("switch_workspace")(workspace="Alpha")
+        ),
+    )
+
     def fake_export(backend, path):
         if outcome["now"] == "switch-during-export-then-raise":
             # A parallel tool call (FastMCP runs sync tools in a threadpool).
             assert "Switched to workspace: Alpha (ws-a)" in tool_fn("switch_workspace")(
                 workspace="Alpha"
             )
+        if outcome["now"].startswith("switch-in-flight"):
+            switcher.start()
+            assert listing_started.wait(5)
         return 3
 
+    real_build = dispatch.build_backend
+
+    def build(mode, team_id=None):
+        if outcome["now"] == "build-raises" and mode == dispatch.MODE_REMOTE:
+            raise RuntimeError("remote store unavailable")
+        return real_build(mode, team_id=team_id)
+
+    monkeypatch.setattr(dispatch, "build_backend", build)
     monkeypatch.setattr(portability_tools, "_export_okf", fake_export)
     monkeypatch.setattr(portability_tools, "_import_okf", fake_import)
     caplog.set_level(logging.WARNING)
     for target, result in steps:
         outcome["now"] = result
         message = tool_fn("memory_migrate")(target=target)
+    if switcher.ident is not None:
+        release_listing.set()
+        switcher.join(5)
+        assert not switcher.is_alive(), "switch_workspace deadlocked against migrate"
+
+    if switch_reply_has is None:
+        assert "switch" not in replies
+    else:
+        for expected in switch_reply_has:
+            assert expected in replies["switch"], replies["switch"]
 
     for expected in message_has:
         assert expected in message, message
@@ -518,8 +622,78 @@ def test_a_backend_rebuild_after_a_live_switch_never_drops_it_silently(
     tool_fn("memory_add")(content="note meant for Beta")
     assert service.headers_after(mark) == next_header
     assert local_writes == ([] if next_header else ["note meant for Beta"])
-    dropped = [w for w in _warnings(caplog) if "memory_migrate" in w and "ws-b" in w]
+    dropped = [
+        w for w in _warnings(caplog) if w.startswith("memory_migrate:") and "ws-b" in w
+    ]
     assert bool(dropped) is warns_ws_b, _warnings(caplog)
+
+
+def test_switches_racing_migrate_round_trips_never_deadlock(
+    monkeypatch, tmp_path
+) -> None:
+    """Review probe: switch_workspace and memory_migrate share rebuild_lock. Four
+    threads switch repeatedly while the main thread migrates remote -> local -> remote
+    twice; every thread must finish within the bound, and every reply is a switch or
+    a refusal that says why (never an exception)."""
+    import tempfile
+    import threading
+
+    from smartmemory_mcp.tools import portability_tools
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setenv("SMARTMEMORY_MCP_MODE", "remote")
+    monkeypatch.setenv("SMARTMEMORY_API_KEY", "sk_test")
+    monkeypatch.setenv("SMARTMEMORY_API_URL", API)
+    monkeypatch.setitem(portability_tools._parked, "remote_workspace", None)
+    cfg = types.SimpleNamespace(mode="remote", team_id="ws-a", api_url=API)
+    config_module = types.ModuleType("smartmemory_app.config")
+    config_module.load_config = lambda: cfg
+    config_module.save_config = lambda current: None
+    monkeypatch.setitem(
+        sys.modules, "smartmemory_app", types.ModuleType("smartmemory_app")
+    )
+    monkeypatch.setitem(sys.modules, "smartmemory_app.config", config_module)
+    _remote(monkeypatch, FakeService())
+    monkeypatch.setattr(portability_tools, "_export_okf", lambda backend, path: 3)
+    monkeypatch.setattr(
+        portability_tools, "_import_okf", lambda backend, path: {"imported": 3}
+    )
+
+    start = threading.Barrier(5)
+    replies: list[str] = []
+    errors: list[BaseException] = []
+
+    def switcher(names: tuple[str, str]) -> None:
+        try:
+            start.wait(5)
+            for i in range(8):
+                replies.append(tool_fn("switch_workspace")(workspace=names[i % 2]))
+        except BaseException as exc:  # surfaced below, never swallowed
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=switcher, args=(("Alpha", "Beta"),)) for _ in range(4)
+    ]
+    for t in threads:
+        t.start()
+    start.wait(5)
+    migrations = [
+        tool_fn("memory_migrate")(target=target)
+        for target in ("local", "remote", "local", "remote")
+    ]
+    for t in threads:
+        t.join(10)
+
+    assert [t.is_alive() for t in threads] == [False] * 4, "deadlock"
+    assert errors == []
+    assert len(replies) == 32
+    allowed = (
+        "Switched to workspace:",
+        "Workspace not switched:",
+        "Already in workspace",
+    )
+    assert all(r.startswith(allowed) for r in replies), replies
+    assert all("complete" in m for m in migrations), migrations
 
 
 def test_a_parallel_call_waits_for_the_rebuild_instead_of_building_the_default(
