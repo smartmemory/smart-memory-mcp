@@ -16,6 +16,7 @@ from fastmcp.exceptions import ToolError
 from key_value.aio.protocols.key_value import AsyncKeyValue
 from mcp.types import ToolAnnotations
 
+from ..backends.remote import is_missing_scope
 from ..health import register_health
 from ..instructions import HOSTED_INSTRUCTIONS
 from ..tools.common import get_backend, graceful
@@ -30,6 +31,12 @@ from ..workspace_select import ALIAS_NOTICE, refuse, resolve_workspace, warn_ali
 from .tools import CapturedTool, apply_allowlist, register_module_tools
 
 logger = logging.getLogger(__name__)
+
+# The hosted caller's key is the one in its MCP client config, not a `login` call.
+HOSTED_MISSING_TEAMS_SCOPE = (
+    "your API key lacks the read:teams scope, which listing your workspaces needs. "
+    "Create a key with Read teams enabled and use it in your MCP client config."
+)
 
 
 SERVER_NAME = "smartmemory"
@@ -130,14 +137,9 @@ def _register_hosted_tools(
                     "workspace is required (a workspace id or name).", previous
                 ).message
             )
-        rows = _list_team_rows()
+        rows, why = _list_team_rows()
         if rows is None:
-            raise ToolError(
-                refuse(
-                    "could not list your workspaces; the SmartMemory API did not respond.",
-                    previous,
-                ).message
-            )
+            raise ToolError(refuse(why, previous).message)
         workspace_id, detail = resolve_workspace(rows, ref, id_key="team_id")
         if workspace_id is None:
             raise ToolError(refuse(detail, previous).message)
@@ -263,8 +265,14 @@ def _register_hosted_tools(
         return get_backend().recall(cwd=query, top_k=top_k)
 
 
-def _list_team_rows() -> list[dict[str, Any]] | None:
-    """Workspaces the caller may switch to, or None when the API did not answer.
+def _list_team_rows() -> tuple[list[dict[str, Any]] | None, str]:
+    """Workspaces the caller may switch to, or (None, why the listing failed).
+
+    The reason is in words the caller can act on, as on stdio (`RemoteBackend.
+    _fetch_workspaces`). A 403 for a missing scope is reachable here: an API-key
+    caller's key goes to svc-api as is (`middleware._identity_from_api_key`) and
+    `/memory/teams` is scoped `read:teams`; an OAuth caller's exchanged bridge token
+    is a JWT, which the service never scope-checks (MCP-WORKSPACE-ENV-PRECEDENCE-1 L1).
 
     KNOWN CONFLATION (MCP-TOOL-SURFACE-1 section 2, kept by MCP-SWITCH-WORKSPACE-1,
     follow-up for WS-ROUTING-4/5): this reads the caller's Teams from
@@ -277,12 +285,14 @@ def _list_team_rows() -> list[dict[str, Any]] | None:
     result = get_backend().request("GET", "/memory/teams")
     if isinstance(result, dict) and result.get("error"):
         logger.warning("Workspace lookup failed: %s", result["error"])
-        return None
+        if is_missing_scope(result):
+            return None, HOSTED_MISSING_TEAMS_SCOPE
+        return None, f"could not list your workspaces ({str(result['error'])[:200]})."
     rows = result.get("teams") if isinstance(result, dict) else result
     if not isinstance(rows, list):
         logger.warning("Workspace lookup returned an unexpected shape: %r", type(rows))
-        return None
-    return [row for row in rows if isinstance(row, dict) and row.get("team_id")]
+        return None, "could not list your workspaces (unexpected response shape)."
+    return [row for row in rows if isinstance(row, dict) and row.get("team_id")], ""
 
 
 def hosted_asgi_app(cfg: HostedConfig, **injection: Any):

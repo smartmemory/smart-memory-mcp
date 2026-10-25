@@ -31,7 +31,13 @@ pytest tests/ -v
 
 The stdio and `--http` servers talk to a SmartMemory service over REST
 (`SMARTMEMORY_API_URL`, `SMARTMEMORY_API_KEY`, `SMARTMEMORY_WORKSPACE_ID`; the older
-`SMARTMEMORY_TEAM_ID` still works, and `SMARTMEMORY_WORKSPACE_ID` wins when both are set). Having the
+`SMARTMEMORY_TEAM_ID` still works). A new session starts on the first of these that
+is set: `SMARTMEMORY_WORKSPACE_ID`, then `SMARTMEMORY_TEAM_ID`, then the workspace
+saved in the smartmemory config (`switch_workspace(..., save_as_default=True)`), then
+your account's default workspace. The order is the same with or without the
+`smartmemory` package installed, and one WARNING names both variables when they are
+set to different workspaces. A live `switch_workspace` overrides all of them for the
+rest of the session. Having the
 `smartmemory` package importable does **not** switch them to an in-process store
 any more (MCP-PERF-1): that loaded the embedding model, spaCy and the reranker into
 every MCP process, 1.6-4 GB per Claude Code session.

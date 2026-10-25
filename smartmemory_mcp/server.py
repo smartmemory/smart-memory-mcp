@@ -18,7 +18,11 @@ import sys
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from smartmemory_mcp.backends.remote import LEGACY_TEAM_ENV, WORKSPACE_ENV
+from smartmemory_mcp.backends.remote import (
+    LEGACY_TEAM_ENV,
+    WORKSPACE_ENV,
+    env_workspace,
+)
 from smartmemory_mcp.capabilities import BackendCapabilityMiddleware
 from smartmemory_mcp.health import register_health
 from smartmemory_mcp.instructions import LOCAL_INSTRUCTIONS
@@ -137,7 +141,12 @@ def _switch_workspace(workspace: str, save_as_default: bool = False) -> str:
 
 
 def _save_default_workspace(workspace_id: str) -> str:
-    """Write the workspace into the smartmemory config for new sessions."""
+    """Write the workspace into the smartmemory config for new sessions.
+
+    A new session starts on `SMARTMEMORY_WORKSPACE_ID`, else `SMARTMEMORY_TEAM_ID`,
+    else this saved value (`remote.env_workspace`), so the reply says when an env
+    var will win over what was just saved (MCP-WORKSPACE-ENV-PRECEDENCE-1).
+    """
     try:
         from smartmemory_app.config import load_config, save_config
     except ImportError:
@@ -147,12 +156,20 @@ def _save_default_workspace(workspace_id: str) -> str:
         return (
             "Not saved as the default: the smartmemory package is not installed. "
             f"Set {WORKSPACE_ENV}={workspace_id} for new sessions instead "
-            f"(it overrides the older {LEGACY_TEAM_ENV}). A workspace saved in the "
-            "smartmemory config overrides both."
+            f"(it overrides the older {LEGACY_TEAM_ENV})."
         )
-    cfg = load_config()
+    from smartmemory_mcp.backends.dispatch import file_layer_config
+
+    cfg = file_layer_config(load_config)  # never persist the shell's env values
     cfg.team_id = workspace_id  # config key name kept; CLI rename is a follow-up
     save_config(cfg)
+    env_value, env_name = env_workspace()
+    if env_value and env_value != workspace_id:
+        return (
+            f"Saved as the default, but new sessions start on {env_value}: "
+            f"{env_name} is set, and an env var wins over the saved default. "
+            f"Unset {env_name} to use the saved one."
+        )
     return "Saved as the default for new sessions."
 
 

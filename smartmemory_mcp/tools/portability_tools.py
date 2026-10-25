@@ -318,7 +318,10 @@ def register(mcp: Any) -> None:
         try:
             from smartmemory_app.config import load_config, save_config
 
-            cfg = load_config()
+            # The file layer only: `load_config()` would carry SMARTMEMORY_TEAM_ID
+            # (and every other env overlay) into the saved file (MCP-WORKSPACE-ENV-
+            # PRECEDENCE-1).
+            cfg = dispatch.file_layer_config(load_config)
             original_mode = cfg.mode
         except ImportError:
             shutil.rmtree(temp_root, ignore_errors=True)

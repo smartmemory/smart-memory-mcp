@@ -22,6 +22,7 @@ Result cached in module-level _backend after first resolution.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import os
 import threading
@@ -108,6 +109,24 @@ def _app_config():
         return None
 
 
+def file_layer_config(load_config):
+    """The smartmemory config file alone, for a read, change and save.
+
+    ``load_config()`` overlays env vars (``SMARTMEMORY_TEAM_ID`` onto ``team_id``,
+    ``SMARTMEMORY_MODE`` onto ``mode``, ...), so saving its result wrote the shell's
+    values into the file as the saved defaults. ``apply_env=False`` is the file layer
+    (smartmemory CLI-ENV-DETECT-1); a smartmemory that predates it gets one WARNING.
+    """
+    if "apply_env" in inspect.signature(load_config).parameters:
+        return load_config(apply_env=False)
+    _warn_once(
+        "cfg-no-apply-env",
+        "This smartmemory package has no load_config(apply_env=False); saving the "
+        "config also saves inherited SMARTMEMORY_* env values. Upgrade smartmemory.",
+    )
+    return load_config()
+
+
 def build_backend(mode: str, team_id: str | None = None) -> "MemoryBackend":
     """Construct (uncached) the backend for ``mode`` (``local`` or ``remote``).
 
@@ -149,7 +168,14 @@ def build_backend(mode: str, team_id: str | None = None) -> "MemoryBackend":
             "(needs: pip install smartmemory)"
         )
     api_url = os.environ.get("SMARTMEMORY_API_URL") or getattr(cfg, "api_url", None)
-    team_id = team_id or getattr(cfg, "team_id", None) or None
+    # MCP-WORKSPACE-ENV-PRECEDENCE-1: the env rule (SMARTMEMORY_WORKSPACE_ID over
+    # SMARTMEMORY_TEAM_ID, one WARNING when they differ) runs before the config. The
+    # smartmemory config overlays SMARTMEMORY_TEAM_ID onto cfg.team_id, so reading
+    # cfg first let the legacy variable win on every wrapper install. With neither
+    # variable set, cfg.team_id is the saved file value.
+    from smartmemory_mcp.backends.remote import env_workspace_id
+
+    team_id = team_id or env_workspace_id() or getattr(cfg, "team_id", None) or None
     log.info("Backend dispatch: remote mode")
     return RemoteBackend(api_url=api_url or None, api_key=api_key, team_id=team_id)
 

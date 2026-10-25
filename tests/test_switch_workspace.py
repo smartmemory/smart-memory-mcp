@@ -281,6 +281,54 @@ def test_the_refusal_names_why_the_workspace_list_failed(
     assert backend.active_workspace_id == active
 
 
+# The hosted sibling (review L1): the same reason-carrying refusal. An API-key hosted
+# caller's key reaches svc-api as is, so a key without read:teams gets the 403 below.
+# Columns: the /memory/teams answer (status, body) -> text the refusal must contain.
+HOSTED_LISTING_ROWS = [
+    pytest.param(
+        403,
+        {"detail": "API key missing required scope: read:teams"},
+        ["Workspace not switched:", "lacks the read:teams scope", "MCP client config"],
+        id="hosted-key-without-read-teams-is-told-which-scope",
+    ),
+    pytest.param(
+        503,
+        {"detail": "down"},
+        ["Workspace not switched:", "could not list your workspaces (API error 503"],
+        id="hosted-outage-names-the-status",
+    ),
+]
+
+
+@pytest.mark.parametrize(("status", "body", "message_has"), HOSTED_LISTING_ROWS)
+def test_the_hosted_refusal_names_why_the_workspace_list_failed(
+    monkeypatch, status, body, message_has
+) -> None:
+    base = fake_svc_api()
+
+    def svc(method, url, **kwargs):
+        if httpx.URL(url).path == "/memory/teams":
+            return httpx.Response(status, json=body, request=httpx.Request(method, url))
+        return base(method, url, **kwargs)
+
+    harness = _Harness()
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", svc)
+
+    async def run(client):
+        session_id = await harness.session(client)
+        return await harness.call(
+            client, session_id, "switch_workspace", {"workspace": "ws-b"}
+        )
+
+    result = harness.run(run)
+    text = _text(result)
+    assert result.get("isError") is True
+    for expected in message_has:
+        assert expected in text, text
+    assert "did not respond" not in text
+    assert ("read:teams" in text) is (status == 403)
+
+
 def test_save_as_default_writes_the_config_only_when_asked(monkeypatch) -> None:
     saved: list[str] = []
     cfg = types.SimpleNamespace(team_id="")
@@ -504,7 +552,11 @@ def test_a_parallel_call_waits_for_the_rebuild_instead_of_building_the_default(
     monkeypatch.setattr(portability_tools, "_export_okf", lambda backend, path: 3)
 
     real_build = dispatch.build_backend
-    state: dict[str, Any] = {"local_fails": True, "thread": None, "alive_in_window": None}
+    state: dict[str, Any] = {
+        "local_fails": True,
+        "thread": None,
+        "alive_in_window": None,
+    }
     parallel: list[str | None] = []
 
     def build(mode, team_id=None):
@@ -533,24 +585,165 @@ def test_a_parallel_call_waits_for_the_rebuild_instead_of_building_the_default(
     assert parallel == ["ws-b"]
 
 
-# The startup precedence table: (SMARTMEMORY_WORKSPACE_ID, SMARTMEMORY_TEAM_ID) -> the
-# workspace the backend starts on ("" = the service default, found by /auth/me).
+# MCP-WORKSPACE-ENV-PRECEDENCE-1: the startup precedence on both install shapes, through
+# the real `dispatch.build_backend` and a real `memory_add`. "bare" has no smartmemory
+# package; "wrapper" uses the real `smartmemory_app.config` (every `pip install
+# smartmemory`) with a config home under tmp_path. Columns: shape, SMARTMEMORY_WORKSPACE_ID,
+# SMARTMEMORY_TEAM_ID, the config file's saved team_id -> the X-Workspace-Id the first
+# write sends (ws-a = the account default from /auth/me), and the "differ" WARNING count.
 ENV_PRECEDENCE_ROWS = [
-    pytest.param("ws-new", "ws-old", "ws-new", id="workspace-env-beats-legacy-team-env"),
-    pytest.param("ws-new", "", "ws-new", id="workspace-env-alone"),
-    pytest.param("", "ws-old", "ws-old", id="legacy-team-env-alone-still-works"),
-    pytest.param("", "", "", id="neither-leaves-the-service-default"),
+    pytest.param("bare", "", "", "", "ws-a", 0, id="bare-neither-account-default"),
+    pytest.param("bare", "", "ws-old", "", "ws-old", 0, id="bare-only-old"),
+    pytest.param("bare", "ws-new", "", "", "ws-new", 0, id="bare-only-new"),
+    pytest.param("bare", "ws-same", "ws-same", "", "ws-same", 0, id="bare-both-equal"),
+    pytest.param("bare", "ws-new", "ws-old", "", "ws-new", 1, id="bare-both-differ"),
+    pytest.param(
+        "wrapper", "", "", "", "ws-a", 0, id="wrapper-neither-account-default"
+    ),
+    pytest.param("wrapper", "", "", "ws-saved", "ws-saved", 0, id="wrapper-saved-only"),
+    pytest.param(
+        "wrapper", "", "ws-old", "ws-saved", "ws-old", 0, id="wrapper-only-old"
+    ),
+    pytest.param(
+        "wrapper", "ws-new", "", "ws-saved", "ws-new", 0, id="wrapper-only-new"
+    ),
+    pytest.param(
+        "wrapper",
+        "ws-same",
+        "ws-same",
+        "ws-saved",
+        "ws-same",
+        0,
+        id="wrapper-both-equal",
+    ),
+    pytest.param(
+        "wrapper", "ws-new", "ws-old", "ws-saved", "ws-new", 1, id="wrapper-both-differ"
+    ),
 ]
 
 
-@pytest.mark.parametrize(("workspace_env", "team_env", "expected"), ENV_PRECEDENCE_ROWS)
+def _install_shape(monkeypatch, tmp_path, shape: str, saved: str = "") -> None:
+    """Make `smartmemory_app.config` absent (bare) or the real one on a tmp config home."""
+    if shape == "bare":
+        monkeypatch.setitem(sys.modules, "smartmemory_app", None)  # import raises
+        monkeypatch.setitem(sys.modules, "smartmemory_app.config", None)
+        return
+    real_config = pytest.importorskip("smartmemory_app.config")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "xdg"))
+    path = real_config.config_path()
+    assert str(path).startswith(str(tmp_path))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f'[remote]\napi_url = "{API}"\nteam_id = "{saved}"\n')
+
+
+@pytest.mark.parametrize(
+    ("shape", "workspace_env", "team_env", "saved", "expected", "differ_warnings"),
+    ENV_PRECEDENCE_ROWS,
+)
 def test_the_workspace_env_precedence_table(
-    monkeypatch, workspace_env, team_env, expected
+    monkeypatch,
+    caplog,
+    tmp_path,
+    shape,
+    workspace_env,
+    team_env,
+    saved,
+    expected,
+    differ_warnings,
 ) -> None:
+    _install_shape(monkeypatch, tmp_path, shape, saved)
+    monkeypatch.delenv("SMARTMEMORY_MODE", raising=False)
+    monkeypatch.setenv("SMARTMEMORY_API_KEY", "sk_test")
+    monkeypatch.setenv("SMARTMEMORY_API_URL", API)
     monkeypatch.setenv("SMARTMEMORY_WORKSPACE_ID", workspace_env)
     monkeypatch.setenv("SMARTMEMORY_TEAM_ID", team_env)
-    backend = RemoteBackend(api_url=API, api_key="", team_id=None)
-    assert backend._session["team_id"] == expected
+    monkeypatch.setattr("smartmemory_mcp.backends.remote._warned_env_conflict", False)
+    service = FakeService()
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", service)
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.get", _auth_me)
+
+    with caplog.at_level(logging.WARNING):
+        backend = dispatch.build_backend(dispatch.MODE_REMOTE)
+        monkeypatch.setattr(dispatch, "_backend", backend)
+        monkeypatch.setattr(common, "_backend", backend)
+        tool_fn("memory_add")(content="x")
+
+    assert service.headers_after(0) == [expected]
+    differ = [m for m in _warnings(caplog) if "differ" in m]
+    assert len(differ) == differ_warnings, differ
+    if differ:
+        assert "SMARTMEMORY_WORKSPACE_ID" in differ[0]
+        assert "SMARTMEMORY_TEAM_ID" in differ[0]
+
+
+# save_as_default on the wrapper shape: the file must get the switched workspace and
+# never the shell's SMARTMEMORY_TEAM_ID, and the reply must say when an env var will
+# override the saved value next session. Columns: WORKSPACE env, TEAM env -> reply text.
+SAVE_ROWS = [
+    pytest.param("", "", "Saved as the default for new sessions.", id="no-env"),
+    pytest.param(
+        "",
+        "ws-old",
+        "new sessions start on ws-old: SMARTMEMORY_TEAM_ID is set",
+        id="legacy-env-will-override",
+    ),
+    pytest.param(
+        "ws-new",
+        "ws-old",
+        "new sessions start on ws-new: SMARTMEMORY_WORKSPACE_ID is set",
+        id="workspace-env-will-override",
+    ),
+    pytest.param("ws-a", "", "Saved as the default for new sessions.", id="env-same"),
+]
+
+
+@pytest.mark.parametrize(("workspace_env", "team_env", "reply_has"), SAVE_ROWS)
+def test_save_as_default_saves_the_file_layer_and_names_an_overriding_env_var(
+    monkeypatch, tmp_path, workspace_env, team_env, reply_has
+) -> None:
+    import tomllib
+
+    real_config = pytest.importorskip("smartmemory_app.config")
+    if (
+        "apply_env"
+        not in __import__("inspect").signature(real_config.load_config).parameters
+    ):
+        pytest.skip("smartmemory_app.config predates load_config(apply_env=...)")
+    _install_shape(monkeypatch, tmp_path, "wrapper", "ws-saved")
+    monkeypatch.setenv("SMARTMEMORY_WORKSPACE_ID", workspace_env)
+    monkeypatch.setenv("SMARTMEMORY_TEAM_ID", team_env)
+    monkeypatch.setenv(
+        "SMARTMEMORY_MODE", "remote"
+    )  # an env overlay that must not persist
+    _remote(monkeypatch, FakeService())
+
+    text = tool_fn("switch_workspace")(workspace="Alpha", save_as_default=True)
+
+    assert reply_has in text, text
+    raw = tomllib.loads(real_config.config_path().read_text())
+    assert raw["remote"]["team_id"] == "ws-a"
+    assert "mode" not in raw.get("smartmemory", {})
+
+
+def test_an_older_smartmemory_without_apply_env_still_saves_with_one_warning(
+    monkeypatch, caplog
+) -> None:
+    saved: list[str] = []
+    cfg = types.SimpleNamespace(team_id="")
+    fake = types.ModuleType("smartmemory_app.config")
+    fake.load_config = lambda: cfg  # smartmemory <= 1.5.24 signature
+    fake.save_config = lambda c: saved.append(c.team_id)
+    monkeypatch.setitem(sys.modules, "smartmemory_app.config", fake)
+    monkeypatch.setattr(dispatch, "_warned", set())
+    _remote(monkeypatch, FakeService())
+
+    with caplog.at_level(logging.WARNING):
+        text = tool_fn("switch_workspace")(workspace="Alpha", save_as_default=True)
+
+    assert saved == ["ws-a"]
+    assert "Saved as the default" in text
+    assert len([m for m in _warnings(caplog) if "apply_env" in m]) == 1
 
 
 def test_the_save_default_fallback_hint_names_the_env_var_that_wins(

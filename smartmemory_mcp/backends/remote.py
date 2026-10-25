@@ -39,10 +39,15 @@ LEGACY_TEAM_ENV = "SMARTMEMORY_TEAM_ID"
 _warned_env_conflict = False
 
 
-def env_workspace_id() -> str:
-    """The workspace id from the environment: `SMARTMEMORY_WORKSPACE_ID` wins over the
-    legacy `SMARTMEMORY_TEAM_ID` (MCP-SWITCH-FALLBACK-ENV-HINT-1). Before, the legacy
-    name won, so a user told to set the new one stayed on the old workspace silently.
+def env_workspace() -> tuple[str, str]:
+    """(workspace id, env var name) from the environment, or ("", "") when neither is set.
+
+    One rule on every install shape (MCP-WORKSPACE-ENV-PRECEDENCE-1): a live
+    `switch_workspace` > `SMARTMEMORY_WORKSPACE_ID` > the legacy `SMARTMEMORY_TEAM_ID`
+    > the workspace saved in the smartmemory config > the account default
+    (`/auth/me`). When both variables are set and differ, one WARNING per process
+    names both. Before MCP-SWITCH-FALLBACK-ENV-HINT-1 the legacy name won, so a user
+    told to set the new one stayed on the old workspace silently.
     """
     global _warned_env_conflict
     workspace = os.environ.get(WORKSPACE_ENV, "")
@@ -58,10 +63,19 @@ def env_workspace_id() -> str:
             WORKSPACE_ENV,
             LEGACY_TEAM_ENV,
         )
-    return workspace or legacy
+    if workspace:
+        return workspace, WORKSPACE_ENV
+    if legacy:
+        return legacy, LEGACY_TEAM_ENV
+    return "", ""
 
 
-def _is_missing_scope(result: Any) -> bool:
+def env_workspace_id() -> str:
+    """The workspace id from the environment (`env_workspace` without the name)."""
+    return env_workspace()[0]
+
+
+def is_missing_scope(result: Any) -> bool:
     """True for the service's 403 `insufficient_api_key_scope` answer."""
     return (
         isinstance(result, dict)
@@ -525,9 +539,12 @@ class RemoteBackend(BackendCapabilities):
         result = self._request("GET", "/memory/workspaces", headers=headers)
         if err := self._fmt_error(result):
             logger.warning("Workspace lookup failed: %s", err)
-            if _is_missing_scope(result):
+            if is_missing_scope(result):
                 return None, MISSING_TEAMS_SCOPE
-            return None, f"could not list your workspaces at {self._api_url} ({err[:200]})."
+            return (
+                None,
+                f"could not list your workspaces at {self._api_url} ({err[:200]}).",
+            )
         rows = result.get("workspaces") if isinstance(result, dict) else None
         if not isinstance(rows, list):
             logger.warning(
