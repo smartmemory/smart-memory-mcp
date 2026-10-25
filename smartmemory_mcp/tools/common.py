@@ -4,7 +4,7 @@ import functools
 import logging
 from typing import Any
 
-from smartmemory_mcp.backends.dispatch import resolve_backend
+from smartmemory_mcp.backends.dispatch import rebuild_lock, resolve_backend
 from smartmemory_mcp.hosted.identity import resolve_hosted_backend
 
 logger = logging.getLogger(__name__)
@@ -24,9 +24,10 @@ def get_backend() -> Any:
         return hosted
 
     global _backend
-    if _backend is None:
-        _backend = resolve_backend()
-    return _backend
+    with rebuild_lock:
+        if _backend is None:
+            _backend = resolve_backend()
+        return _backend
 
 
 def reset_backend() -> None:

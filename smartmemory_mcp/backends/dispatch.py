@@ -42,6 +42,12 @@ _KNOWN_MODES = (MODE_LOCAL, MODE_REMOTE, MODE_HOSTED)
 PROBE_TIMEOUT_S = 2.0
 
 _backend: "MemoryBackend | None" = None
+# Held across every rebuild of the process backend (set mode, reset, build, assign, and
+# the sibling cache reset in `tools/common.py`) and across the first-build in
+# `resolve_backend`, so a parallel tool call waits for the rebuild instead of building
+# the config default in the gap (MCP-SWITCH-REVERT-LIVE-WS-1, r2 L1). Reentrant: the
+# rebuild helper and `resolve_backend` nest.
+rebuild_lock = threading.RLock()
 _warned: set[str] = set()
 
 
@@ -78,10 +84,11 @@ def set_process_mode(mode: str, workspace_id: str | None = None) -> None:
     configured default workspace (MCP-SWITCH-WORKSPACE-1 H1).
     """
     global _backend
-    os.environ[MODE_ENV] = mode
-    reset_backend()
-    if workspace_id and mode == MODE_REMOTE:
-        _backend = build_backend(MODE_REMOTE, team_id=workspace_id)
+    with rebuild_lock:
+        os.environ[MODE_ENV] = mode
+        reset_backend()
+        if workspace_id and mode == MODE_REMOTE:
+            _backend = build_backend(MODE_REMOTE, team_id=workspace_id)
 
 
 def _app_config():
@@ -162,12 +169,13 @@ def resolve_backend() -> "MemoryBackend":
         return hosted
 
     global _backend
-    if _backend is not None:
-        return _backend
+    with rebuild_lock:
+        if _backend is not None:
+            return _backend
 
-    mode = requested_mode()
-    _backend = build_backend(MODE_LOCAL if mode == MODE_LOCAL else MODE_REMOTE)
-    return _backend
+        mode = requested_mode()
+        _backend = build_backend(MODE_LOCAL if mode == MODE_LOCAL else MODE_REMOTE)
+        return _backend
 
 
 def remote_api_url() -> str:

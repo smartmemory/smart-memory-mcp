@@ -279,6 +279,15 @@ REBUILD_ROWS = [
     ),
     pytest.param(
         "remote",
+        [("local", "switch-during-export-then-raise")],
+        ["Config reverted to 'remote'", "Still on workspace: ws-a."],
+        ["local"],
+        ["ws-a"],
+        False,
+        id="switch-during-export-then-revert-keeps-the-latest-switch",
+    ),
+    pytest.param(
+        "remote",
         [("local", "ok"), ("remote", "ok")],
         ["Imported into workspace: ws-b (your earlier remote workspace)."],
         ["local", "ws-b"],
@@ -376,7 +385,7 @@ def test_a_backend_rebuild_after_a_live_switch_never_drops_it_silently(
             if isinstance(backend, LocalBackend)
             else backend.active_workspace_id
         )
-        if outcome["now"] == "raise":
+        if outcome["now"] in ("raise", "switch-during-export-then-raise"):
             raise RuntimeError("import failed")
         return (
             {"imported": 0, "failed": 3}
@@ -384,7 +393,15 @@ def test_a_backend_rebuild_after_a_live_switch_never_drops_it_silently(
             else {"imported": 3}
         )
 
-    monkeypatch.setattr(portability_tools, "_export_okf", lambda backend, path: 3)
+    def fake_export(backend, path):
+        if outcome["now"] == "switch-during-export-then-raise":
+            # A parallel tool call (FastMCP runs sync tools in a threadpool).
+            assert "Switched to workspace: Alpha (ws-a)" in tool_fn("switch_workspace")(
+                workspace="Alpha"
+            )
+        return 3
+
+    monkeypatch.setattr(portability_tools, "_export_okf", fake_export)
     monkeypatch.setattr(portability_tools, "_import_okf", fake_import)
     caplog.set_level(logging.WARNING)
     for target, result in steps:
@@ -400,6 +417,65 @@ def test_a_backend_rebuild_after_a_live_switch_never_drops_it_silently(
     assert local_writes == ([] if next_header else ["note meant for Beta"])
     dropped = [w for w in _warnings(caplog) if "memory_migrate" in w and "ws-b" in w]
     assert bool(dropped) is warns_ws_b, _warnings(caplog)
+
+
+def test_a_parallel_call_waits_for_the_rebuild_instead_of_building_the_default(
+    monkeypatch, tmp_path
+) -> None:
+    """Review r2 L1: with the common cache empty at the revert (the local build raised),
+    a call landing mid-rebuild must wait and then use the carried ws-b, not build the
+    configured default ws-a."""
+    import tempfile
+    import threading
+
+    from smartmemory_mcp.tools import portability_tools
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setenv("SMARTMEMORY_MCP_MODE", "remote")
+    monkeypatch.setenv("SMARTMEMORY_API_KEY", "sk_test")
+    monkeypatch.setenv("SMARTMEMORY_API_URL", API)
+    monkeypatch.setitem(portability_tools._parked, "remote_workspace", None)
+    cfg = types.SimpleNamespace(mode="remote", team_id="ws-a", api_url=API)
+    config_module = types.ModuleType("smartmemory_app.config")
+    config_module.load_config = lambda: cfg
+    config_module.save_config = lambda current: None
+    monkeypatch.setitem(
+        sys.modules, "smartmemory_app", types.ModuleType("smartmemory_app")
+    )
+    monkeypatch.setitem(sys.modules, "smartmemory_app.config", config_module)
+    service = FakeService()
+    _remote(monkeypatch, service)
+    tool_fn("switch_workspace")(workspace="Beta")
+    monkeypatch.setattr(portability_tools, "_export_okf", lambda backend, path: 3)
+
+    real_build = dispatch.build_backend
+    state: dict[str, Any] = {"local_fails": True, "thread": None, "alive_in_window": None}
+    parallel: list[str | None] = []
+
+    def build(mode, team_id=None):
+        if mode == dispatch.MODE_LOCAL and state["local_fails"]:
+            state["local_fails"] = False
+            raise RuntimeError("local store unavailable")
+        if mode == dispatch.MODE_REMOTE and team_id == "ws-b" and not state["thread"]:
+            mark = len(service.seen)
+
+            def write() -> None:
+                tool_fn("memory_add")(content="parallel")
+                parallel.extend(service.headers_after(mark))
+
+            state["thread"] = threading.Thread(target=write)
+            state["thread"].start()
+            state["thread"].join(timeout=0.3)  # the rebuild lock holds it back
+            state["alive_in_window"] = state["thread"].is_alive()
+        return real_build(mode, team_id=team_id)
+
+    monkeypatch.setattr(dispatch, "build_backend", build)
+    message = tool_fn("memory_migrate")(target="local")
+    state["thread"].join(timeout=5)
+
+    assert "Still on workspace: ws-b." in message, message
+    assert state["alive_in_window"] is True
+    assert parallel == ["ws-b"]
 
 
 def test_the_stdio_workspace_list_route_and_fields_are_served() -> None:

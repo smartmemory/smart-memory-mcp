@@ -48,8 +48,9 @@ def _rebuild_process_backend(mode: str, workspace_id: str | None) -> None:
     from smartmemory_mcp.backends import dispatch
     from smartmemory_mcp.tools.common import reset_backend as reset_common_backend
 
-    dispatch.set_process_mode(mode, workspace_id=workspace_id)
-    reset_common_backend()
+    with dispatch.rebuild_lock:
+        dispatch.set_process_mode(mode, workspace_id=workspace_id)
+        reset_common_backend()
 
 
 def _leave_remote_workspace(live_workspace: str | None) -> str:
@@ -335,11 +336,21 @@ def register(mcp: Any) -> None:
         def revert() -> str:
             cfg.mode = original_mode
             save_config(cfg)
-            _rebuild_process_backend(source_mode, live_workspace)
+            # Read at revert time: a switch_workspace that ran during the export
+            # mutated source_backend, and it is the caller's latest word. After the
+            # forward rebuild nothing can reach source_backend, so this is its last
+            # live value. (The park on success keeps the pre-export `live_workspace`:
+            # that is where the exported data came from.)
+            now = (
+                _live_workspace(source_backend)
+                if source_mode == dispatch.MODE_REMOTE
+                else None
+            )
+            _rebuild_process_backend(source_mode, now)
             if source_mode == dispatch.MODE_LOCAL:
                 return f"Still on workspace: {LOCAL_WORKSPACE} (local mode). "
-            if live_workspace:
-                return f"Still on workspace: {live_workspace}. "
+            if now:
+                return f"Still on workspace: {now}. "
             return ""
 
         try:
