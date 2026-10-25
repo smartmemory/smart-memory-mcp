@@ -533,6 +533,51 @@ def test_a_parallel_call_waits_for_the_rebuild_instead_of_building_the_default(
     assert parallel == ["ws-b"]
 
 
+# The startup precedence table: (SMARTMEMORY_WORKSPACE_ID, SMARTMEMORY_TEAM_ID) -> the
+# workspace the backend starts on ("" = the service default, found by /auth/me).
+ENV_PRECEDENCE_ROWS = [
+    pytest.param("ws-new", "ws-old", "ws-new", id="workspace-env-beats-legacy-team-env"),
+    pytest.param("ws-new", "", "ws-new", id="workspace-env-alone"),
+    pytest.param("", "ws-old", "ws-old", id="legacy-team-env-alone-still-works"),
+    pytest.param("", "", "", id="neither-leaves-the-service-default"),
+]
+
+
+@pytest.mark.parametrize(("workspace_env", "team_env", "expected"), ENV_PRECEDENCE_ROWS)
+def test_the_workspace_env_precedence_table(
+    monkeypatch, workspace_env, team_env, expected
+) -> None:
+    monkeypatch.setenv("SMARTMEMORY_WORKSPACE_ID", workspace_env)
+    monkeypatch.setenv("SMARTMEMORY_TEAM_ID", team_env)
+    backend = RemoteBackend(api_url=API, api_key="", team_id=None)
+    assert backend._session["team_id"] == expected
+
+
+def test_the_save_default_fallback_hint_names_the_env_var_that_wins(
+    monkeypatch, caplog
+) -> None:
+    """Review M2: follow the hint literally, with the legacy var already set to another
+    workspace, and the session must start on the workspace the hint was given for."""
+    import re
+
+    monkeypatch.setitem(sys.modules, "smartmemory_app", None)  # import raises
+    monkeypatch.setitem(sys.modules, "smartmemory_app.config", None)
+    from smartmemory_mcp import server
+
+    hint = server._save_default_workspace("ws-new")
+    named = re.findall(r"Set (SMARTMEMORY_\w+)=ws-new", hint)
+    assert named == ["SMARTMEMORY_WORKSPACE_ID"], hint
+    assert "SMARTMEMORY_TEAM_ID" in hint  # says the older name is overridden
+
+    monkeypatch.setenv("SMARTMEMORY_TEAM_ID", "ws-old")
+    monkeypatch.setenv(named[0], "ws-new")
+    monkeypatch.setattr("smartmemory_mcp.backends.remote._warned_env_conflict", False)
+    with caplog.at_level(logging.WARNING):
+        backend = RemoteBackend(api_url=API, api_key="", team_id=None)
+    assert backend._session["team_id"] == "ws-new"
+    assert len([m for m in _warnings(caplog) if "differ" in m]) == 1
+
+
 def test_the_stdio_workspace_list_route_and_fields_are_served() -> None:
     """`RemoteBackend.list_workspaces` reads `GET /memory/workspaces` -> `workspaces[]`
     with `workspace_id` and `name`; pinned to the service's OpenAPI snapshot."""

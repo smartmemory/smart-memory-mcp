@@ -18,6 +18,7 @@ import sys
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from smartmemory_mcp.backends.remote import LEGACY_TEAM_ENV, WORKSPACE_ENV
 from smartmemory_mcp.capabilities import BackendCapabilityMiddleware
 from smartmemory_mcp.health import register_health
 from smartmemory_mcp.instructions import LOCAL_INSTRUCTIONS
@@ -145,7 +146,9 @@ def _save_default_workspace(workspace_id: str) -> str:
         )
         return (
             "Not saved as the default: the smartmemory package is not installed. "
-            f"Set SMARTMEMORY_WORKSPACE_ID={workspace_id} for new sessions instead."
+            f"Set {WORKSPACE_ENV}={workspace_id} for new sessions instead "
+            f"(it overrides the older {LEGACY_TEAM_ENV}). A workspace saved in the "
+            "smartmemory config overrides both."
         )
     cfg = load_config()
     cfg.team_id = workspace_id  # config key name kept; CLI rename is a follow-up

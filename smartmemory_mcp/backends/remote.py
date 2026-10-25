@@ -34,6 +34,33 @@ MISSING_TEAMS_SCOPE = (
 )
 
 
+WORKSPACE_ENV = "SMARTMEMORY_WORKSPACE_ID"
+LEGACY_TEAM_ENV = "SMARTMEMORY_TEAM_ID"
+_warned_env_conflict = False
+
+
+def env_workspace_id() -> str:
+    """The workspace id from the environment: `SMARTMEMORY_WORKSPACE_ID` wins over the
+    legacy `SMARTMEMORY_TEAM_ID` (MCP-SWITCH-FALLBACK-ENV-HINT-1). Before, the legacy
+    name won, so a user told to set the new one stayed on the old workspace silently.
+    """
+    global _warned_env_conflict
+    workspace = os.environ.get(WORKSPACE_ENV, "")
+    legacy = os.environ.get(LEGACY_TEAM_ENV, "")
+    if workspace and legacy and workspace != legacy and not _warned_env_conflict:
+        _warned_env_conflict = True
+        logger.warning(
+            "%s=%r and %s=%r differ; using %s (the legacy %s is ignored while it is set).",
+            WORKSPACE_ENV,
+            workspace,
+            LEGACY_TEAM_ENV,
+            legacy,
+            WORKSPACE_ENV,
+            LEGACY_TEAM_ENV,
+        )
+    return workspace or legacy
+
+
 def _is_missing_scope(result: Any) -> bool:
     """True for the service's 403 `insufficient_api_key_scope` answer."""
     return (
@@ -64,10 +91,7 @@ class RemoteBackend(BackendCapabilities):
         self._session: dict[str, str | bool] = {
             "access_token": api_key or os.environ.get("SMARTMEMORY_API_KEY", ""),
             "refresh_token": "",
-            "team_id": team_id
-            or os.environ.get(
-                "SMARTMEMORY_TEAM_ID", os.environ.get("SMARTMEMORY_WORKSPACE_ID", "")
-            ),
+            "team_id": team_id or env_workspace_id(),
             "user_email": "",
             "tenant_id": "",
             "_bootstrapped": False,

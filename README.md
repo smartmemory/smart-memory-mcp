@@ -30,7 +30,8 @@ pytest tests/ -v
 ## Backend: REST by default, in-process only on opt-in
 
 The stdio and `--http` servers talk to a SmartMemory service over REST
-(`SMARTMEMORY_API_URL`, `SMARTMEMORY_API_KEY`, `SMARTMEMORY_TEAM_ID`). Having the
+(`SMARTMEMORY_API_URL`, `SMARTMEMORY_API_KEY`, `SMARTMEMORY_WORKSPACE_ID`; the older
+`SMARTMEMORY_TEAM_ID` still works, and `SMARTMEMORY_WORKSPACE_ID` wins when both are set). Having the
 `smartmemory` package importable does **not** switch them to an in-process store
 any more (MCP-PERF-1): that loaded the embedding model, spaCy and the reranker into
 every MCP process, 1.6-4 GB per Claude Code session.
