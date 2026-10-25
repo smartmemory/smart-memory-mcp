@@ -69,10 +69,19 @@ def requested_mode() -> str:
     return MODE_REMOTE
 
 
-def set_process_mode(mode: str) -> None:
-    """Select the backend mode for this process and drop the cached backend."""
+def set_process_mode(mode: str, workspace_id: str | None = None) -> None:
+    """Select the backend mode for this process and drop the cached backend.
+
+    ``workspace_id`` carries a live remote workspace (an unsaved
+    ``switch_workspace``) into the rebuilt remote backend, which is then built
+    here rather than on the next call. Without it a rebuild starts from the
+    configured default workspace (MCP-SWITCH-WORKSPACE-1 H1).
+    """
+    global _backend
     os.environ[MODE_ENV] = mode
     reset_backend()
+    if workspace_id and mode == MODE_REMOTE:
+        _backend = build_backend(MODE_REMOTE, team_id=workspace_id)
 
 
 def _app_config():
@@ -92,8 +101,11 @@ def _app_config():
         return None
 
 
-def build_backend(mode: str) -> "MemoryBackend":
-    """Construct (uncached) the backend for ``mode`` (``local`` or ``remote``)."""
+def build_backend(mode: str, team_id: str | None = None) -> "MemoryBackend":
+    """Construct (uncached) the backend for ``mode`` (``local`` or ``remote``).
+
+    ``team_id`` (remote only) overrides the configured workspace.
+    """
     if mode == MODE_LOCAL:
         log.info("Backend dispatch: local mode (%s=local, in-process store)", MODE_ENV)
         from smartmemory_mcp.backends.local import LocalBackend
@@ -130,7 +142,7 @@ def build_backend(mode: str) -> "MemoryBackend":
             "(needs: pip install smartmemory)"
         )
     api_url = os.environ.get("SMARTMEMORY_API_URL") or getattr(cfg, "api_url", None)
-    team_id = getattr(cfg, "team_id", None) or None
+    team_id = team_id or getattr(cfg, "team_id", None) or None
     log.info("Backend dispatch: remote mode")
     return RemoteBackend(api_url=api_url or None, api_key=api_key, team_id=team_id)
 

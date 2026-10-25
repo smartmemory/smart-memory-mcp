@@ -242,6 +242,166 @@ def test_save_as_default_writes_the_config_only_when_asked(monkeypatch) -> None:
     assert saved == ["ws-a"]
 
 
+# --- 2b. every process-backend rebuild after a live switch (review H1) ---------------
+
+# One row per `memory_migrate` rebuild site. Remote rows start on the configured
+# default ws-a and switch live (unsaved) to Beta (ws-b); local rows start in Lite.
+# Each step is (target, import outcome). After the steps: the last message, where
+# every import landed, and the X-Workspace-Id of the next `memory_add` ([] = no
+# remote request, the write went to Lite).
+REBUILD_ROWS = [
+    pytest.param(
+        "remote",
+        [("local", "ok")],
+        ["Workspace changed: now default", "Remote workspace ws-b is no longer active"],
+        ["local"],
+        [],
+        True,
+        id="forward-remote-to-local-says-ws-b-left",
+    ),
+    pytest.param(
+        "remote",
+        [("local", "all-fail")],
+        ["Config reverted to 'remote'", "Still on workspace: ws-b."],
+        ["local"],
+        ["ws-b"],
+        False,
+        id="total-failure-revert-keeps-ws-b",
+    ),
+    pytest.param(
+        "remote",
+        [("local", "raise")],
+        ["Config reverted to 'remote'", "Still on workspace: ws-b."],
+        ["local"],
+        ["ws-b"],
+        False,
+        id="exception-revert-keeps-ws-b",
+    ),
+    pytest.param(
+        "remote",
+        [("local", "ok"), ("remote", "ok")],
+        ["Imported into workspace: ws-b (your earlier remote workspace)."],
+        ["local", "ws-b"],
+        ["ws-b"],
+        True,
+        id="round-trip-returns-to-ws-b",
+    ),
+    pytest.param(
+        "remote",
+        [("local", "ok"), ("remote", "raise")],
+        ["Config reverted to 'local'", "Still on workspace: default (local mode)."],
+        ["local", "ws-b"],
+        [],
+        True,
+        id="round-trip-exception-revert-stays-local",
+    ),
+    pytest.param(
+        "remote",
+        [("local", "ok"), ("remote", "all-fail"), ("remote", "ok")],
+        ["Imported into workspace: ws-b (your earlier remote workspace)."],
+        ["local", "ws-b", "ws-b"],
+        ["ws-b"],
+        True,
+        id="round-trip-after-failed-return-still-ws-b",
+    ),
+    pytest.param(
+        "local",
+        [("remote", "ok")],
+        ["Imported into workspace: ws-a."],
+        ["ws-a"],
+        ["ws-a"],
+        False,
+        id="forward-local-to-remote-names-config-default",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("start", "steps", "message_has", "imported_into", "next_header", "warns_ws_b"),
+    REBUILD_ROWS,
+)
+def test_a_backend_rebuild_after_a_live_switch_never_drops_it_silently(
+    monkeypatch,
+    caplog,
+    tmp_path,
+    start,
+    steps,
+    message_has,
+    imported_into,
+    next_header,
+    warns_ws_b,
+) -> None:
+    import tempfile
+
+    from smartmemory_mcp.tools import portability_tools
+
+    # The failure paths keep their temp bundle; keep it under tmp_path, not $TMPDIR.
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+
+    monkeypatch.setenv("SMARTMEMORY_MCP_MODE", start)
+    monkeypatch.setenv("SMARTMEMORY_API_KEY", "sk_test")
+    monkeypatch.setenv("SMARTMEMORY_API_URL", API)
+    monkeypatch.setitem(portability_tools._parked, "remote_workspace", None)
+    cfg = types.SimpleNamespace(mode=start, team_id="ws-a", api_url=API)
+    config_module = types.ModuleType("smartmemory_app.config")
+    config_module.load_config = lambda: cfg
+    config_module.save_config = lambda current: None
+    monkeypatch.setitem(
+        sys.modules, "smartmemory_app", types.ModuleType("smartmemory_app")
+    )
+    monkeypatch.setitem(sys.modules, "smartmemory_app.config", config_module)
+    local_writes: list[str] = []
+    monkeypatch.setattr(
+        LocalBackend,
+        "add",
+        lambda self, content, **kw: local_writes.append(content) or "m-1",
+    )
+
+    service = FakeService()
+    if start == "remote":
+        _remote(monkeypatch, service)
+        assert "Switched to workspace: Beta (ws-b)" in tool_fn("switch_workspace")(
+            workspace="Beta"
+        )
+    else:
+        monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", service)
+        monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.get", _auth_me)
+
+    landed: list[str] = []
+    outcome = {"now": "ok"}
+
+    def fake_import(backend, path):
+        landed.append(
+            "local"
+            if isinstance(backend, LocalBackend)
+            else backend.active_workspace_id
+        )
+        if outcome["now"] == "raise":
+            raise RuntimeError("import failed")
+        return (
+            {"imported": 0, "failed": 3}
+            if outcome["now"] == "all-fail"
+            else {"imported": 3}
+        )
+
+    monkeypatch.setattr(portability_tools, "_export_okf", lambda backend, path: 3)
+    monkeypatch.setattr(portability_tools, "_import_okf", fake_import)
+    caplog.set_level(logging.WARNING)
+    for target, result in steps:
+        outcome["now"] = result
+        message = tool_fn("memory_migrate")(target=target)
+
+    for expected in message_has:
+        assert expected in message, message
+    assert landed == imported_into
+    mark = len(service.seen)
+    tool_fn("memory_add")(content="note meant for Beta")
+    assert service.headers_after(mark) == next_header
+    assert local_writes == ([] if next_header else ["note meant for Beta"])
+    dropped = [w for w in _warnings(caplog) if "memory_migrate" in w and "ws-b" in w]
+    assert bool(dropped) is warns_ws_b, _warnings(caplog)
+
+
 def test_the_stdio_workspace_list_route_and_fields_are_served() -> None:
     """`RemoteBackend.list_workspaces` reads `GET /memory/workspaces` -> `workspaces[]`
     with `workspace_id` and `name`; pinned to the service's OpenAPI snapshot."""

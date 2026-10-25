@@ -11,6 +11,7 @@ from typing import Any
 
 from mcp.types import ToolAnnotations
 
+from smartmemory_mcp.backends.local import LOCAL_WORKSPACE
 from smartmemory_mcp.backends.remote import RemoteBackend
 
 from .common import get_backend, graceful
@@ -25,6 +26,57 @@ _WINDOWS_RESERVED_NAMES = (
     | {f"COM{char}" for char in "123456789¹²³"}
     | {f"LPT{char}" for char in "123456789¹²³"}
 )
+
+
+# The live remote workspace a remote -> local migrate left behind, carried back by
+# the next local -> remote migrate in this process (MCP-SWITCH-WORKSPACE-1 H1).
+_parked: dict[str, str | None] = {"remote_workspace": None}
+
+
+def _live_workspace(backend: Any) -> str | None:
+    """The workspace id a remote backend's next request would send, or None."""
+    workspace = getattr(backend, "active_workspace_id", None)
+    return workspace if isinstance(workspace, str) and workspace else None
+
+
+def _rebuild_process_backend(mode: str, workspace_id: str | None) -> None:
+    """Point this process at ``mode`` and drop both backend caches together.
+
+    A remote rebuild carries ``workspace_id`` (the live session's workspace);
+    without one it starts from the configured default.
+    """
+    from smartmemory_mcp.backends import dispatch
+    from smartmemory_mcp.tools.common import reset_backend as reset_common_backend
+
+    dispatch.set_process_mode(mode, workspace_id=workspace_id)
+    reset_common_backend()
+
+
+def _leave_remote_workspace(live_workspace: str | None) -> str:
+    """Park the live remote workspace on a move to local and say so."""
+    _parked["remote_workspace"] = live_workspace
+    if not live_workspace:
+        return f"Workspace is now {LOCAL_WORKSPACE} (local mode)."
+    logger.warning(
+        "memory_migrate: remote workspace %s is not active in local mode (Lite has one "
+        "workspace, %s); memory_migrate('remote') returns to it",
+        live_workspace,
+        LOCAL_WORKSPACE,
+    )
+    return (
+        f"Workspace changed: now {LOCAL_WORKSPACE} (local mode has one workspace). "
+        f"Remote workspace {live_workspace} is no longer active; "
+        "memory_migrate('remote') returns to it."
+    )
+
+
+def _arrive_remote_workspace(backend: Any, carried: str | None) -> str:
+    """Name the remote workspace an import landed in."""
+    _parked["remote_workspace"] = None
+    workspace = _live_workspace(backend) or "(none: the service default)"
+    if carried:
+        return f"Imported into workspace: {workspace} (your earlier remote workspace)."
+    return f"Imported into workspace: {workspace}."
 
 
 def _is_archive(path: Path) -> bool:
@@ -231,8 +283,6 @@ def register(mcp: Any) -> None:
             return f"Invalid target: {target}. Must be 'local' or 'remote'."
 
         from smartmemory_mcp.backends import dispatch
-        from smartmemory_mcp.backends.dispatch import reset_backend
-        from smartmemory_mcp.tools.common import reset_backend as reset_common_backend
 
         # The MCP's backend follows SMARTMEMORY_MCP_MODE, not the config file, so the
         # source is whatever this process runs on; migrating onto itself would just
@@ -244,10 +294,19 @@ def register(mcp: Any) -> None:
                 "Nothing to migrate."
             )
 
+        source_backend = get_backend()
+        # MCP-SWITCH-WORKSPACE-1 H1: an unsaved switch_workspace lives only on this
+        # backend object. Capture it before any rebuild so every rebuild below can
+        # carry it (or say why it cannot).
+        live_workspace = (
+            _live_workspace(source_backend)
+            if source_mode == dispatch.MODE_REMOTE
+            else None
+        )
         temp_root = Path(tempfile.mkdtemp(prefix="smartmemory_migrate_"))
         bundle_path = temp_root / "bundle"
         try:
-            count = _export_okf(get_backend(), bundle_path)
+            count = _export_okf(source_backend, bundle_path)
         except Exception:
             shutil.rmtree(temp_root, ignore_errors=True)
             raise
@@ -266,30 +325,46 @@ def register(mcp: Any) -> None:
 
         cfg.mode = target
         save_config(cfg)
-        dispatch.set_process_mode(target)
-        reset_backend()
-        reset_common_backend()
+        # Remote -> local leaves the live workspace behind (Lite has one workspace);
+        # local -> remote returns to the one parked by an earlier remote -> local.
+        carried = (
+            _parked["remote_workspace"] if target == dispatch.MODE_REMOTE else None
+        )
+        _rebuild_process_backend(target, carried)
+
+        def revert() -> str:
+            cfg.mode = original_mode
+            save_config(cfg)
+            _rebuild_process_backend(source_mode, live_workspace)
+            if source_mode == dispatch.MODE_LOCAL:
+                return f"Still on workspace: {LOCAL_WORKSPACE} (local mode). "
+            if live_workspace:
+                return f"Still on workspace: {live_workspace}. "
+            return ""
 
         try:
-            result = _import_okf(get_backend(), bundle_path)
+            target_backend = get_backend()
+            result = _import_okf(target_backend, bundle_path)
             imported, failed = _import_counts(result)
             if failed > 0 and imported == 0:
-                cfg.mode = original_mode
-                save_config(cfg)
-                dispatch.set_process_mode(source_mode)
-                reset_backend()
-                reset_common_backend()
+                note = revert()
                 return (
                     f"Migration failed: all {failed} items failed. "
-                    f"Config reverted to '{original_mode}'. Temp bundle: {bundle_path}"
+                    f"Config reverted to '{original_mode}'. {note}Temp bundle: {bundle_path}"
                 )
 
             shutil.rmtree(temp_root, ignore_errors=True)
-            return f"Migration to '{target}' complete: {imported} succeeded, {failed} failed out of {count} total."
+            if target == dispatch.MODE_LOCAL:
+                note = _leave_remote_workspace(live_workspace)
+            else:
+                note = _arrive_remote_workspace(target_backend, carried)
+            return (
+                f"Migration to '{target}' complete: {imported} succeeded, {failed} failed "
+                f"out of {count} total. {note}"
+            ).rstrip()
         except Exception as exc:
-            cfg.mode = original_mode
-            save_config(cfg)
-            dispatch.set_process_mode(source_mode)
-            reset_backend()
-            reset_common_backend()
-            return f"Migration failed: {exc}\nConfig reverted to '{original_mode}'. Temp bundle: {bundle_path}"
+            note = revert()
+            return (
+                f"Migration failed: {exc}\nConfig reverted to '{original_mode}'. "
+                f"{note}Temp bundle: {bundle_path}"
+            )
