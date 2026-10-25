@@ -48,8 +48,9 @@ CODE_TOOLS = (
 AGENT_TOOLS = ("agent_set_recall_profile", "agent_get_recall_profile")
 REASONING_TOOLS = ("reasoning_query_traces",)
 # Registered by the hosted server itself; session-scoped, no backend route of
-# their own beyond the team lookup.
-HOSTED_ONLY_TOOLS = ("whoami", "switch_team")
+# their own beyond the workspace (Team list) lookup. `switch_team` is the
+# deprecated alias of `switch_workspace` (MCP-SWITCH-WORKSPACE-1, one release).
+HOSTED_ONLY_TOOLS = ("whoami", "switch_workspace", "switch_team")
 
 HOSTED_TOOLS: frozenset[str] = frozenset(
     MEMORY_TOOLS + CODE_TOOLS + AGENT_TOOLS + REASONING_TOOLS + HOSTED_ONLY_TOOLS

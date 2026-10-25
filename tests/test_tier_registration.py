@@ -13,6 +13,8 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 from smartmemory_mcp.tier import Tier, resolve_tier
 
 MCP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -109,7 +111,8 @@ FREE_TOOLS = sorted(
     [
         "login",
         "whoami",
-        "switch_team",
+        "switch_workspace",  # MCP-SWITCH-WORKSPACE-1
+        "switch_team",  # deprecated alias of switch_workspace, one release
         "memory_ingest",
         "memory_search",
         "memory_recall",
@@ -143,46 +146,37 @@ FREE_TOOLS = sorted(
 )
 
 
+# tier, env overrides, registered count (MCP-SWITCH-WORKSPACE-1 added switch_workspace
+# to every tier; switch_team stays registered as its deprecated alias).
+TIER_COUNTS = [
+    ("FREE", {}, 31),
+    ("PRO", {"SMARTMEMORY_API_KEY": "sk_test_key_123"}, 69),
+    (
+        "PRO_PLUS",
+        {
+            "SMARTMEMORY_API_KEY": "sk_test_key_123",
+            "SMARTMEMORY_MCP_FULL_TOOLS": "true",
+        },
+        100,
+    ),
+]
+
+
 class TestToolRegistration:
-    def test_free_tier_tool_count(self):
-        """FREE tier registers exactly 30 tools (17 + the 13 decision tools)."""
-        env = _clean_env()
-        data = _run_snippet(env)
-        assert data["count"] == 30, (
-            f"Expected 30 FREE tools, got {data['count']}: {data['names']}"
+    @pytest.mark.parametrize(("tier", "overrides", "expected"), TIER_COUNTS)
+    def test_tier_tool_count(self, tier, overrides, expected):
+        """Each tier registers exactly its count; FREE is the exact name list and a
+        subset of every paid tier (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
+        data = _run_snippet(_clean_env(**overrides))
+        assert data["count"] == expected, (
+            f"Expected {expected} {tier} tools, got {data['count']}: {data['names']}"
         )
-        assert data["names"] == FREE_TOOLS
-
-    def test_pro_tier_tool_count(self):
-        """PRO tier registers exactly 68 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
-        env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
-        data = _run_snippet(env)
-        assert data["count"] == 68, (
-            f"Expected 68 remote PRO tools, got {data['count']}: {data['names']}"
-        )
+        if tier == "FREE":
+            assert data["names"] == FREE_TOOLS
+            return
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]
         )
         assert "memory_ingest_document" in data["names"]
-        # Verify FREE tools are a subset of PRO tools
-        for tool in FREE_TOOLS:
-            assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
-
-    def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 99 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
-        env = _clean_env(
-            SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true"
-        )
-        data = _run_snippet(env)
-        assert data["count"] == 99, (
-            f"Expected 99 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
-        )
-        assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
-            data["names"]
-        )
-        assert "memory_ingest_document" in data["names"]
-        # Verify FREE tools are a subset of PRO_PLUS tools
-        for tool in FREE_TOOLS:
-            assert tool in data["names"], (
-                f"FREE tool {tool!r} missing from PRO_PLUS tier"
-            )
+        missing = sorted(set(FREE_TOOLS) - set(data["names"]))
+        assert not missing, f"FREE tools missing from {tier}: {missing}"

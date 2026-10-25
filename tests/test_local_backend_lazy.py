@@ -47,7 +47,7 @@ def test_constructor_and_capabilities_do_not_import_storage(monkeypatch):
     )
     assert not any(backend.supports(method) for method in broken)
     assert not backend.supports("request")
-    assert backend.whoami() == "Local mode — single user."
+    assert backend.whoami().startswith("Local mode — single user.\nTenant: none")
     assert backend._memory is None
 
 

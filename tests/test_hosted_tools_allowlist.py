@@ -266,7 +266,7 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
     advertised = {tool.name for tool in asyncio.run(mcp.list_tools())}
 
     assert advertised == set(HOSTED_TOOLS)
-    assert len(advertised) == 27
+    assert len(advertised) == 28  # MCP-SWITCH-WORKSPACE-1: + switch_workspace
 
 
 @pytest.mark.parametrize("name", EXCLUDED_TOOLS)
@@ -394,7 +394,8 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ),
     ("reasoning_query_traces", {"query": "why"}),
     ("whoami", {}),
-    ("switch_team", {"team_id": "team-B"}),
+    ("switch_workspace", {"workspace": "team-B"}),
+    ("switch_team", {"team_id": "team-B"}),  # deprecated alias
 ]
 
 
@@ -515,7 +516,14 @@ def test_whoami_reports_the_hosted_identity(monkeypatch) -> None:
     assert "api_key" in text
 
 
-def test_switch_team_then_whoami_reflects_the_new_workspace(monkeypatch) -> None:
+# The switch tool and its deprecated alias, one row each (MCP-SWITCH-WORKSPACE-1).
+SWITCH_TOOLS = [("switch_workspace", "workspace"), ("switch_team", "team_id")]
+
+
+@pytest.mark.parametrize(("tool", "param"), SWITCH_TOOLS)
+def test_switch_then_whoami_reflects_the_new_workspace(
+    monkeypatch, tool, param
+) -> None:
     harness = _Harness()
     monkeypatch.setattr(
         "smartmemory_mcp.backends.remote.httpx.request", fake_svc_api(harness.seen)
@@ -524,9 +532,7 @@ def test_switch_team_then_whoami_reflects_the_new_workspace(monkeypatch) -> None
     async def body(client):
         session_id = await harness.session(client)
         before = await harness.call(client, session_id, "whoami")
-        switched = await harness.call(
-            client, session_id, "switch_team", {"team_id": "team-B"}
-        )
+        switched = await harness.call(client, session_id, tool, {param: "team-B"})
         after = await harness.call(client, session_id, "whoami")
         return before, switched, after
 
@@ -540,23 +546,31 @@ def test_switch_team_then_whoami_reflects_the_new_workspace(monkeypatch) -> None
     assert ("GET", "/memory/teams") in harness.seen
 
 
-def test_switch_team_refuses_a_workspace_you_are_not_in(monkeypatch) -> None:
+@pytest.mark.parametrize(("tool", "param"), SWITCH_TOOLS)
+def test_switch_refuses_a_workspace_you_are_not_in(monkeypatch, tool, param) -> None:
     harness = _Harness()
     monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", fake_svc_api())
 
     async def body(client):
         session_id = await harness.session(client)
-        return await harness.call(
-            client, session_id, "switch_team", {"team_id": "someone-elses-team"}
+        refused = await harness.call(
+            client, session_id, tool, {param: "someone-elses-team"}
         )
+        after = await harness.call(client, session_id, "whoami")
+        return refused, after
 
-    result = harness.run(body)
+    result, after = harness.run(body)
 
     assert result["isError"] is True
     assert "not a member" in _text(result)
+    assert "Still using workspace: team-personal" in _text(result)
+    assert "Workspace: team-personal" in _text(after)
 
 
-def test_a_switched_team_reaches_svc_api_as_the_workspace_header(monkeypatch) -> None:
+@pytest.mark.parametrize(("tool", "param"), SWITCH_TOOLS)
+def test_a_switched_workspace_reaches_svc_api_as_the_header(
+    monkeypatch, tool, param
+) -> None:
     headers_seen: list[str] = []
 
     def spy(method, url, **kwargs):
@@ -568,7 +582,7 @@ def test_a_switched_team_reaches_svc_api_as_the_workspace_header(monkeypatch) ->
 
     async def body(client):
         session_id = await harness.session(client)
-        await harness.call(client, session_id, "switch_team", {"team_id": "team-B"})
+        await harness.call(client, session_id, tool, {param: "team-B"})
         headers_seen.clear()
         await harness.call(client, session_id, "memory_search", {"query": "q"})
 

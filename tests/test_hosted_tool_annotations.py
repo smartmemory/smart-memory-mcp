@@ -36,7 +36,7 @@ def test_hosted_tools_have_explicit_directory_annotations() -> None:
     by_name = {tool.name: tool for tool in tools}
 
     assert set(by_name) == set(HOSTED_TOOLS)
-    assert len(by_name) == 27
+    assert len(by_name) == 28  # MCP-SWITCH-WORKSPACE-1: + switch_workspace
     for name, tool in by_name.items():
         assert tool.title, f"{name} is missing a title"
         assert tool.annotations is not None, f"{name} is missing annotations"

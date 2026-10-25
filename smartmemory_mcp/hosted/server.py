@@ -26,6 +26,7 @@ from .exchange import DEFAULT_EXCHANGE_CACHE, ExchangeCache
 from .identity import current_identity, set_hosted_mode
 from .middleware import HostedIdentityMiddleware
 from .ratelimit import hosted_asgi_middleware
+from ..workspace_select import ALIAS_NOTICE, refuse, resolve_workspace, warn_alias_once
 from .tools import CapturedTool, apply_allowlist, register_module_tools
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,13 @@ logger = logging.getLogger(__name__)
 SERVER_NAME = "smartmemory"
 
 HOSTED_REFUSAL = "{what} is not available on the hosted server."
+
+_SWITCH_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=False,
+)
 
 
 def build_hosted_server(
@@ -107,42 +115,58 @@ def _register_hosted_tools(
                 f"Workspace: {team_id}",
                 f"Auth: {verified.kind}",
                 "Backend: hosted (mcp.smartmemory.ai)",
+                "Change workspace with switch_workspace(workspace).",
             ]
         )
 
+    async def switch_session_workspace(ref: str, ctx: Context) -> str:
+        """The one hosted switch: membership-checked, per MCP session."""
+        identity = current_identity.get()
+        bound = identity.team_id if identity is not None else ""
+        previous = await identity_middleware.get_session_team(ctx) or bound
+        if not ref or not ref.strip():
+            raise ToolError(
+                refuse(
+                    "workspace is required (a workspace id or name).", previous
+                ).message
+            )
+        rows = _list_team_rows()
+        if rows is None:
+            raise ToolError(
+                refuse(
+                    "could not list your workspaces; the SmartMemory API did not respond.",
+                    previous,
+                ).message
+            )
+        workspace_id, detail = resolve_workspace(rows, ref, id_key="team_id")
+        if workspace_id is None:
+            raise ToolError(refuse(detail, previous).message)
+        await identity_middleware.set_session_team(ctx, workspace_id)
+        return f"Switched to workspace: {detail}. The next request uses it."
+
     @mcp.tool(
-        name="switch_team",
+        name="switch_workspace",
         title="Switch workspace",
-        annotations=ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=True,
-            openWorldHint=False,
-        ),
+        annotations=_SWITCH_ANNOTATIONS,
     )
-    async def hosted_switch_team(team_id: str, ctx: Context) -> str:
-        """Switch this session to another workspace you belong to.
+    async def hosted_switch_workspace(workspace: str, ctx: Context) -> str:
+        """Switch this session to another workspace you belong to, by id or name.
 
         The selection is per MCP session, not per process: it lasts as long as
-        the connection and never leaks into another user's calls.
+        the connection and never leaks into another user's calls. On failure the
+        previous workspace stays active.
         """
-        if not team_id or not team_id.strip():
-            raise ToolError("team_id is required.")
-        team_id = team_id.strip()
+        return await switch_session_workspace(workspace, ctx)
 
-        available = _list_team_ids()
-        if available is None:
-            raise ToolError(
-                "Could not list your workspaces; the SmartMemory API did not respond."
-            )
-        if team_id not in available:
-            raise ToolError(
-                f"You are not a member of workspace {team_id}. "
-                f"Available: {', '.join(sorted(available)) or 'none'}."
-            )
-
-        await identity_middleware.set_session_team(ctx, team_id)
-        return f"Switched to workspace: {team_id}"
+    @mcp.tool(
+        name="switch_team",
+        title="Switch team (deprecated)",
+        annotations=_SWITCH_ANNOTATIONS,
+    )
+    async def hosted_switch_team(team_id: str, ctx: Context) -> str:
+        """Deprecated alias of switch_workspace; removed next release. team_id is a workspace id or name."""
+        warn_alias_once()
+        return f"{ALIAS_NOTICE}\n{await switch_session_workspace(team_id, ctx)}"
 
     original_search = originals["memory_search"]
 
@@ -239,8 +263,17 @@ def _register_hosted_tools(
         return get_backend().recall(cwd=query, top_k=top_k)
 
 
-def _list_team_ids() -> set[str] | None:
-    """Workspace ids the caller belongs to, or None when the API did not answer."""
+def _list_team_rows() -> list[dict[str, Any]] | None:
+    """Workspaces the caller may switch to, or None when the API did not answer.
+
+    KNOWN CONFLATION (MCP-TOOL-SURFACE-1 section 2, kept by MCP-SWITCH-WORKSPACE-1,
+    follow-up for WS-ROUTING-4/5): this reads the caller's Teams from
+    `GET /memory/teams` and treats each `team_id` as a workspace id. That holds for
+    the Team-mirrored workspaces hosted callers use today; it is unverified for an
+    independent workspace whose id differs from its Team's. The check stays as the
+    membership gate: only ids in this list can be selected, and svc-api re-checks
+    the `X-Workspace-Id` on every request.
+    """
     result = get_backend().request("GET", "/memory/teams")
     if isinstance(result, dict) and result.get("error"):
         logger.warning("Workspace lookup failed: %s", result["error"])
@@ -249,12 +282,7 @@ def _list_team_ids() -> set[str] | None:
     if not isinstance(rows, list):
         logger.warning("Workspace lookup returned an unexpected shape: %r", type(rows))
         return None
-    ids = {
-        str(row.get("team_id"))
-        for row in rows
-        if isinstance(row, dict) and row.get("team_id")
-    }
-    return ids
+    return [row for row in rows if isinstance(row, dict) and row.get("team_id")]
 
 
 def hosted_asgi_app(cfg: HostedConfig, **injection: Any):

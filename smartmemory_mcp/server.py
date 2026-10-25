@@ -1,9 +1,9 @@
 """SmartMemory Unified MCP Server.
 
 Tiered tool registration:
-  FREE  (30 tools) — no login required, includes the decision suite
-  PRO   (68 tools) — after smartmemory login
-  PRO+  (99 tools) — PRO + SMARTMEMORY_MCP_FULL_TOOLS=true
+  FREE  (31 tools) — no login required, includes the decision suite
+  PRO   (69 tools) — after smartmemory login
+  PRO+  (100 tools) — PRO + SMARTMEMORY_MCP_FULL_TOOLS=true
 (Counts are cumulative registered tools, asserted by tests/test_tier_registration.py.)
 
 Backend is independent of tier:
@@ -22,7 +22,7 @@ from smartmemory_mcp.capabilities import BackendCapabilityMiddleware
 from smartmemory_mcp.health import register_health
 from smartmemory_mcp.instructions import LOCAL_INSTRUCTIONS
 from smartmemory_mcp.tier import Tier, resolve_tier, store_api_key
-from smartmemory_mcp.tools.common import graceful
+from smartmemory_mcp.tools.common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +76,7 @@ def login(api_key: str) -> str:
 )
 @graceful
 def whoami() -> str:
-    """Show current session: user, team, tier, and backend mode."""
-    from smartmemory_mcp.backends.dispatch import resolve_backend
-
+    """Show current session: user, tenant, workspace, tier, and backend mode."""
     # Core is optional for remote-only MCP installs.
     try:
         from smartmemory.errors import MissingModelError
@@ -92,11 +90,13 @@ def whoami() -> str:
 
     # Report the ACTUAL resolved backend — constructing a throwaway
     # RemoteBackend(api_key=...) here printed the env-default api_url
-    # (api.smartmemory.ai) and an empty team even when the real backend was
+    # (api.smartmemory.ai) and an empty workspace even when the real backend was
     # configured against a different service, and duplicated the "Backend:"
     # line the remote whoami already emits.
     try:
-        backend = resolve_backend()
+        # The same object every memory tool uses (`tools.common.get_backend`), so
+        # this shows the workspace a `switch_workspace` just selected.
+        backend = get_backend()
         lines.append(backend.whoami())
     except missing_model_errors as exc:
         logger.warning("Local model unavailable: %s", exc)
@@ -108,27 +108,71 @@ def whoami() -> str:
     return "\n".join(lines)
 
 
-@mcp.tool(
-    title="Switch workspace",
-    annotations=ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=False,
-    ),
+_SWITCH_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=False,
 )
-@graceful
-def switch_team(team_id: str) -> str:
-    """Switch to a different workspace/team."""
+
+
+def _switch_workspace(workspace: str, save_as_default: bool = False) -> str:
+    """Switch the live session every tool uses (one behaviour, no restart).
+
+    `get_backend()` returns the process backend the memory tools call, which is
+    the one `backends/dispatch.py` built and caches; mutating its session makes
+    the next request from any tool carry the new `X-Workspace-Id`.
+    """
+    from smartmemory_mcp.workspace_select import refuse
+
+    try:
+        backend = get_backend()
+    except RuntimeError as exc:
+        return refuse(f"no backend is available ({exc}).", "").message
+    result = backend.switch_workspace(workspace)
+    if not result.ok or not save_as_default:
+        return result.message
+    return f"{result.message}\n{_save_default_workspace(result.workspace_id)}"
+
+
+def _save_default_workspace(workspace_id: str) -> str:
+    """Write the workspace into the smartmemory config for new sessions."""
     try:
         from smartmemory_app.config import load_config, save_config
-
-        cfg = load_config()
-        cfg.team_id = team_id
-        save_config(cfg)
-        return f"Switched to team: {team_id}. Restart MCP server to apply."
     except ImportError:
-        return f"Team switching requires smartmemory package. Set SMARTMEMORY_TEAM_ID={team_id} env var instead."
+        logger.warning(
+            "Default workspace not saved: smartmemory package not installed."
+        )
+        return (
+            "Not saved as the default: the smartmemory package is not installed. "
+            f"Set SMARTMEMORY_WORKSPACE_ID={workspace_id} for new sessions instead."
+        )
+    cfg = load_config()
+    cfg.team_id = workspace_id  # config key name kept; CLI rename is a follow-up
+    save_config(cfg)
+    return "Saved as the default for new sessions."
+
+
+@mcp.tool(title="Switch workspace", annotations=_SWITCH_ANNOTATIONS)
+@graceful
+def switch_workspace(workspace: str, save_as_default: bool = False) -> str:
+    """Switch this session to another workspace you belong to, by id or name.
+
+    Takes effect on the next request; the server refuses a workspace you are not
+    a member of. On failure the previous workspace stays active. Set
+    `save_as_default` to also use it for new sessions.
+    """
+    return _switch_workspace(workspace, save_as_default)
+
+
+@mcp.tool(title="Switch team (deprecated)", annotations=_SWITCH_ANNOTATIONS)
+@graceful
+def switch_team(team_id: str) -> str:
+    """Deprecated alias of switch_workspace; removed next release. team_id is a workspace id or name."""
+    from smartmemory_mcp.workspace_select import ALIAS_NOTICE, warn_alias_once
+
+    warn_alias_once()
+    return f"{ALIAS_NOTICE}\n{_switch_workspace(team_id)}"
 
 
 # ---------------------------------------------------------------------------

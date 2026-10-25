@@ -8,8 +8,12 @@ from typing import Any
 
 from .interface import LOCAL_BROKEN_TOOLS, BackendCapabilities
 from .models import MemoryResult, normalize_item, normalize_items
+from smartmemory_mcp.workspace_select import SwitchResult, refuse
 
 log = logging.getLogger(__name__)
+
+# Lite runs one in-process store; it has no workspaces beyond this name.
+LOCAL_WORKSPACE = "default"
 
 
 def _metadata_matches(metadata: dict, key: str, value: Any) -> bool:
@@ -546,11 +550,29 @@ class LocalBackend(BackendCapabilities):
 
     def whoami(self, **kwargs: Any) -> str:
         """Local mode session info."""
-        return "Local mode — single user."
+        return (
+            "Local mode — single user.\n"
+            "Tenant: none (local mode has no tenants)\n"
+            f"Workspace: {LOCAL_WORKSPACE} (Lite has no other workspaces)\n"
+            "Backend: local"
+        )
 
-    def switch_team(self, team_id: str, **kwargs: Any) -> str:
-        """No-op in local mode."""
-        return "Local mode — teams not applicable."
+    def switch_workspace(self, workspace: str, **kwargs: Any) -> SwitchResult:
+        """Lite has one workspace, `default`; any other name is refused."""
+        if (workspace or "").strip().casefold() == LOCAL_WORKSPACE:
+            return SwitchResult(
+                ok=True,
+                message=(
+                    f"Already in workspace: {LOCAL_WORKSPACE}. "
+                    "Lite (local mode) has no other workspaces."
+                ),
+                workspace_id=LOCAL_WORKSPACE,
+            )
+        return refuse(
+            f"Lite (local mode) has no workspaces; only {LOCAL_WORKSPACE!r} exists. "
+            "Use the remote backend to work across workspaces.",
+            LOCAL_WORKSPACE,
+        )
 
     # -- Retrieval feedback (SELF-IMPROVE-6) --
 

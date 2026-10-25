@@ -120,7 +120,7 @@ Code indexing reports clean, partial and failed file counts plus acceptance, sta
 
 Local `code_effects(directory, repo_name=None)` scans Python effects through the shared engine without opening a memory store. Hosted `code_effects(repo, source_snapshot, limit=20, offset=0)` reads uploaded `fa_snapshot` records in the selected workspace. It accepts no filesystem path. Upload the engine's `snapshot_record` payload through existing declared-record ingestion first. Repository rules belong in the scanned checkout's `.smartmemory-effects.json`.
 
-Hosted mode advertises 27 tools, an explicit allowlist rather than a tier:
+Hosted mode advertises 28 tools, an explicit allowlist rather than a tier:
 
 `memory_ingest` `memory_search` `memory_recall` `read_around` `memory_get`
 `memory_explain` `memory_recall_pack` `memory_policy_bundle` `memory_add`
@@ -128,7 +128,10 @@ Hosted mode advertises 27 tools, an explicit allowlist rather than a tier:
 `memory_ingest_conversation` `memory_search_by_metadata` `memory_feedback`
 `code_search` `code_dead_code` `code_dependencies` `code_upload` `code_effects`
 `agent_set_recall_profile` `agent_get_recall_profile` `reasoning_query_traces`
-`whoami` `switch_team`
+`whoami` `switch_workspace`
+
+Deprecated: `switch_team` (an alias of `switch_workspace`, removed in the next
+release).
 
 Everything else is hidden, and hidden is the default, so a tool added to a
 shared module does not appear here until it is added to the allowlist. Three
@@ -150,8 +153,11 @@ quietly ignoring the request:
   alternative recall path builds a working context through the core activation
   scorer.
 
-`switch_team` changes the workspace for the current session only. It validates
-membership against the API and never leaks into another user's calls.
+`switch_workspace(workspace)` changes the workspace for the current session
+only, by id or name, with no restart. It validates membership against the API
+and never leaks into another user's calls. A refused switch names the workspace
+still in use. `whoami` shows the user, tenant and workspace. The tenant comes from
+your credential and is never a tool argument.
 
 ### Client configuration
 
@@ -203,4 +209,4 @@ Quiesce old writers before first-open indexing. Verify the engine capability pin
 
 ### Company project alongside local memory
 
-Keep your existing local `smartmemory` connection. Add `claude mcp add --transport http smartmemory-company https://mcp.smartmemory.ai/mcp` and authenticate with your own company-org login. Check `whoami` for the expected tenant, use `switch_team` with the project's paired Workspace ID, then check again. Recheck after reconnect because selection is session-scoped. The owner and Kyle authenticate separately. No local-memory upload or local backend switch is needed. Hosted Team responses use `team_id`. Independent Workspace selection is outside this change. Live OAuth and two-user access acceptance remain required.
+Keep your existing local `smartmemory` connection. Add `claude mcp add --transport http smartmemory-company https://mcp.smartmemory.ai/mcp` and authenticate with your own company-org login. Check `whoami` for the expected tenant, use `switch_workspace` with the project's paired Workspace ID, then check again. Recheck after reconnect because selection is session-scoped. The owner and Kyle authenticate separately. No local-memory upload or local backend switch is needed. Hosted Team responses use `team_id`. Independent Workspace selection is outside this change. Live OAuth and two-user access acceptance remain required.

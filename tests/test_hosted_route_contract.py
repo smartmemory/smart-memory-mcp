@@ -55,7 +55,8 @@ TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
     "agent_set_recall_profile": ("put", "/memory/agents/{agent_id}/recall-profile"),
     "agent_get_recall_profile": ("get", "/memory/agents/{agent_id}/recall-profile"),
     "reasoning_query_traces": ("post", "/memory/search"),
-    "switch_team": ("get", "/memory/teams"),
+    "switch_workspace": ("get", "/memory/teams"),
+    "switch_team": ("get", "/memory/teams"),  # deprecated alias of switch_workspace
     "whoami": None,  # session state only
 }
 
