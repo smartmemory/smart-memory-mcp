@@ -26,6 +26,22 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_API_URL = "https://api.smartmemory.ai"
 
+# `GET /memory/workspaces` is scoped `read:teams`; the web onboarding key and the
+# service default mint `read:memories` only (MCP-SWITCH-READ-TEAMS-REFUSAL-1).
+MISSING_TEAMS_SCOPE = (
+    "your API key lacks the read:teams scope, which listing your workspaces needs. "
+    "Create a key with Read teams enabled and run login(api_key) with it."
+)
+
+
+def _is_missing_scope(result: Any) -> bool:
+    """True for the service's 403 `insufficient_api_key_scope` answer."""
+    return (
+        isinstance(result, dict)
+        and result.get("status_code") == 403
+        and "scope" in str(result.get("error", "")).lower()
+    )
+
 
 class RemoteBackend(BackendCapabilities):
     # POST /memory/add defaults use_pipeline=True service-side, so add() runs extraction.
@@ -471,7 +487,11 @@ class RemoteBackend(BackendCapabilities):
         )
 
     def list_workspaces(self) -> list[dict[str, Any]] | None:
-        """`GET /memory/workspaces`: the caller's workspaces, or None on any failure.
+        """`GET /memory/workspaces`: the caller's workspaces, or None on any failure."""
+        return self._fetch_workspaces()[0]
+
+    def _fetch_workspaces(self) -> tuple[list[dict[str, Any]] | None, str]:
+        """The listing, or (None, why it failed) in words a user can act on.
 
         Sent without `X-Workspace-Id`: the listing is tenant-level, and a stale
         selected workspace must not stop the caller from switching away from it.
@@ -481,14 +501,19 @@ class RemoteBackend(BackendCapabilities):
         result = self._request("GET", "/memory/workspaces", headers=headers)
         if err := self._fmt_error(result):
             logger.warning("Workspace lookup failed: %s", err)
-            return None
+            if _is_missing_scope(result):
+                return None, MISSING_TEAMS_SCOPE
+            return None, f"could not list your workspaces at {self._api_url} ({err[:200]})."
         rows = result.get("workspaces") if isinstance(result, dict) else None
         if not isinstance(rows, list):
             logger.warning(
                 "Workspace lookup returned an unexpected shape: %r", type(result)
             )
-            return None
-        return [r for r in rows if isinstance(r, dict) and r.get("workspace_id")]
+            return None, (
+                f"could not list your workspaces at {self._api_url} "
+                "(unexpected response shape)."
+            )
+        return [r for r in rows if isinstance(r, dict) and r.get("workspace_id")], ""
 
     def switch_workspace(self, workspace: str) -> SwitchResult:
         """Point this live session at another of the caller's workspaces.
@@ -503,11 +528,9 @@ class RemoteBackend(BackendCapabilities):
             return refuse("workspace is required (a workspace id or name).", previous)
         if not self._session["access_token"]:
             return refuse("not logged in; run login(api_key) first.", previous)
-        rows = self.list_workspaces()
+        rows, why = self._fetch_workspaces()
         if rows is None:
-            return refuse(
-                f"could not list your workspaces at {self._api_url}.", previous
-            )
+            return refuse(why, previous)
         workspace_id, detail = resolve_workspace(rows, workspace, id_key="workspace_id")
         if workspace_id is None:
             return refuse(detail, previous)

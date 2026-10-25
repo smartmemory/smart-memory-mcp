@@ -156,7 +156,9 @@ quietly ignoring the request:
 `switch_workspace(workspace)` changes the workspace for the current session
 only, by id or name, with no restart. It validates membership against the API
 and never leaks into another user's calls. A refused switch names the workspace
-still in use. `whoami` shows the user, tenant and workspace. The tenant comes from
+still in use. Listing your workspaces needs an API key with the `read:teams`
+scope (a key with only `read:memories` is told so and keeps its workspace).
+`whoami` shows the user, tenant and workspace. The tenant comes from
 your credential and is never a tool argument.
 
 ### Client configuration

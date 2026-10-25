@@ -58,9 +58,14 @@ class FakeService:
     """svc-api for the stdio remote backend; records every request's workspace header."""
 
     def __init__(
-        self, *, list_status: int = 200, refuse: frozenset[str] = frozenset()
+        self,
+        *,
+        list_status: int = 200,
+        refuse: frozenset[str] = frozenset(),
+        scopes: frozenset[str] | None = None,
     ) -> None:
         self.list_status = list_status
+        self.scopes = scopes  # None = a key with every scope
         self.refuse = refuse
         self.seen: list[tuple[str, str, str | None]] = []
 
@@ -70,6 +75,13 @@ class FakeService:
         self.seen.append((method, path, header))
         request = httpx.Request(method, url)
         if path == "/memory/workspaces":
+            if self.scopes is not None and "read:teams" not in self.scopes:
+                # What common's enforce_api_key_scope answers (scope.py).
+                return httpx.Response(
+                    403,
+                    json={"detail": "API key missing required scope: read:teams"},
+                    request=request,
+                )
             if self.list_status != 200:
                 return httpx.Response(
                     self.list_status, json={"detail": "down"}, request=request
@@ -224,6 +236,49 @@ def test_an_unanswered_workspace_list_keeps_the_previous_workspace(
     assert any("Workspace lookup failed" in m for m in _warnings(caplog))
     # The listing never carries the (possibly stale) current workspace header.
     assert [h for _, p, h in service.seen if p == "/memory/workspaces"] == [None]
+
+
+# One row per way the listing can fail: the refusal must name the real reason and the
+# workspace still in use, and a key that has the scope must switch (review M1).
+LISTING_ROWS = [
+    pytest.param(
+        frozenset({"read:memories"}),
+        200,
+        ["Workspace not switched:", "lacks the read:teams scope", "login(api_key)"],
+        "ws-a",
+        id="key-without-read-teams-is-told-which-scope",
+    ),
+    pytest.param(
+        frozenset({"read:memories", "read:teams"}),
+        200,
+        ["Switched to workspace: Beta (ws-b)"],
+        "ws-b",
+        id="key-with-read-teams-switches",
+    ),
+    pytest.param(
+        None,
+        503,
+        ["could not list your workspaces at http://svc.test (API error 503"],
+        "ws-a",
+        id="outage-names-the-status-not-a-scope",
+    ),
+]
+
+
+@pytest.mark.parametrize(("scopes", "status", "message_has", "active"), LISTING_ROWS)
+def test_the_refusal_names_why_the_workspace_list_failed(
+    monkeypatch, caplog, scopes, status, message_has, active
+) -> None:
+    backend = _remote(monkeypatch, FakeService(scopes=scopes, list_status=status))
+    with caplog.at_level(logging.WARNING):
+        text = tool_fn("switch_workspace")(workspace="ws-b")
+
+    for expected in message_has:
+        assert expected in text, text
+    if active == "ws-a":
+        assert "Still using workspace: ws-a" in text
+        assert ("read:teams" in text) is (status == 200)
+    assert backend.active_workspace_id == active
 
 
 def test_save_as_default_writes_the_config_only_when_asked(monkeypatch) -> None:
