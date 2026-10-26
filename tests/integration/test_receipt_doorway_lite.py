@@ -27,9 +27,16 @@ def lite_env(tmp_path, monkeypatch):
     for prefix in ("GRAPH_DB", "FALKORDB", "REDIS", "CACHE_REDIS", "MONGODB"):
         monkeypatch.setenv(f"{prefix}_HOST", "127.0.0.1")
         monkeypatch.setenv(f"{prefix}_PORT", "1")
-    for name in ("SMARTMEMORY_COSTLESS_ORIGINS", "SMARTMEMORY_WORKSPACE_ID", "SMARTMEMORY_LLM_MODEL"):
+    for name in (
+        "SMARTMEMORY_COSTLESS_ORIGINS",
+        "SMARTMEMORY_WORKSPACE_ID",
+        "SMARTMEMORY_LLM_MODEL",
+    ):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr("smartmemory.pipeline.work_graph.spawn.spawn_worker_if_idle", lambda _data_dir: False)
+    monkeypatch.setattr(
+        "smartmemory.pipeline.work_graph.spawn.spawn_worker_if_idle",
+        lambda _data_dir: False,
+    )
     storage._memory = None
     storage._data_path = None
     yield storage
@@ -83,14 +90,44 @@ def _mcp_pending(_storage, monkeypatch, content):
 
 # (label, call, content, the id's type, a receipt expected, the status the tool answers or None for the wrapper rows)
 ROWS = [
-    ("wrapper ingest: legacy id string, unchanged", _wrapper_ingest, "Legacy ingest note gamma-3", str, False, None),
-    ("wrapper ingest_with_receipt: core receipt kept", _wrapper_doorway, "Doorway note delta-4", str, True, None),
-    ("mcp memory_save semantic: real receipt answered", _mcp_semantic, "Tool note epsilon-5", str, True, "queued"),
-    ("mcp memory_save pending: no receipt, none made up", _mcp_pending, "Pending note zeta-6", str, False, "saved"),
+    (
+        "wrapper ingest: legacy id string, unchanged",
+        _wrapper_ingest,
+        "Legacy ingest note gamma-3",
+        str,
+        False,
+        None,
+    ),
+    (
+        "wrapper ingest_with_receipt: core receipt kept",
+        _wrapper_doorway,
+        "Doorway note delta-4",
+        str,
+        True,
+        None,
+    ),
+    (
+        "mcp memory_save semantic: real receipt answered",
+        _mcp_semantic,
+        "Tool note epsilon-5",
+        str,
+        True,
+        "queued",
+    ),
+    (
+        "mcp memory_save pending: no receipt, none made up",
+        _mcp_pending,
+        "Pending note zeta-6",
+        str,
+        False,
+        "saved",
+    ),
 ]
 
 
-@pytest.mark.parametrize("label, call, content, id_type, has_receipt, status", ROWS, ids=[r[0] for r in ROWS])
+@pytest.mark.parametrize(
+    "label, call, content, id_type, has_receipt, status", ROWS, ids=[r[0] for r in ROWS]
+)
 def test_the_receipt_reaches_the_receipt_doorways_and_ingest_keeps_its_id(
     label, call, content, id_type, has_receipt, status, lite_env, monkeypatch
 ):

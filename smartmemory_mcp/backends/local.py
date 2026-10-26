@@ -466,9 +466,7 @@ class LocalBackend(BackendCapabilities):
             return _resolve_save_return(
                 self._ingest_raw(content, memory_type, **kwargs), op="ingest"
             )
-        saved = ingest_with_receipt(
-            content, memory_type, **self._ingest_kwargs(kwargs)
-        )
+        saved = ingest_with_receipt(content, memory_type, **self._ingest_kwargs(kwargs))
         return SaveReturn(saved.value, saved.receipt, saved.summary)
 
     def _ingest_raw(self, content: str, memory_type: str, **kwargs: Any) -> Any:

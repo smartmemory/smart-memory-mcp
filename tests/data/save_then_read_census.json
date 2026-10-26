@@ -152,6 +152,30 @@
    "receiver": "<tool-name>"
   },
   {
+   "call": "memory_save",
+   "file": "tests/integration/test_receipt_doorway_lite.py",
+   "function": "_memory_save",
+   "line": 69,
+   "memory_like": true,
+   "receiver": "<tool-name>"
+  },
+  {
+   "call": "ingest",
+   "file": "tests/integration/test_receipt_doorway_lite.py",
+   "function": "_wrapper_ingest",
+   "line": 74,
+   "memory_like": true,
+   "receiver": "storage"
+  },
+  {
+   "call": "ingest_with_receipt",
+   "file": "tests/integration/test_receipt_doorway_lite.py",
+   "function": "_wrapper_doorway",
+   "line": 79,
+   "memory_like": true,
+   "receiver": "storage"
+  },
+  {
    "call": "memory_save_document",
    "file": "tests/test_backend_conformance.py",
    "function": "test_advertised_document_tool_executes.<locals>.check",
@@ -976,6 +1000,101 @@
     [
      81,
      "dev_log_friction"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; the row's test reads the item back through the same store (WRAPPER-2.0-RECEIPT-COLLAPSE-1)"
+   },
+   "file": "tests/integration/test_receipt_doorway_lite.py",
+   "function": "_mcp_pending",
+   "key": "tests/integration/test_receipt_doorway_lite.py::_mcp_pending",
+   "line": 87,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/integration/test_receipt_doorway_lite.py::_memory_save"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; the row's test reads the item back through the same store (WRAPPER-2.0-RECEIPT-COLLAPSE-1)"
+   },
+   "file": "tests/integration/test_receipt_doorway_lite.py",
+   "function": "_mcp_semantic",
+   "key": "tests/integration/test_receipt_doorway_lite.py::_mcp_semantic",
+   "line": 83,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [],
+   "via": [
+    "helper tests/integration/test_receipt_doorway_lite.py::_memory_save"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; the row's test reads the item back through the same store (WRAPPER-2.0-RECEIPT-COLLAPSE-1)"
+   },
+   "file": "tests/integration/test_receipt_doorway_lite.py",
+   "function": "_memory_save",
+   "key": "tests/integration/test_receipt_doorway_lite.py::_memory_save",
+   "line": 60,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     69,
+     "memory_save"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; the row's test reads the item back through the same store (WRAPPER-2.0-RECEIPT-COLLAPSE-1)"
+   },
+   "file": "tests/integration/test_receipt_doorway_lite.py",
+   "function": "_wrapper_doorway",
+   "key": "tests/integration/test_receipt_doorway_lite.py::_wrapper_doorway",
+   "line": 78,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     79,
+     "ingest_with_receipt"
+    ]
+   ],
+   "via": [
+    "direct"
+   ]
+  },
+  {
+   "disposition": {
+    "class": "local_inline",
+    "why": "a real Lite core (spawn_worker=False or lite_context) runs the save inline (G47), so the read sees it with no wait and no pin; the row's test reads the item back through the same store (WRAPPER-2.0-RECEIPT-COLLAPSE-1)"
+   },
+   "file": "tests/integration/test_receipt_doorway_lite.py",
+   "function": "_wrapper_ingest",
+   "key": "tests/integration/test_receipt_doorway_lite.py::_wrapper_ingest",
+   "line": 73,
+   "reads": [],
+   "reads_after_save": false,
+   "saves": [
+    [
+     74,
+     "ingest"
     ]
    ],
    "via": [

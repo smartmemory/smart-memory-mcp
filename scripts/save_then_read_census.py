@@ -855,6 +855,20 @@ for _key, _class in (
         _class, SAVE_ONLY if _class == "save_only" else MOCKED
     )
 
+RD = "tests/integration/test_receipt_doorway_lite.py"
+for _key in (
+    "_memory_save",
+    "_wrapper_ingest",
+    "_wrapper_doorway",
+    "_mcp_semantic",
+    "_mcp_pending",
+):
+    DISPOSITIONS[f"{RD}::{_key}"] = D(
+        "local_inline",
+        LOCAL
+        + "; the row's test reads the item back through the same store (WRAPPER-2.0-RECEIPT-COLLAPSE-1)",
+    )
+
 # --- COMMON BEGIN (byte-identical in smart-memory-client and smart-memory-mcp scripts/save_then_read_census.py) ---
 
 FIXTURE = "tests/data/save_then_read_census.json"
