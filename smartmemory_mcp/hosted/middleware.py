@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import logging
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -19,6 +20,7 @@ import httpx
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
+from mcp.types import TextContent
 
 from .backend import HostedNdaRequiredError
 from .config import HostedConfig
@@ -37,6 +39,13 @@ logger = logging.getLogger(__name__)
 # often svc-api re-checks one. This value only has to sit far past any single call.
 API_KEY_NO_EXPIRY = datetime(9999, 12, 31, tzinfo=timezone.utc)
 
+# MCP-FIRST-RUN-HINT-1: the first successful tool result of each MCP session carries this once. It never
+# mentions local mode: the remote server is the product here, the CLI is an extra.
+FIRST_RUN_HINT = "`pip install smartmemory` for the sm CLI"
+# Sessions already hinted, oldest first. Bounded so a long-lived process cannot grow it forever; a session that
+# falls off the end is hinted once more, which is harmless.
+HINTED_SESSIONS_MAX = 4096
+
 
 class HostedIdentityMiddleware(Middleware):
     """Bind a per-call `HostedIdentity` around every tool invocation."""
@@ -53,6 +62,25 @@ class HostedIdentityMiddleware(Middleware):
         self._cache = DEFAULT_EXCHANGE_CACHE if cache is None else cache
         self._transport = transport
         self._session_teams: dict[str, str] = {}
+        self._hinted_sessions: OrderedDict[str, None] = OrderedDict()
+
+    def _unauthorized(self, reason: object) -> ToolError:
+        """An auth refusal that says what to do next, not just that it happened."""
+        return ToolError(
+            f"Unauthorized: {reason}. Sign in with your MCP client's OAuth prompt, or send a "
+            f"SmartMemory API key as `Authorization: Bearer <key>` (create one in the web app at "
+            f"{self._web_url})."
+        )
+
+    def _claim_first_run_hint(self, fastmcp_context: Any) -> bool:
+        """True exactly once per MCP session. No session id (no transport session) means no hint."""
+        session_id = _mcp_session_id(fastmcp_context)
+        if session_id is None or session_id in self._hinted_sessions:
+            return False
+        self._hinted_sessions[session_id] = None
+        while len(self._hinted_sessions) > HINTED_SESSIONS_MAX:
+            self._hinted_sessions.popitem(last=False)
+        return True
 
     async def on_call_tool(
         self,
@@ -63,7 +91,7 @@ class HostedIdentityMiddleware(Middleware):
         if access_token is None:
             # Transport-level auth should have caught this; if it ever does not,
             # fail closed rather than serve an unidentified caller.
-            raise ToolError("Unauthorized: no access token on this request")
+            raise self._unauthorized("no access token on this request")
 
         claims = access_token.claims or {}
         # Classify by the verifier's own claim, never by re-matching the prefix:
@@ -80,7 +108,7 @@ class HostedIdentityMiddleware(Middleware):
                 )
         except HostedAuthError as exc:
             logger.warning("Hosted identity rejected (%s): %s", kind, exc)
-            raise ToolError(f"Unauthorized: {exc}") from exc
+            raise self._unauthorized(exc) from exc
 
         fastmcp_context = context.fastmcp_context
         if fastmcp_context is None:
@@ -108,7 +136,11 @@ class HostedIdentityMiddleware(Middleware):
         )
         token = current_identity.set(identity)
         try:
-            return await call_next(context)
+            result = await call_next(context)
+            # Claimed after the tool succeeded, so a call that errors leaves the hint for the next one.
+            if hasattr(result, "content") and self._claim_first_run_hint(fastmcp_context):
+                result.content = [*result.content, TextContent(type="text", text=FIRST_RUN_HINT)]
+            return result
         except Exception as exc:
             if _hosted_nda_required_cause(exc) is not None:
                 raise ToolError(
@@ -126,7 +158,7 @@ class HostedIdentityMiddleware(Middleware):
             if auth_error is None:
                 raise
             logger.warning("Hosted call lost its authorization: %s", auth_error)
-            raise ToolError(f"Unauthorized: {auth_error}") from exc
+            raise self._unauthorized(auth_error) from exc
         finally:
             current_identity.reset(token)
 
