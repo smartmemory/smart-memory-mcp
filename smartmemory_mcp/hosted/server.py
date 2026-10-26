@@ -25,7 +25,7 @@ from .auth import build_auth
 from .config import HostedConfig
 from .exchange import DEFAULT_EXCHANGE_CACHE, ExchangeCache
 from .identity import current_identity, set_hosted_mode
-from .middleware import HostedIdentityMiddleware
+from .middleware import HostedIdentityMiddleware, HostedSessionSelectionError
 from .ratelimit import hosted_asgi_middleware
 from ..workspace_select import ALIAS_NOTICE, refuse, resolve_workspace, warn_alias_once
 from .tools import CapturedTool, apply_allowlist, register_module_tools
@@ -113,7 +113,8 @@ def _register_hosted_tools(
         if identity is None:
             raise ToolError("Unauthorized: no identity bound to this call")
         verified = identity.verified
-        team_id = await identity_middleware.get_session_team(ctx) or identity.team_id
+        # The middleware already read the saved selection (WS-ROUTING-4) before building this call's backend.
+        team_id = identity.team_id
         return "\n".join(
             [
                 f"User: {verified.email or verified.user_id}",
@@ -127,10 +128,15 @@ def _register_hosted_tools(
         )
 
     async def switch_session_workspace(ref: str, ctx: Context) -> str:
-        """The one hosted switch: membership-checked, per MCP session."""
+        """The one hosted switch: membership-checked, saved server-side (WS-ROUTING-4).
+
+        The selection is a `routing_sessions` record keyed by the caller and this MCP client
+        (`mcp:<clientInfo.name>`), written through `PUT /memory/routing/session`, so it survives a
+        reconnect and an MCP process restart. svc-api re-checks membership and refuses a
+        workspace-bound key; on any refusal the previous workspace stays active.
+        """
         identity = current_identity.get()
-        bound = identity.team_id if identity is not None else ""
-        previous = await identity_middleware.get_session_team(ctx) or bound
+        previous = identity.team_id if identity is not None else ""
         if not ref or not ref.strip():
             raise ToolError(
                 refuse(
@@ -143,7 +149,10 @@ def _register_hosted_tools(
         workspace_id, detail = resolve_workspace(rows, ref, id_key="team_id")
         if workspace_id is None:
             raise ToolError(refuse(detail, previous).message)
-        await identity_middleware.set_session_team(ctx, workspace_id)
+        try:
+            await identity_middleware.set_session_team(ctx, workspace_id)
+        except HostedSessionSelectionError as exc:
+            raise ToolError(refuse(str(exc), previous).message) from exc
         return f"Switched to workspace: {detail}. The next request uses it."
 
     @mcp.tool(
@@ -152,11 +161,11 @@ def _register_hosted_tools(
         annotations=_SWITCH_ANNOTATIONS,
     )
     async def hosted_switch_workspace(workspace: str, ctx: Context) -> str:
-        """Switch this session to another workspace you belong to, by id or name.
+        """Switch to another workspace you belong to, by id or name.
 
-        The selection is per MCP session, not per process: it lasts as long as
-        the connection and never leaks into another user's calls. On failure the
-        previous workspace stays active.
+        The selection is saved for you and this MCP client: it survives a
+        reconnect, lapses after a day without writes, and never leaks into
+        another user's calls. On failure the previous workspace stays active.
         """
         return await switch_session_workspace(workspace, ctx)
 

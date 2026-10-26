@@ -13,6 +13,7 @@ from mcp.types import TextContent
 
 from smartmemory_mcp.hosted.exchange import ExchangeCache
 from smartmemory_mcp.hosted.middleware import FIRST_RUN_HINT, HostedIdentityMiddleware
+from tests._hosted_fixtures import RoutingSessionStore
 from tests.test_hosted_identity import (
     API_KEY_BEARER,
     OAUTH_BEARER,
@@ -55,7 +56,8 @@ async def _boom(context):
 
 def _middleware(monkeypatch) -> HostedIdentityMiddleware:
     _patch_token(monkeypatch, _access_token())
-    return HostedIdentityMiddleware(_config(), cache=ExchangeCache())
+    # WS-ROUTING-4: the middleware reads the saved selection from svc-api before each call; no network.
+    return HostedIdentityMiddleware(_config(), cache=ExchangeCache(), transport=RoutingSessionStore().transport())
 
 
 def first_then_never_again(monkeypatch):
@@ -94,7 +96,7 @@ def oldest_session_evicted_not_unbounded(monkeypatch):
 
 def unauthenticated_call_says_how_to_sign_in(monkeypatch):
     _patch_token(monkeypatch, None)
-    m = HostedIdentityMiddleware(_config(), cache=ExchangeCache())
+    m = HostedIdentityMiddleware(_config(), cache=ExchangeCache(), transport=RoutingSessionStore().transport())
     with pytest.raises(ToolError) as excinfo:
         _call(m, "s1", _ok)
     message = str(excinfo.value)

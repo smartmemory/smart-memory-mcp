@@ -34,6 +34,7 @@ from ._hosted_fixtures import (
     API_KEY,
     INITIALIZE_BODY,
     ME_PAYLOAD,
+    RoutingSessionStore,
     auth_me_transport,
     hosted_config,
     mcp_headers,
@@ -179,11 +180,13 @@ class _Harness:
     def __init__(self) -> None:
         self.cfg = hosted_config()
         self.seen: list[tuple[str, str]] = []
+        # WS-ROUTING-4: a switch is saved to svc-api's routing_sessions lever and read back before each call.
+        self.routing = RoutingSessionStore()
         self.app = hosted_asgi_app(
             self.cfg,
             redis_store=memory_store(),
             exchange_cache=ExchangeCache(),
-            api_transport=auth_me_transport(),
+            api_transport=self.routing.transport(auth_me_transport().handler),
         )
 
     def run(self, body):
