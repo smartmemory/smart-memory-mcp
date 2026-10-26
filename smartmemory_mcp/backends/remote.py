@@ -179,6 +179,29 @@ class RemoteBackend(BackendCapabilities):
             params["production_only"] = "true"
         return self.request("GET", "/memory/code/dead-code", params=params)
 
+    def code_dependencies(
+        self,
+        entity_name: str,
+        direction: str = "both",
+        repo: str | None = None,
+        file_path: str | None = None,
+        item_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Delegate call/import/inheritance tracing to the hosted service.
+
+        file_path and item_id are stored-index selectors sent as query values; they are
+        never read from the MCP server filesystem. Optional selectors go out only when set.
+        """
+        params: dict[str, Any] = {"entity_name": entity_name, "direction": direction}
+        for key, value in (
+            ("repo", repo),
+            ("file_path", file_path),
+            ("item_id", item_id),
+        ):
+            if value:
+                params[key] = value
+        return self.request("GET", "/memory/code/dependencies", params=params)
+
     def ingest_code(
         self,
         directory: str,
