@@ -1130,9 +1130,9 @@ def ingest_callers(root, allowed_dynamic=()):
 
 
 def test_every_mcp_ingest_consumer_is_assessed():
-    """One row: ``LocalBackend._ingest_raw`` (behind ``ingest`` and ``ingest_with_receipt``) returns the wrapper's
-    value (an id string from ``storage.ingest`` with ``sync`` left True) and the ``memory_save`` tool reads a dict's
-    ``item_id`` or ``str(result)``."""
+    """One row: ``LocalBackend._ingest_raw`` (behind ``ingest``, and ``ingest_with_receipt`` only on a wrapper without
+    ``storage.ingest_with_receipt``) returns the wrapper's value (an id string from ``storage.ingest`` with ``sync``
+    left True). The receipt doorway reads ``storage.ingest_with_receipt`` (WRAPPER-2.0-RECEIPT-COLLAPSE-1)."""
     from pathlib import Path
 
     root = Path(local.__file__).parent.parent

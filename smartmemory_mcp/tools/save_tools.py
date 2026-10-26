@@ -216,8 +216,10 @@ def register_free(mcp):
 
         Free text goes through the full extraction pipeline, whatever its type, except ``memory_type="pending"``,
         which is stored as is. For ``data``, ``memory_type`` names the registered schema (required) and ``content`` is
-        not allowed. Returns the saved id, the save receipt and a one-line summary. ``status`` is saved, held (the
-        memory was held for review: see ``reason``), queued (still processing) or failed.
+        not allowed. Returns the saved id, plus the save receipt and a one-line summary when core produced one;
+        ``receipt`` and ``summary`` are None when it did not (``pending``, stored as is, never has one on Lite) and
+        none is made up. ``status`` is saved, held (the memory was held for review: see ``reason``), queued (still
+        processing) or failed.
         """
         if (content is None) == (data is None):
             raise ToolError("Provide exactly one of content or data.")

@@ -451,15 +451,34 @@ class LocalBackend(BackendCapabilities):
     def ingest_with_receipt(
         self, content: str, memory_type: str = "episodic", **kwargs: Any
     ) -> SaveReturn:
-        """Full pipeline ingestion that keeps the save receipt when core returns one (see ``SaveReturn``)."""
-        return _resolve_save_return(
-            self._ingest_raw(content, memory_type, **kwargs), op="ingest"
-        )
+        """Full pipeline ingestion that keeps the save receipt when core returns one (see ``SaveReturn``).
+
+        Goes through the wrapper's receipt doorway (``storage.ingest_with_receipt``), never ``storage.ingest``, whose
+        legacy return reads a receipt as its id. A wrapper without the doorway answers the legacy arm with one WARNING.
+        """
+        try:
+            from smartmemory_app.storage import ingest_with_receipt
+        except ImportError:
+            log.warning(
+                "Save return ingest: the installed smartmemory wrapper has no storage.ingest_with_receipt, "
+                "so memory_save answers without the save receipt"
+            )
+            return _resolve_save_return(
+                self._ingest_raw(content, memory_type, **kwargs), op="ingest"
+            )
+        saved = ingest_with_receipt(content, memory_type, **self._ingest_kwargs(kwargs))
+        return SaveReturn(saved.value, saved.receipt, saved.summary)
 
     def _ingest_raw(self, content: str, memory_type: str, **kwargs: Any) -> Any:
-        """The full-pipeline save, unread: an id string or result dict today, a receipt after the producer flip."""
+        """The legacy full-pipeline save: what ``storage.ingest`` returns (an id string with ``sync`` left True)."""
         from smartmemory_app.storage import ingest
 
+        return ingest(content, memory_type, **self._ingest_kwargs(kwargs))
+
+    @staticmethod
+    def _ingest_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+        """MCP save kwargs as ``storage.ingest`` keywords: ``properties`` and an attributed ``origin``."""
+        kwargs = dict(kwargs)
         # storage.ingest() uses 'properties' not 'metadata'
         if "metadata" in kwargs:
             kwargs["properties"] = kwargs.pop("metadata")
@@ -475,7 +494,7 @@ class LocalBackend(BackendCapabilities):
         context.pop("origin", None)
         if context:
             kwargs["properties"] = {**(kwargs.get("properties") or {}), **context}
-        return ingest(content, memory_type, **kwargs)
+        return kwargs
 
     def recall(self, cwd: str | None = None, top_k: int = 10, **kwargs: Any) -> str:
         """Context-aware recall."""
