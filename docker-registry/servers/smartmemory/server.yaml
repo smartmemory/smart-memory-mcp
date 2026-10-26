@@ -1,0 +1,35 @@
+name: smartmemory
+image: mcp/smartmemory
+type: server
+meta:
+  category: database
+  tags:
+    - memory
+    - knowledge-graph
+    - agents
+    - search
+about:
+  title: SmartMemory
+  description: Persistent graph and vector memory for AI agents. Ingest, search, recall and track decisions across sessions. Runs SmartMemory Lite locally by default with no account, or connects to your SmartMemory cloud workspace.
+  icon: https://smartmemory.ai/favicon.ico
+source:
+  project: https://github.com/smartmemory/smart-memory-mcp
+  commit: REPLACE_WITH_MERGED_COMMIT_SHA
+config:
+  description: Lite mode needs no configuration. Set the mode to remote and add an API key to use your SmartMemory cloud workspace.
+  secrets:
+    - name: smartmemory.api_key
+      env: SMARTMEMORY_API_KEY
+      example: sm_live_xxxxxxxx
+  env:
+    - name: SMARTMEMORY_MCP_MODE
+      example: local
+      value: '{{smartmemory.mode}}'
+  parameters:
+    type: object
+    properties:
+      mode:
+        type: string
+        enum: [local, remote]
+        default: local
+    required: []
