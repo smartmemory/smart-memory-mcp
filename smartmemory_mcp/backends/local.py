@@ -309,7 +309,7 @@ class LocalBackend(BackendCapabilities):
         origin = resolve_origin(
             context,
             origin=kwargs.pop("origin", None) or meta.pop("origin", None),
-            default="mcp:memory_add",
+            default="mcp:memory_save",  # REL-CALLERS-ORIGIN-TAGS-1: was mcp:memory_add (tier 2 either way)
         )
         item = MemoryItem(
             content=content, memory_type=memory_type, metadata=meta, origin=origin
@@ -470,7 +470,7 @@ class LocalBackend(BackendCapabilities):
 
         context = dict(kwargs.pop("context", None) or {})
         kwargs["origin"] = resolve_origin(
-            context, origin=kwargs.get("origin"), default="mcp:memory_ingest"
+            context, origin=kwargs.get("origin"), default="mcp:memory_save"
         )
         context.pop("origin", None)
         if context:
