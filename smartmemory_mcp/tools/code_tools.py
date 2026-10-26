@@ -533,28 +533,19 @@ def register(mcp):
         """
         backend = get_backend()
 
-        if backend.supports("request"):
-            params: dict[str, Any] = {
-                "entity_name": entity_name,
-                "direction": direction,
-            }
-            if repo:
-                params["repo"] = repo
-            if file_path:
-                params["file_path"] = file_path
-            if item_id:
-                params["item_id"] = item_id
-            result = backend.request("GET", "/memory/code/dependencies", params=params)
-        elif backend.supports("code_dependencies"):
-            result = backend.code_dependencies(
-                entity_name=entity_name,
-                direction=direction,
-                repo=repo,
-                file_path=file_path,
-                item_id=item_id,
+        if not backend.supports("code_dependencies"):
+            logger.warning(
+                "code_dependencies: %s has no dependency analysis, nothing was traced",
+                type(backend).__name__,
             )
-        else:
             return "Dependency analysis is unavailable on this backend."
+        result = backend.code_dependencies(
+            entity_name=entity_name,
+            direction=direction,
+            repo=repo,
+            file_path=file_path,
+            item_id=item_id,
+        )
         if isinstance(result, dict) and "error" in result:
             return f"Error: {result['error']}"
         if not isinstance(result, dict):
