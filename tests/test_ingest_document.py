@@ -88,6 +88,8 @@ def test_remote_ingest_document(monkeypatch, status, chunk_ids, options):
         headers={
             "Authorization": "Bearer test",
             "Content-Type": "application/json",
+            # WS-ROUTING-5: always sent; the constructor team is an explicit pick, so the header stays.
+            "X-SM-Client": "mcp:stdio",
             "X-Workspace-Id": "ws1",
         },
         timeout=300,

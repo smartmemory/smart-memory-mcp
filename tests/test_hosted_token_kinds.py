@@ -71,7 +71,9 @@ class _Harness:
             return json.dumps(
                 {
                     "token": backend._session["access_token"],
-                    "team_id": backend._session["team_id"],
+                    # WS-ROUTING-5: the verified default is display only (no pick on a hosted backend).
+                    "team_id": backend._session["default_team_id"],
+                    "pick": backend._session["team_id"],
                 }
             )
 
@@ -198,6 +200,7 @@ def test_an_api_key_reaches_the_tool_without_an_exchange(key: str) -> None:
     assert result["isError"] is False
     assert payload["token"] == key
     assert payload["team_id"] == "team-personal"
+    assert payload["pick"] == ""
     assert "/auth/clerk/oauth-exchange" not in harness.svc_api_calls
     assert harness.svc_api_calls.count("/auth/me") == 1
 

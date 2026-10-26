@@ -88,3 +88,16 @@ def _label(row: dict[str, Any], id_key: str) -> str:
     name = row.get("name")
     wid = str(row.get(id_key))
     return f"{name} ({wid})" if name and name != wid else wid
+
+
+def format_workspace_rows(rows: list[dict[str, Any]], current: str) -> str:
+    """One line per workspace, `name (id)`, the current one marked."""
+    if not rows:
+        return "You have no workspaces."
+    lines = []
+    for row in rows:
+        workspace_id = str(row.get("workspace_id") or "")
+        name = row.get("name") or workspace_id
+        marker = "* " if workspace_id == current else "  "
+        lines.append(f"{marker}{name} ({workspace_id})")
+    return "\n".join(lines) + "\n(* = where a write from this client goes now)"

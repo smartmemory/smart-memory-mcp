@@ -436,6 +436,21 @@ def _format_recall(
     return "\n".join(lines)
 
 
+def _workspace_kwargs(backend: Any, workspace_id: Optional[str]) -> dict[str, str]:
+    """The backend kwarg for a write tool's `workspace_id` argument (WS-ROUTING-5: a tool argument is a pick).
+
+    Omitted or blank: no kwarg, so the write routes by the selection. Lite has no workspaces: refused, never dropped.
+    """
+    workspace = (workspace_id or "").strip()
+    if not workspace:
+        return {}
+    if not getattr(backend, "accepts_workspace_argument", False):
+        raise ValueError(
+            "Lite (local mode) has no workspaces: omit workspace_id, everything is in one local store."
+        )
+    return {"workspace_id": workspace}
+
+
 # ---------------------------------------------------------------------------
 # FREE tier tools (4)
 # ---------------------------------------------------------------------------
@@ -454,14 +469,23 @@ def register_free(mcp):
         ),
     )
     @graceful
-    def memory_ingest(content: str, memory_type: str = "semantic") -> str:
+    def memory_ingest(
+        content: str,
+        memory_type: str = "semantic",
+        workspace_id: Optional[str] = None,
+    ) -> str:
         """Store what the user said and extract entities, dates and relations from it.
 
         Use this for facts, events, plans and anything naming people, places,
         organizations or dates. Runs the full extraction pipeline.
+
+        ``workspace_id``: write to this workspace for this call only (an explicit
+        pick); omit it to write where your current selection routes.
         """
         backend = get_backend()
-        result = backend.ingest(content, memory_type=memory_type)
+        result = backend.ingest(
+            content, memory_type=memory_type, **_workspace_kwargs(backend, workspace_id)
+        )
         if isinstance(result, dict):
             if result.get("status") == "held":
                 return f"Memory held: {result.get('reason')}. Details: {result.get('reasons', [])}"
@@ -1022,12 +1046,16 @@ def register_pro(mcp):
         memory_type: str = "semantic",
         metadata: Optional[Dict[str, Any]] = None,
         tags: Optional[List[str]] = None,
+        workspace_id: Optional[str] = None,
     ) -> str:
         """Store a memory with explicit metadata or tags.
 
         On the hosted/remote service this runs the same extraction pipeline as
         memory_ingest. In local mode it stores the text as-is, with no entity, date
         or decision extraction; prefer memory_ingest there.
+
+        ``workspace_id``: write to this workspace for this call only (an explicit
+        pick); omit it to write where your current selection routes.
         """
         backend = get_backend()
         if not getattr(backend, "add_runs_extraction", False):
@@ -1040,7 +1068,12 @@ def register_pro(mcp):
         item_metadata = metadata or {}
         if tags:
             item_metadata["tags"] = tags
-        item_id = backend.add(content, memory_type=memory_type, metadata=item_metadata)
+        item_id = backend.add(
+            content,
+            memory_type=memory_type,
+            metadata=item_metadata,
+            **_workspace_kwargs(backend, workspace_id),
+        )
         if isinstance(item_id, dict) and item_id.get("status") == "held":
             return f"Memory held: {item_id.get('reason')}. Details: {item_id.get('reasons', [])}"
         return f"Memory added (direct). Item ID: {item_id}"

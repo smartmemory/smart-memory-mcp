@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from smartmemory_mcp.backends.local import LocalBackend
@@ -121,31 +122,33 @@ def test_remote_export_can_expand_to_bundle_directory(tmp_path: Path) -> None:
     assert (bundle_path / "smartmemory-okf" / "index.md").exists()
 
 
-def test_remote_export_passes_active_workspace_to_headers(tmp_path: Path) -> None:
-    backend = RemoteBackend(
-        api_url="https://example.test", api_key="key", team_id="workspace-1"
-    )
-    backend._session["_bootstrapped"] = True
+# WS-ROUTING-5 header rule for the OKF archive routes: (pick, discovered default) -> the X-Workspace-Id sent.
+OKF_HEADER_ROWS = [
+    pytest.param("workspace-1", "", "workspace-1", id="pick-is-sent"),
+    pytest.param("", "ws-default", None, id="default-is-display-only"),
+]
+
+
+@pytest.mark.parametrize(("pick", "default", "expected"), OKF_HEADER_ROWS)
+def test_remote_export_sends_only_the_pick_as_the_header(
+    tmp_path: Path, pick: str, default: str, expected: str | None
+) -> None:
+    backend = RemoteBackend(api_url="https://example.test", api_key="key", team_id=pick)
+    backend._session.update({"_bootstrapped": True, "default_team_id": default})
     archive_path = tmp_path / "bundle.tar.gz"
-    response = MagicMock()
+    response = MagicMock(status_code=200)
     response.__enter__.return_value = response
     response.__exit__.return_value = False
     response.iter_bytes.return_value = [b"archive"]
 
-    with (
-        patch.object(
-            backend,
-            "_headers",
-            return_value={
-                "Authorization": "Bearer key",
-                "X-Workspace-Id": "workspace-1",
-            },
-        ) as build_headers,
-        patch("smartmemory_mcp.backends.remote.httpx.stream", return_value=response),
-    ):
+    with patch(
+        "smartmemory_mcp.backends.remote.httpx.stream", return_value=response
+    ) as stream:
         backend.export_okf(str(archive_path))
 
-    build_headers.assert_called_once_with(workspace_id="workspace-1")
+    sent = stream.call_args.kwargs["headers"]
+    assert sent.get("X-Workspace-Id") == expected
+    assert sent["X-SM-Client"] == "mcp:stdio"
     assert archive_path.read_bytes() == b"archive"
 
 
@@ -191,38 +194,31 @@ def test_remote_import_packages_bundle_before_upload(tmp_path: Path) -> None:
     assert uploaded.name == "bundle.tar.gz"
 
 
-def test_remote_import_passes_active_workspace_to_headers_and_request(
-    tmp_path: Path,
+@pytest.mark.parametrize(("pick", "default", "expected"), OKF_HEADER_ROWS)
+def test_remote_import_sends_only_the_pick_as_the_header(
+    tmp_path: Path, pick: str, default: str, expected: str | None
 ) -> None:
-    backend = RemoteBackend(
-        api_url="https://example.test", api_key="key", team_id="workspace-1"
-    )
-    backend._session["_bootstrapped"] = True
+    backend = RemoteBackend(api_url="https://example.test", api_key="key", team_id=pick)
+    backend._session.update({"_bootstrapped": True, "default_team_id": default})
     archive_path = tmp_path / "bundle.tar.gz"
     archive_path.write_bytes(b"archive")
-    headers = {
-        "Authorization": "Bearer key",
-        "Content-Type": "application/json",
-        "X-Workspace-Id": "workspace-1",
-    }
+    answer = {"imported": 1, "failed": 0, "workspace_id": expected or default}
 
-    with (
-        patch.object(backend, "_headers", return_value=headers) as build_headers,
-        patch.object(
-            backend,
-            "_request",
-            return_value={"imported": 1, "failed": 0, "workspace_id": "workspace-1"},
-        ) as request,
-    ):
+    with patch(
+        "smartmemory_mcp.backends.remote.httpx.request",
+        return_value=httpx.Response(
+            200,
+            json=answer,
+            request=httpx.Request("POST", "https://example.test/memory/okf/import"),
+        ),
+    ) as request:
         result = backend.import_okf(str(archive_path))
 
-    build_headers.assert_called_once_with(workspace_id="workspace-1")
-    assert request.call_args.kwargs["workspace_id"] == "workspace-1"
-    assert request.call_args.kwargs["headers"] == {
-        "Authorization": "Bearer key",
-        "X-Workspace-Id": "workspace-1",
-    }
-    assert result["workspace_id"] == "workspace-1"
+    sent = request.call_args.kwargs["headers"]
+    assert sent.get("X-Workspace-Id") == expected
+    assert sent["X-SM-Client"] == "mcp:stdio"
+    assert "Content-Type" not in sent  # multipart: httpx sets the boundary
+    assert result == answer
 
 
 def test_extract_bundle_rejects_parent_traversal(tmp_path: Path) -> None:

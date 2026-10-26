@@ -55,8 +55,13 @@ TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
     "agent_set_recall_profile": ("put", "/memory/agents/{agent_id}/recall-profile"),
     "agent_get_recall_profile": ("get", "/memory/agents/{agent_id}/recall-profile"),
     "reasoning_query_traces": ("post", "/memory/search"),
-    "switch_workspace": ("get", "/memory/teams"),
-    "switch_team": ("get", "/memory/teams"),  # deprecated alias of switch_workspace
+    # WS-ROUTING-5: the switch and the listing read workspaces, not the caller's Teams (MCP-TOOL-SURFACE-1 s2).
+    "switch_workspace": ("get", "/memory/workspaces"),
+    "switch_team": (
+        "get",
+        "/memory/workspaces",
+    ),  # deprecated alias of switch_workspace
+    "list_workspaces": ("get", "/memory/workspaces"),
     "whoami": None,  # session state only
 }
 

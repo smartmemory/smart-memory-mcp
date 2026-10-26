@@ -236,7 +236,9 @@ class _Harness:
             return json.dumps(
                 {
                     "token": backend._session["access_token"],
-                    "team_id": backend._session["team_id"],
+                    # WS-ROUTING-5: where this call lands (display); the backend itself holds no pick.
+                    "team_id": current_identity.get().team_id,
+                    "pick": backend._session["team_id"],
                     "email": backend._session["user_email"],
                     "backend_id": id(backend),
                     "bound": current_identity.get() is not None,
@@ -263,7 +265,9 @@ class _Harness:
             return json.dumps(
                 {
                     "token": backend._session["access_token"],
-                    "team_id": backend._session["team_id"],
+                    # WS-ROUTING-5: where this call lands (display); the backend itself holds no pick.
+                    "team_id": current_identity.get().team_id,
+                    "pick": backend._session["team_id"],
                     "backend_id": id(backend),
                 }
             )
@@ -443,6 +447,9 @@ def test_switching_the_session_team_changes_the_next_call_workspace() -> None:
 
     assert json.loads(_text(before))["team_id"] == OAUTH_WORKSPACE
     assert json.loads(_text(after))["team_id"] == "team-B"
+    assert (
+        json.loads(_text(after))["pick"] == ""
+    )  # the switch is the service's, never a header pick
     # The team switch must not force a second exchange — the identity is cached.
     assert harness.exchange_calls == ["/auth/clerk/oauth-exchange"]
 
@@ -751,10 +758,14 @@ def test_session_team_overrides_the_default_workspace(monkeypatch) -> None:
     async def call_next(context):
         identity = current_identity.get()
         seen["team_id"] = identity.team_id
-        seen["header_team"] = identity.backend._session["team_id"]
+        seen["pick"] = identity.backend._session["team_id"]
+        headers = identity.backend._headers()
+        seen["header"] = headers.get("X-Workspace-Id")
+        seen["client"] = headers.get("X-SM-Client")
         return "ok"
 
     anyio.run(middleware.on_call_tool, _middleware_context(), call_next)
 
     assert seen["team_id"] == "team-B"
-    assert seen["header_team"] == "team-B"
+    # WS-ROUTING-5 header rule: the session pick is applied by svc-api from X-SM-Client, never echoed as the header.
+    assert (seen["pick"], seen["header"], seen["client"]) == ("", None, "mcp:hosted")

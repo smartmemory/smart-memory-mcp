@@ -135,26 +135,23 @@ def _run_remote(monkeypatch, arg: str) -> tuple[str, bool, str | None]:
 
 
 def _run_hosted(monkeypatch, arg: str) -> tuple[str, bool, str | None]:
-    headers: list[str] = []
-
-    def spy(method, url, **kwargs):
-        headers.append((kwargs.get("headers") or {}).get("X-Workspace-Id", ""))
-        return fake_svc_api()(method, url, **kwargs)
-
+    """WS-ROUTING-5: hosted sends no pick header after a switch; svc-api's resolver routes the next call (by the
+    session lever, or the service's account-default floor when nothing was switched). Returns where the next call
+    landed."""
     harness = _Harness()
-    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", spy)
+    harness.routing.install(monkeypatch, fake_svc_api())
 
     async def body(client):
         session_id = await harness.session(client)
         result = await harness.call(
             client, session_id, "switch_workspace", {"workspace": arg}
         )
-        headers.clear()
+        harness.routing.resolved.clear()
         await harness.call(client, session_id, "memory_search", {"query": "q"})
         return result
 
     result = harness.run(body)
-    return _text(result), result.get("isError") is True, headers[0]
+    return _text(result), result.get("isError") is True, harness.routing.resolved[0][2]
 
 
 def _run_local(_monkeypatch, arg: str) -> tuple[str, bool, str | None]:
@@ -164,11 +161,13 @@ def _run_local(_monkeypatch, arg: str) -> tuple[str, bool, str | None]:
 
 RUNNERS = {"remote": _run_remote, "hosted": _run_hosted, "local": _run_local}
 
-# backend, argument, switched?, workspace the NEXT request carries (None: no header)
+# backend, argument, switched?, where the NEXT request goes: remote = the X-Workspace-Id it carries (None: no header,
+# the service resolver decides); hosted = the workspace svc-api's resolver routed it to (hosted never sends the pick).
 SWITCH_ROWS = [
     ("remote", "Beta", True, "ws-b"),  # by name, case-insensitive match below
     ("remote", "ws-b", True, "ws-b"),  # by id
-    ("remote", "nobody", False, "ws-a"),  # unknown: previous stays
+    # unknown: previous stays, and the previous was no pick (the /auth/me default is display only, WS-ROUTING-5)
+    ("remote", "nobody", False, None),
     ("hosted", "team-B", True, "team-B"),  # by id
     ("hosted", "personal", True, "team-personal"),  # by name ("Personal")
     ("hosted", "someone-elses-team", False, "team-personal"),
@@ -307,7 +306,9 @@ def test_the_hosted_refusal_names_why_the_workspace_list_failed(
     base = fake_svc_api()
 
     def svc(method, url, **kwargs):
-        if httpx.URL(url).path == "/memory/teams":
+        if (
+            httpx.URL(url).path == "/memory/workspaces"
+        ):  # WS-ROUTING-5: was /memory/teams
             return httpx.Response(status, json=body, request=httpx.Request(method, url))
         return base(method, url, **kwargs)
 
@@ -764,16 +765,15 @@ def test_a_parallel_call_waits_for_the_rebuild_instead_of_building_the_default(
 # package; "wrapper" uses the real `smartmemory_app.config` (every `pip install
 # smartmemory`) with a config home under tmp_path. Columns: shape, SMARTMEMORY_WORKSPACE_ID,
 # SMARTMEMORY_TEAM_ID, the config file's saved team_id -> the X-Workspace-Id the first
-# write sends (ws-a = the account default from /auth/me), and the "differ" WARNING count.
+# write sends (None = no header: the /auth/me default ws-a is display only, WS-ROUTING-5 header rule), and the
+# "differ" WARNING count.
 ENV_PRECEDENCE_ROWS = [
-    pytest.param("bare", "", "", "", "ws-a", 0, id="bare-neither-account-default"),
+    pytest.param("bare", "", "", "", None, 0, id="bare-neither-account-default"),
     pytest.param("bare", "", "ws-old", "", "ws-old", 0, id="bare-only-old"),
     pytest.param("bare", "ws-new", "", "", "ws-new", 0, id="bare-only-new"),
     pytest.param("bare", "ws-same", "ws-same", "", "ws-same", 0, id="bare-both-equal"),
     pytest.param("bare", "ws-new", "ws-old", "", "ws-new", 1, id="bare-both-differ"),
-    pytest.param(
-        "wrapper", "", "", "", "ws-a", 0, id="wrapper-neither-account-default"
-    ),
+    pytest.param("wrapper", "", "", "", None, 0, id="wrapper-neither-account-default"),
     pytest.param("wrapper", "", "", "ws-saved", "ws-saved", 0, id="wrapper-saved-only"),
     pytest.param(
         "wrapper", "", "ws-old", "ws-saved", "ws-old", 0, id="wrapper-only-old"
@@ -1022,7 +1022,11 @@ def _whoami_hosted(monkeypatch) -> str:
 
 
 WHOAMI_ROWS = [
-    (_whoami_remote, ("Tenant: tenant-1", "Workspace: ws-a", "Backend: remote")),
+    # No pick: the /auth/me default is shown as display only (WS-ROUTING-5), never as the routed workspace.
+    (
+        _whoami_remote,
+        ("Tenant: tenant-1", "account default ws-a", "Backend: remote"),
+    ),
     (_whoami_local, ("Tenant: none", "Workspace: default", "Backend: local")),
     (
         _whoami_hosted,
@@ -1129,7 +1133,8 @@ def _property_names(schema: Any) -> set[str]:
 
 @pytest.mark.parametrize(
     ("server", "listing", "count"),
-    [("stdio", _stdio_listing, 100), ("hosted", _hosted_listing, 28)],
+    # WS-ROUTING-5: + list_workspaces on both servers.
+    [("stdio", _stdio_listing, 101), ("hosted", _hosted_listing, 29)],
 )
 def test_the_listing_has_no_tenant_selector_and_team_only_on_the_alias(
     server, listing, count

@@ -34,8 +34,12 @@ _parked: dict[str, str | None] = {"remote_workspace": None}
 
 
 def _live_workspace(backend: Any) -> str | None:
-    """The workspace id a remote backend's next request would send, or None."""
-    workspace = getattr(backend, "active_workspace_id", None)
+    """The explicit pick a remote backend's next request sends, or None.
+
+    Only the pick is carried over a rebuild (WS-ROUTING-5): carrying the displayed account default would turn the
+    server's suggestion into a pick on the new backend.
+    """
+    workspace = getattr(backend, "selected_workspace_id", None)
     return workspace if isinstance(workspace, str) and workspace else None
 
 

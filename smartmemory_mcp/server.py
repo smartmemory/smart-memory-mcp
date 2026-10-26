@@ -24,6 +24,7 @@ from smartmemory_mcp.backends.remote import (
     env_workspace,
 )
 from smartmemory_mcp.capabilities import BackendCapabilityMiddleware
+from smartmemory_mcp.routing_middleware import RemoteRoutingMiddleware
 from smartmemory_mcp.health import register_health
 from smartmemory_mcp.instructions import LOCAL_INSTRUCTIONS
 from smartmemory_mcp.tier import Tier, resolve_tier, store_api_key
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("smartmemory", instructions=LOCAL_INSTRUCTIONS)
 mcp.add_middleware(BackendCapabilityMiddleware())
+mcp.add_middleware(RemoteRoutingMiddleware())
 
 # Set when the PRO-tier transcript tools register, so `main()` knows whether the
 # search-model warm-up is worth scheduling (FREE tier has no transcript_search).
@@ -211,6 +213,33 @@ def switch_workspace(workspace: str, save_as_default: bool = False) -> str:
     `save_as_default` to also use it for new sessions.
     """
     return _switch_workspace(workspace, save_as_default)
+
+
+@mcp.tool(
+    title="List workspaces",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+@graceful
+def list_workspaces() -> str:
+    """List the workspaces you can switch to; the current one is marked."""
+    from smartmemory_mcp.backends.local import LocalBackend
+    from smartmemory_mcp.workspace_select import format_workspace_rows
+
+    backend = get_backend()
+    if isinstance(backend, LocalBackend):
+        return (
+            "Lite (local mode) has no workspaces: everything is in one local store. "
+            "Use remote mode (smartmemory setup --mode remote) for workspaces."
+        )
+    rows, why = backend._fetch_workspaces()
+    if rows is None:
+        return f"Could not list your workspaces: {why}"
+    return format_workspace_rows(rows, backend.active_workspace_id)
 
 
 @mcp.tool(title="Switch team (deprecated)", annotations=_SWITCH_ANNOTATIONS)

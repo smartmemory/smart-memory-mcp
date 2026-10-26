@@ -113,6 +113,7 @@ FREE_TOOLS = sorted(
         "whoami",
         "switch_workspace",  # MCP-SWITCH-WORKSPACE-1
         "switch_team",  # deprecated alias of switch_workspace, one release
+        "list_workspaces",  # WS-ROUTING-5
         "memory_ingest",
         "memory_search",
         "memory_recall",
@@ -147,17 +148,17 @@ FREE_TOOLS = sorted(
 
 
 # tier, env overrides, registered count (MCP-SWITCH-WORKSPACE-1 added switch_workspace
-# to every tier; switch_team stays registered as its deprecated alias).
+# to every tier; switch_team stays registered as its deprecated alias; WS-ROUTING-5 added list_workspaces).
 TIER_COUNTS = [
-    ("FREE", {}, 31),
-    ("PRO", {"SMARTMEMORY_API_KEY": "sk_test_key_123"}, 69),
+    ("FREE", {}, 32),
+    ("PRO", {"SMARTMEMORY_API_KEY": "sk_test_key_123"}, 70),
     (
         "PRO_PLUS",
         {
             "SMARTMEMORY_API_KEY": "sk_test_key_123",
             "SMARTMEMORY_MCP_FULL_TOOLS": "true",
         },
-        100,
+        101,
     ),
 ]
 

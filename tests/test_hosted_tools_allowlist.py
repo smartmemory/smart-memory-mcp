@@ -148,12 +148,15 @@ def fake_svc_api(seen: list[tuple[str, str]] | None = None):
             return ok({"total_items": 1, "items_by_type": {"semantic": 1}})
         if path == "/memory/result-feedback":
             return ok({"result_used_count": 1, "result_shown_count": 1})
-        if path == "/memory/teams":
+        if path == "/memory/workspaces":
+            # WS-ROUTING-5: the switch and list_workspaces read workspaces, not the caller's Teams.
             return ok(
-                [
-                    {"team_id": "team-personal", "name": "Personal"},
-                    {"team_id": "team-B"},
-                ]
+                {
+                    "workspaces": [
+                        {"workspace_id": "team-personal", "name": "Personal"},
+                        {"workspace_id": "team-B"},
+                    ]
+                }
             )
         if path.startswith("/memory/code/"):
             return ok({"results": [], "total": 0, "files": [], "symbols": []})
@@ -181,7 +184,11 @@ class _Harness:
         self.cfg = hosted_config()
         self.seen: list[tuple[str, str]] = []
         # WS-ROUTING-4: a switch is saved to svc-api's routing_sessions lever and read back before each call.
-        self.routing = RoutingSessionStore()
+        # The service floors a header-less call with no pick to the caller's account default (WS-ROUTING-5-PRE-1
+        # target, `RoutingSessionStore`); rows that need the refusal clear it.
+        self.routing = RoutingSessionStore(
+            default_team_id=ME_PAYLOAD["default_team_id"]
+        )
         self.app = hosted_asgi_app(
             self.cfg,
             redis_store=memory_store(),
@@ -269,7 +276,9 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
     advertised = {tool.name for tool in asyncio.run(mcp.list_tools())}
 
     assert advertised == set(HOSTED_TOOLS)
-    assert len(advertised) == 28  # MCP-SWITCH-WORKSPACE-1: + switch_workspace
+    assert (
+        len(advertised) == 29
+    )  # MCP-SWITCH-WORKSPACE-1: + switch_workspace; WS-ROUTING-5: + list_workspaces
 
 
 @pytest.mark.parametrize("name", EXCLUDED_TOOLS)
@@ -397,6 +406,7 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ),
     ("reasoning_query_traces", {"query": "why"}),
     ("whoami", {}),
+    ("list_workspaces", {}),
     ("switch_workspace", {"workspace": "team-B"}),
     ("switch_team", {"team_id": "team-B"}),  # deprecated alias
 ]
@@ -546,7 +556,7 @@ def test_switch_then_whoami_reflects_the_new_workspace(
     assert "team-B" in _text(switched)
     assert "team-B" in _text(after)
     # The membership check is a real API call, not a local guess.
-    assert ("GET", "/memory/teams") in harness.seen
+    assert ("GET", "/memory/workspaces") in harness.seen
 
 
 @pytest.mark.parametrize(("tool", "param"), SWITCH_TOOLS)
@@ -571,27 +581,35 @@ def test_switch_refuses_a_workspace_you_are_not_in(monkeypatch, tool, param) -> 
 
 
 @pytest.mark.parametrize(("tool", "param"), SWITCH_TOOLS)
-def test_a_switched_workspace_reaches_svc_api_as_the_header(
+def test_a_switched_workspace_is_routed_by_the_session_not_the_header(
     monkeypatch, tool, param
 ) -> None:
-    headers_seen: list[str] = []
+    """WS-ROUTING-5 header rule: after a switch the call carries no X-Workspace-Id, only X-SM-Client, and svc-api
+    routes it by the session pick (before, the pick was echoed as the header and routed `call`)."""
+    sent: list[dict[str, str]] = []
 
     def spy(method, url, **kwargs):
-        headers_seen.append((kwargs.get("headers") or {}).get("X-Workspace-Id", ""))
+        sent.append(dict(kwargs.get("headers") or {}))
         return fake_svc_api()(method, url, **kwargs)
 
     harness = _Harness()
-    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", spy)
+    harness.routing.install(monkeypatch, spy)
 
     async def body(client):
         session_id = await harness.session(client)
         await harness.call(client, session_id, tool, {param: "team-B"})
-        headers_seen.clear()
-        await harness.call(client, session_id, "memory_search", {"query": "q"})
+        sent.clear()
+        harness.routing.resolved.clear()
+        return await harness.call(
+            client, session_id, "memory_add", {"content": "a note"}
+        )
 
-    harness.run(body)
+    result = harness.run(body)
 
-    assert headers_seen == ["team-B"]
+    assert [h.get("X-Workspace-Id") for h in sent] == [None]
+    assert [h.get("X-SM-Client") for h in sent] == ["mcp:test"]
+    assert harness.routing.resolved == [("POST", "/memory/add", "team-B", "session")]
+    assert "Workspace: team-B, routed by session." in _text(result)
 
 
 # --- /health ----------------------------------------------------------------------

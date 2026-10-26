@@ -187,12 +187,16 @@ def test_build_hosted_backend_defaults_team_to_active_workspace(monkeypatch) -> 
 
     assert isinstance(backend, HostedRemoteBackend)
     assert backend._session["access_token"] == "sm-jwt-abc"
-    assert backend._session["team_id"] == "org-42"
+    # WS-ROUTING-5: no pick (the container's SMARTMEMORY_TEAM_ID never becomes one); the active workspace is display.
+    assert backend._session["team_id"] == ""
+    assert backend._session["default_team_id"] == "org-42"
+    assert "X-Workspace-Id" not in backend._headers()
     assert backend._session["user_email"] == "dev@test.com"
     assert backend._session["_bootstrapped"] is True
 
 
-def test_build_hosted_backend_honours_an_explicit_team() -> None:
+def test_build_hosted_backend_never_makes_the_displayed_team_a_pick() -> None:
+    """WS-ROUTING-5: the middleware passes the workspace the call displays; it is never sent as X-Workspace-Id."""
     backend = build_hosted_backend(
         _identity(),
         team_id="team-other",
@@ -200,7 +204,9 @@ def test_build_hosted_backend_honours_an_explicit_team() -> None:
         cache=_cache_with_entry(),
     )
 
-    assert backend._session["team_id"] == "team-other"
+    assert backend._session["team_id"] == ""
+    assert backend._session["default_team_id"] == "org-42"
+    assert "X-Workspace-Id" not in backend._headers()
 
 
 @pytest.mark.parametrize(

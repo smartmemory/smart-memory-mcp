@@ -11,6 +11,8 @@ from smartmemory_mcp.tools.lexical_contract import validate_channel_weights
 import json
 import logging
 import os
+import re
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +77,114 @@ def env_workspace_id() -> str:
     return env_workspace()[0]
 
 
+# WS-ROUTING-5 header rule (design WS-ROUTING-1 `### The header rule`): `X-Workspace-Id` means an explicit pick (a tool
+# argument, a person-set env/config value, a live switch_workspace on stdio). A server-supplied default
+# (`default_team_id`, `active_workspace_id`) is display-only and never sent as the header; the call carries
+# `X-SM-Client` instead so the service resolver can apply the saved session pick (lever 3) and keep it alive.
+CLIENT_KEY_FALLBACK = "mcp:stdio"
+_CLIENT_NAME_DROP = re.compile(r"[^A-Za-z0-9 _.\-]")
+ROUTING_EXPLAIN_PATH = "/memory/routing/explain"
+MISSING_TEAM_CONTEXT = "missing_team_context"
+# A header-less call that no server lever answers is refused with 400 + `X-SM-Scope-Error: missing_team_context`.
+# The MCP never answers that refusal with a guessed workspace (WS-ROUTING-5 fix round 1): the server owns the floor
+# (WS-ROUTING-5-PRE-1), and the user is told how to pick.
+MISSING_WORKSPACE_HELP = (
+    "No workspace is picked for this call and the service did not choose one (missing_team_context). "
+    "Pick one with switch_workspace(workspace) (list_workspaces() shows yours), or pass workspace_id to this tool."
+)
+
+# Per tool call: where each write went, as the service echoed it (contract `write_response_echo`). A middleware sets
+# a fresh list around one call; `_request` appends to it (a list, so a worker thread's append is seen by the caller).
+WRITE_TARGETS: ContextVar[list[dict[str, Any]] | None] = ContextVar(
+    "smartmemory_write_targets", default=None
+)
+
+
+def client_key_from_name(name: Any, fallback: str = CLIENT_KEY_FALLBACK) -> str:
+    """`mcp:<clientInfo.name>` cut to the contract `client_key.grammar`, else `fallback`."""
+    cleaned = _CLIENT_NAME_DROP.sub("", str(name or "")).strip()[:64].strip()
+    return f"mcp:{cleaned}" if cleaned else fallback
+
+
+def client_name_from_context(context: Any) -> str:
+    """The MCP `initialize` clientInfo name from a FastMCP context, or ""."""
+    try:
+        params = context.session.client_params
+        # The MCP SDK model field is `client_info` (wire name `clientInfo`); older SDKs exposed the camelCase name.
+        info = getattr(params, "client_info", None) or getattr(
+            params, "clientInfo", None
+        )
+        return str(getattr(info, "name", "") or "") if info is not None else ""
+    except (AttributeError, RuntimeError):
+        return ""
+
+
+def is_missing_workspace(response: httpx.Response) -> bool:
+    """True for the service's marked refusal of a call no routing lever answered."""
+    return (
+        response.status_code == 400
+        and response.headers.get("X-SM-Scope-Error") == MISSING_TEAM_CONTEXT
+    )
+
+
+def describe_routing(explain: dict[str, Any] | None, default: str) -> tuple[str, str]:
+    """(workspace label, routed_by explanation) from an explain answer, for whoami on any backend.
+
+    The account default is named for display only: the MCP never sends it as a pick (WS-ROUTING-5).
+    """
+    shown = f"(none picked; account default {default})" if default else "(none picked)"
+    if explain is None:
+        return shown, "unknown (the service has no routing explain)"
+    if not explain:
+        return shown, "unknown (could not ask the service)"
+    workspace_id = explain.get("workspace_id")
+    if not workspace_id:
+        why = explain.get("refusal") or "no lever applies"
+        return (
+            shown,
+            f"refused ({why}); pick with switch_workspace or a workspace_id argument",
+        )
+    name = explain.get("workspace_name")
+    label = (
+        f"{name} ({workspace_id})"
+        if name and name != workspace_id
+        else str(workspace_id)
+    )
+    return label, str(explain.get("routed_by") or "unknown")
+
+
+def record_write_target(echo: dict[str, Any]) -> None:
+    """Append a write's target to the current call's list, when a middleware opened one."""
+    targets = WRITE_TARGETS.get()
+    if targets is not None:
+        targets.append(echo)
+
+
+def format_write_target(
+    targets: list[dict[str, Any]], fallback: dict[str, Any] | None = None
+) -> str:
+    """One result line naming where the call's writes went (the last write wins; notices are listed).
+
+    `fallback` (an explain answer) names the target of a header-less write whose route echoes nothing.
+    """
+    target = targets[-1]
+    if not target.get("workspace_id") and isinstance(fallback, dict):
+        target = fallback
+    workspace_id = target.get("workspace_id") or "(unknown)"
+    name = target.get("workspace_name")
+    label = (
+        f"{name} ({workspace_id})" if name and name != workspace_id else workspace_id
+    )
+    routed_by = target.get("routed_by") or "unknown"
+    line = f"Workspace: {label}, routed by {routed_by}."
+    notices = [
+        n for t in targets for n in (t.get("notices") or []) if isinstance(n, dict)
+    ]
+    for notice in notices:
+        line += f" Notice: {notice.get('code')} ({notice.get('detail', '')})."
+    return line
+
+
 def is_missing_scope(result: Any) -> bool:
     """True for the service's 403 `insufficient_api_key_scope` answer."""
     return (
@@ -87,6 +197,7 @@ def is_missing_scope(result: Any) -> bool:
 class RemoteBackend(BackendCapabilities):
     # POST /memory/add defaults use_pipeline=True service-side, so add() runs extraction.
     add_runs_extraction = True
+    accepts_workspace_argument = True
     """HTTP client implementing MemoryBackend protocol for the hosted SmartMemory API."""
 
     unsupported_capabilities = frozenset(
@@ -105,9 +216,14 @@ class RemoteBackend(BackendCapabilities):
         self._session: dict[str, str | bool] = {
             "access_token": api_key or os.environ.get("SMARTMEMORY_API_KEY", ""),
             "refresh_token": "",
+            # The explicit pick (the only value ever sent as X-Workspace-Id): a constructor argument (a live switch
+            # carried over a rebuild, the env, the saved config), a login argument or switch_workspace.
             "team_id": team_id or env_workspace_id(),
+            # The server's suggestion from /auth/me: display only, never a header (WS-ROUTING-5).
+            "default_team_id": "",
             "user_email": "",
             "tenant_id": "",
+            "client_key": CLIENT_KEY_FALLBACK,
             "_bootstrapped": False,
         }
 
@@ -131,21 +247,101 @@ class RemoteBackend(BackendCapabilities):
                 user = r.json()
                 self._session["user_email"] = user.get("email", "")
                 self._session["tenant_id"] = user.get("tenant_id") or ""
-                if not self._session["team_id"]:
-                    discovered = user.get("default_team_id") or ""
-                    if discovered:
-                        self._session["team_id"] = discovered
+                # Display only (WS-ROUTING-5): the discovered default is never copied into the pick.
+                self._session["default_team_id"] = user.get("default_team_id") or ""
         except Exception:
             pass  # bootstrap is best-effort
 
+    def set_client_key(self, client_key: str) -> None:
+        """The `X-SM-Client` this backend sends (`mcp:<clientInfo.name>`); the server keys the session pick by it."""
+        self._session["client_key"] = client_key or CLIENT_KEY_FALLBACK
+
+    @property
+    def client_key(self) -> str:
+        return str(self._session.get("client_key") or CLIENT_KEY_FALLBACK)
+
     def _headers(self, workspace_id: str | None = None) -> dict[str, str]:
-        """Build request headers with auth and workspace context."""
+        """Build request headers: auth, `X-SM-Client`, and `X-Workspace-Id` only for an explicit pick.
+
+        `workspace_id` is a tool argument; else the session's pick. With neither the header is omitted and the
+        service resolver decides; the displayed account default is never sent (WS-ROUTING-5).
+        """
         self._bootstrap_from_api_key()
-        return {
+        headers = {
             "Authorization": f"Bearer {self._session['access_token']}",
             "Content-Type": "application/json",
-            "X-Workspace-Id": workspace_id or str(self._session.get("team_id", "")),
+            "X-SM-Client": self.client_key,
         }
+        workspace = workspace_id or str(self._session.get("team_id") or "")
+        if workspace:
+            headers["X-Workspace-Id"] = workspace
+        return headers
+
+    def _explain_routing(self) -> dict[str, Any] | None:
+        """`GET /memory/routing/explain` for this client (header-less), or None when the service has none (too old)."""
+        headers = self._headers()
+        headers.pop("X-Workspace-Id", None)
+        try:
+            r = httpx.get(
+                f"{self._api_url}{ROUTING_EXPLAIN_PATH}",
+                headers=headers,
+                params={"client_key": self.client_key},
+                timeout=15,
+            )
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "Routing explain unreachable (lost=routing display, error=%s)",
+                type(exc).__name__,
+            )
+            return {}
+        if r.status_code == 404:
+            return None
+        try:
+            body = r.json()
+        except ValueError:
+            return {}
+        return body if r.status_code == 200 and isinstance(body, dict) else {}
+
+    def _send(
+        self, method: str, url: str, headers: dict[str, str], **kwargs: Any
+    ) -> httpx.Response:
+        """One request, never retried with a guessed workspace; records where a write went."""
+        response = httpx.request(method, url, headers=headers, **kwargs)
+        self._note_write_target(method, response, headers)
+        return response
+
+    def _note_write_target(
+        self, method: str, response: httpx.Response, headers: dict[str, str]
+    ) -> None:
+        """Record where a successful write went: the service echo, else the header this call sent."""
+        if method.upper() == "GET" or WRITE_TARGETS.get() is None or response.is_error:
+            return
+        body = None
+        if b'"routed_by"' in response.content:
+            try:
+                body = response.json()
+            except ValueError:
+                body = None
+        if isinstance(body, dict) and "routed_by" in body:
+            record_write_target(
+                {
+                    key: body.get(key)
+                    for key in (
+                        "workspace_id",
+                        "workspace_name",
+                        "routed_by",
+                        "notices",
+                    )
+                }
+            )
+        elif "X-Workspace-Id" in headers:
+            record_write_target(
+                {"workspace_id": headers["X-Workspace-Id"], "routed_by": "call"}
+            )
+        else:
+            record_write_target(
+                {}
+            )  # header-less and no echo: the caller's routing answer names it
 
     def _request(
         self,
@@ -158,10 +354,10 @@ class RemoteBackend(BackendCapabilities):
         """Execute an API request. Never raises — returns error dict on any failure."""
         try:
             headers = kwargs.pop("headers", None) or self._headers(workspace_id)
-            r = httpx.request(
+            r = self._send(
                 method,
                 f"{self._api_url}{path}",
-                headers=headers,
+                headers,
                 timeout=timeout,
                 **kwargs,
             )
@@ -179,6 +375,12 @@ class RemoteBackend(BackendCapabilities):
                 body = e.response.json()
             except ValueError:
                 body = {"detail": e.response.text}
+            if is_missing_workspace(e.response):
+                return {
+                    "error": MISSING_WORKSPACE_HELP,
+                    "status_code": 400,
+                    "body": body,
+                }
             return {
                 "error": f"API error {e.response.status_code}: {e.response.text}",
                 "status_code": e.response.status_code,
@@ -414,22 +616,31 @@ class RemoteBackend(BackendCapabilities):
 
     @property
     def active_workspace_id(self) -> str:
-        """Return the workspace carried by the active remote session."""
+        """For display: this session's pick, else the server's suggested default (never a header by itself)."""
         self._bootstrap_from_api_key()
-        return str(self._session.get("team_id", ""))
+        return str(
+            self._session.get("team_id") or self._session.get("default_team_id") or ""
+        )
+
+    @property
+    def selected_workspace_id(self) -> str:
+        """The explicit pick only (env, config, switch_workspace, login argument), or "" when the server decides."""
+        return str(self._session.get("team_id") or "")
 
     def export_okf(self, archive_path: str) -> None:
         """Stream the active workspace's OKF archive to disk."""
         destination = Path(archive_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        workspace_id = self.active_workspace_id
+        headers = self._headers()
         try:
             with httpx.stream(
                 "GET",
                 f"{self._api_url}/memory/okf/export",
-                headers=self._headers(workspace_id=workspace_id),
+                headers=headers,
                 timeout=120,
             ) as response:
+                if is_missing_workspace(response):
+                    raise RuntimeError(MISSING_WORKSPACE_HELP)
                 response.raise_for_status()
                 with destination.open("wb") as handle:
                     for chunk in response.iter_bytes():
@@ -445,15 +656,13 @@ class RemoteBackend(BackendCapabilities):
 
     def import_okf(self, archive_path: str) -> dict[str, Any]:
         """Upload an OKF archive into the active workspace."""
-        workspace_id = self.active_workspace_id
-        headers = self._headers(workspace_id=workspace_id)
+        headers = self._headers()
         headers.pop("Content-Type", None)
         path = Path(archive_path)
         with path.open("rb") as handle:
             result = self._request(
                 "POST",
                 "/memory/okf/import",
-                workspace_id=workspace_id,
                 timeout=300,
                 headers=headers,
                 files={"file": (path.name, handle, "application/gzip")},
@@ -493,9 +702,10 @@ class RemoteBackend(BackendCapabilities):
             user = r.json()
             self._session["user_email"] = user.get("email", "")
             self._session["tenant_id"] = user.get("tenant_id") or ""
-            self._session["team_id"] = (
-                team_id or user.get("default_team_id") or str(self._session["team_id"])
-            )
+            # A login argument is a pick; the account default is display only (WS-ROUTING-5).
+            if team_id:
+                self._session["team_id"] = team_id
+            self._session["default_team_id"] = user.get("default_team_id") or ""
             self._session["_bootstrapped"] = True
         except httpx.HTTPStatusError as e:
             return f"API key validation failed ({e.response.status_code}): {e.response.text}"
@@ -503,7 +713,7 @@ class RemoteBackend(BackendCapabilities):
             return f"Login failed: {e}"
         return (
             f"Logged in as {self._session['user_email']}, "
-            f"workspace: {self._session['team_id']}"
+            f"workspace: {self.active_workspace_id or '(chosen by the server)'}"
         )
 
     def whoami(self) -> str:
@@ -514,14 +724,28 @@ class RemoteBackend(BackendCapabilities):
             )
         self._bootstrap_from_api_key()
         tenant = self._session.get("tenant_id") or "(unknown: /auth/me did not answer)"
-        workspace = self._session.get("team_id") or "(none: the service default)"
+        workspace, routed = self._routing_lines()
         return (
             f"User: {self._session['user_email'] or '(API key auth)'}\n"
             f"Tenant: {tenant}\n"
             f"Workspace: {workspace}\n"
+            f"Routed by: {routed}\n"
             f"API: {self._api_url}\n"
             f"Backend: remote\n"
-            "Change workspace with switch_workspace(workspace)."
+            "Change workspace with switch_workspace(workspace) "
+            f"(save_as_default=True keeps it for new sessions; {WORKSPACE_ENV} overrides both)."
+        )
+
+    def _routing_lines(self) -> tuple[str, str]:
+        """(workspace label, routed_by explanation) for whoami: the pick, else the service's own answer."""
+        pick = self.selected_workspace_id
+        if pick:
+            return (
+                pick,
+                "call (this session's pick: switch_workspace, the env or the saved config)",
+            )
+        return describe_routing(
+            self._explain_routing(), str(self._session.get("default_team_id") or "")
         )
 
     def list_workspaces(self) -> list[dict[str, Any]] | None:
@@ -611,7 +835,15 @@ class RemoteBackend(BackendCapabilities):
             )
         if kwargs.get("use_pipeline"):
             body["use_pipeline"] = True
-        result = self._request("POST", "/memory/add", json=body) or {}
+        result = (
+            self._request(
+                "POST",
+                "/memory/add",
+                workspace_id=kwargs.get("workspace_id") or None,
+                json=body,
+            )
+            or {}
+        )
         if isinstance(result, dict):
             if result.get("status") == "held":
                 return result
@@ -762,10 +994,10 @@ class RemoteBackend(BackendCapabilities):
         # SELF-IMPROVE-6: capture X-Search-Session-Id header from response
         self._last_search_session_id: str | None = None
         try:
-            r = httpx.request(
+            r = self._send(
                 "POST",
                 f"{self._api_url}/memory/search",
-                headers=self._headers(),
+                self._headers(),
                 json=body,
                 timeout=30,
             )
@@ -782,6 +1014,8 @@ class RemoteBackend(BackendCapabilities):
             self._on_http_error(e.response)
             if e.response.status_code == 401:
                 self._on_unauthorized(e.response)
+            if is_missing_workspace(e.response):
+                raise RuntimeError(MISSING_WORKSPACE_HELP) from e
             if e.response.status_code in (400, 503):
                 try:
                     body = e.response.json()
@@ -892,7 +1126,13 @@ class RemoteBackend(BackendCapabilities):
         if kwargs.get("origin") and not context.get("origin"):
             context["origin"] = kwargs["origin"]
         body: dict[str, Any] = {"content": content, "context": context}
-        result = self._request("POST", "/memory/ingest", timeout=120, json=body)
+        result = self._request(
+            "POST",
+            "/memory/ingest",
+            workspace_id=kwargs.get("workspace_id") or None,
+            timeout=120,
+            json=body,
+        )
         if err := self._fmt_error(result):
             return {"error": err}
         return result or {}

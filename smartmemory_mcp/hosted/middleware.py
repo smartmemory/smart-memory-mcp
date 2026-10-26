@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import re
 from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any
@@ -22,6 +21,12 @@ from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from mcp.types import TextContent
 
+from ..backends.remote import (
+    WRITE_TARGETS,
+    client_key_from_name,
+    client_name_from_context,
+    format_write_target,
+)
 from .backend import HostedNdaRequiredError
 from .config import HostedConfig
 from .exchange import DEFAULT_EXCHANGE_CACHE, ExchangeCache, get_sm_identity
@@ -46,7 +51,6 @@ FIRST_RUN_HINT = "`pip install smartmemory` for the sm CLI"
 # context_key), not by MCP session id, so a reconnect or an MCP process restart keeps it. The hosted client key is
 # `mcp:<clientInfo.name>` (contract client_key.grammar); a client that sends no name shares `mcp:hosted`.
 SESSION_CLIENT_FALLBACK = "mcp:hosted"
-_CLIENT_NAME_DROP = re.compile(r"[^A-Za-z0-9 _.\-]")
 ROUTING_SESSION_PATH = "/memory/routing/session"
 ROUTING_EXPLAIN_PATH = "/memory/routing/explain"
 
@@ -128,16 +132,20 @@ class HostedIdentityMiddleware(Middleware):
                 "Hosted identity requires an MCP request context; none was attached."
             )
 
-        # The session team must be read BEFORE the backend is built, or the call
-        # goes out with the wrong X-Workspace-Id (round 3 must-fix 1).
+        # The routing answer is read BEFORE the backend is built (round 3 must-fix 1). WS-ROUTING-5: it decides only
+        # what the call displays; it never becomes a header. The session pick itself is applied by the service from
+        # `X-SM-Client`, which is also what keeps that pick alive on use.
+        client_key = mcp_client_key(fastmcp_context)
         try:
-            session_team = await self.get_session_team(fastmcp_context, verified)
+            routing = await anyio.to_thread.run_sync(
+                self._read_routing, verified, client_key
+            )
         except HostedAuthError as exc:
             raise self._unauthorized(exc) from exc
         except HostedSessionSelectionError as exc:
-            # Fail closed: guessing the default here could send a write to a workspace the person switched away from.
+            # Fail closed: without the service's answer this call cannot say where a write would land.
             raise ToolError(str(exc)) from exc
-        team_id = session_team or verified.active_workspace_id
+        team_id = (routing or {}).get("workspace_id") or verified.active_workspace_id
 
         try:
             backend = build_hosted_backend(
@@ -146,18 +154,38 @@ class HostedIdentityMiddleware(Middleware):
         except AssertionError as exc:
             logger.warning("Hosted backend construction refused: %s", exc)
             raise ToolError(f"Unauthorized: incomplete identity ({exc})") from exc
+        backend.set_client_key(client_key)
 
         identity = HostedIdentity(
             verified=verified,
-            team_id=str(backend._session["team_id"]),
+            team_id=str(team_id or ""),
             backend=backend,
+            routing=routing,
         )
         token = current_identity.set(identity)
+        targets: list[dict[str, Any]] = []
+        targets_token = WRITE_TARGETS.set(targets)
         try:
             result = await call_next(context)
+            if (
+                targets
+                and hasattr(result, "content")
+                and not await _read_only_tool(context)
+            ):
+                result.content = [
+                    *result.content,
+                    TextContent(
+                        type="text", text=format_write_target(targets, routing)
+                    ),
+                ]
             # Claimed after the tool succeeded, so a call that errors leaves the hint for the next one.
-            if hasattr(result, "content") and self._claim_first_run_hint(fastmcp_context):
-                result.content = [*result.content, TextContent(type="text", text=FIRST_RUN_HINT)]
+            if hasattr(result, "content") and self._claim_first_run_hint(
+                fastmcp_context
+            ):
+                result.content = [
+                    *result.content,
+                    TextContent(type="text", text=FIRST_RUN_HINT),
+                ]
             return result
         except Exception as exc:
             if _hosted_nda_required_cause(exc) is not None:
@@ -178,6 +206,7 @@ class HostedIdentityMiddleware(Middleware):
             logger.warning("Hosted call lost its authorization: %s", auth_error)
             raise self._unauthorized(auth_error) from exc
         finally:
+            WRITE_TARGETS.reset(targets_token)
             current_identity.reset(token)
 
     def _exchange(self, upstream_token: str) -> VerifiedIdentity:
@@ -199,9 +228,10 @@ class HostedIdentityMiddleware(Middleware):
         verified = verified or _bound_verified()
         if verified is None:
             return None
-        return await anyio.to_thread.run_sync(
-            self._read_selection, verified, mcp_client_key(context)
+        routing = await anyio.to_thread.run_sync(
+            self._read_routing, verified, mcp_client_key(context)
         )
+        return _session_choice(routing)
 
     async def set_session_team(self, context: Any, team_id: str) -> None:
         """Save a workspace selection for this caller and MCP client (`PUT /memory/routing/session`).
@@ -218,11 +248,15 @@ class HostedIdentityMiddleware(Middleware):
             self._save_selection, verified, mcp_client_key(context), team_id
         )
 
-    def _routing_call(self, verified: VerifiedIdentity, method: str, path: str, **kwargs: Any) -> httpx.Response:
+    def _routing_call(
+        self, verified: VerifiedIdentity, method: str, path: str, **kwargs: Any
+    ) -> httpx.Response:
         headers = {"Authorization": f"Bearer {verified.sm_access_token}"}
         try:
             with httpx.Client(transport=self._transport, timeout=15.0) as client:
-                response = client.request(method, f"{self._api_url}{path}", headers=headers, **kwargs)
+                response = client.request(
+                    method, f"{self._api_url}{path}", headers=headers, **kwargs
+                )
         except httpx.HTTPError as exc:
             logger.warning(
                 "Workspace selection call failed (lost=session selection, error=%s)",
@@ -241,7 +275,10 @@ class HostedIdentityMiddleware(Middleware):
             raise HostedAuthError("session expired, retry")
         return response
 
-    def _read_selection(self, verified: VerifiedIdentity, client_key: str) -> str | None:
+    def _read_routing(
+        self, verified: VerifiedIdentity, client_key: str
+    ) -> dict[str, Any] | None:
+        """The explain answer for a header-less call from this client, or None when svc-api has no explain route."""
         response = self._routing_call(
             verified, "GET", ROUTING_EXPLAIN_PATH, params={"client_key": client_key}
         )
@@ -264,18 +301,15 @@ class HostedIdentityMiddleware(Middleware):
             raise HostedSessionSelectionError(
                 "could not read your workspace selection (unexpected response); retry."
             ) from exc
-        candidates = body.get("candidates") if isinstance(body, dict) else None
-        for candidate in candidates if isinstance(candidates, list) else []:
-            if (
-                isinstance(candidate, dict)
-                and candidate.get("lever") == "session"
-                and candidate.get("status") == "chosen"
-                and candidate.get("workspace_id")
-            ):
-                return str(candidate["workspace_id"])
-        return None
+        if not isinstance(body, dict):
+            raise HostedSessionSelectionError(
+                "could not read your workspace selection (unexpected response); retry."
+            )
+        return body
 
-    def _save_selection(self, verified: VerifiedIdentity, client_key: str, team_id: str) -> None:
+    def _save_selection(
+        self, verified: VerifiedIdentity, client_key: str, team_id: str
+    ) -> None:
         response = self._routing_call(
             verified,
             "PUT",
@@ -285,7 +319,8 @@ class HostedIdentityMiddleware(Middleware):
         if response.status_code == 200:
             return
         logger.warning(
-            "Workspace selection save refused (status=%s, lost=switch)", response.status_code
+            "Workspace selection save refused (status=%s, lost=switch)",
+            response.status_code,
         )
         reason = {
             403: "you are not a member of that workspace",
@@ -296,15 +331,33 @@ class HostedIdentityMiddleware(Middleware):
 
 def mcp_client_key(context: Any) -> str:
     """`mcp:<clientInfo.name>` from the MCP `initialize` handshake, cut to the contract grammar."""
+    return client_key_from_name(
+        client_name_from_context(context), SESSION_CLIENT_FALLBACK
+    )
+
+
+def _session_choice(routing: dict[str, Any] | None) -> str | None:
+    """The `session` candidate's workspace when the service chose it, else None."""
+    candidates = routing.get("candidates") if isinstance(routing, dict) else None
+    for candidate in candidates if isinstance(candidates, list) else []:
+        if (
+            isinstance(candidate, dict)
+            and candidate.get("lever") == "session"
+            and candidate.get("status") == "chosen"
+            and candidate.get("workspace_id")
+        ):
+            return str(candidate["workspace_id"])
+    return None
+
+
+async def _read_only_tool(context: Any) -> bool:
+    """True when the called tool is annotated read-only (its result names no write target)."""
     try:
-        params = context.session.client_params
-        # The MCP SDK model field is `client_info` (wire name `clientInfo`); older SDKs exposed the camelCase name.
-        info = getattr(params, "client_info", None) or getattr(params, "clientInfo", None)
-        name = getattr(info, "name", "") if info is not None else ""
-    except (AttributeError, RuntimeError):
-        name = ""
-    name = _CLIENT_NAME_DROP.sub("", str(name or "")).strip()[:64].strip()
-    return f"mcp:{name}" if name else SESSION_CLIENT_FALLBACK
+        tool = await context.fastmcp_context.fastmcp.get_tool(context.message.name)
+    except Exception:  # noqa: BLE001 - an unknown tool simply gets the line
+        return False
+    annotations = getattr(tool, "annotations", None)
+    return bool(getattr(annotations, "readOnlyHint", False))
 
 
 def _bound_verified() -> VerifiedIdentity | None:

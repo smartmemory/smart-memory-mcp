@@ -121,9 +121,9 @@ class Row:
     explain_fault: int | None  # explain answers this status AFTER the switch
     switch_error: str | None  # substring of the refused switch's text
     call_error: str | None  # substring of the later call's error text (fail closed)
-    workspace: (
-        str | None
-    )  # X-Workspace-Id svc-api got on the later call (None: no svc-api call happened)
+    # (workspace, routed_by) svc-api's resolver gave the later call (None: no svc-api call happened). WS-ROUTING-5:
+    # a switch reaches svc-api as the session lever (no header, X-SM-Client), never as X-Workspace-Id.
+    routed: tuple[str, str] | None
     warning: str | None  # substring of a WARNING the middleware logged
 
 
@@ -136,13 +136,32 @@ ROWS = [
         None,
         None,
         None,
-        "team-B",
+        ("team-B", "session"),
         None,
     ),
     Row(
-        "restart_keeps_the_switch", "team-B", {}, True, None, None, None, "team-B", None
+        "restart_keeps_the_switch",
+        "team-B",
+        {},
+        True,
+        None,
+        None,
+        None,
+        ("team-B", "session"),
+        None,
     ),
-    Row("no_switch_uses_the_default", None, {}, False, None, None, None, DEFAULT, None),
+    # No pick and the floor off: no header; the service floors to the account default (WS-ROUTING-5-PRE-1 target).
+    Row(
+        "no_switch_uses_the_default",
+        None,
+        {},
+        False,
+        None,
+        None,
+        None,
+        (DEFAULT, "account_default"),
+        None,
+    ),
     Row(
         "refused_403_leaves_the_previous",
         "team-B",
@@ -151,7 +170,7 @@ ROWS = [
         None,
         "not a member",
         None,
-        DEFAULT,
+        (DEFAULT, "account_default"),
         "status=403",
     ),
     Row(
@@ -162,7 +181,7 @@ ROWS = [
         None,
         "bound to one workspace",
         None,
-        DEFAULT,
+        (DEFAULT, "account_default"),
         "status=409",
     ),
     Row(
@@ -176,15 +195,17 @@ ROWS = [
         None,
         "status=503",
     ),
+    # Review H1: an explain the MCP cannot read never turns the default into a pick; the service still applies the
+    # saved switch (the write is header-less), so it lands in team-B.
     Row(
-        "explain_404_falls_back_with_warning",
+        "explain_404_keeps_the_switch_with_warning",
         "team-B",
         {},
         False,
         404,
         None,
         None,
-        DEFAULT,
+        ("team-B", "session"),
         "no routing explain",
     ),
     Row(
@@ -203,15 +224,10 @@ ROWS = [
 
 @pytest.mark.parametrize("row", ROWS, ids=[row.id for row in ROWS])
 def test_the_hosted_switch_is_the_server_record(row: Row, monkeypatch, caplog) -> None:
-    store = RoutingSessionStore(**row.store)
+    # The service knows this caller's account default (ME_PAYLOAD), its flag-off floor once WS-ROUTING-5-PRE-1 lands.
+    store = RoutingSessionStore(**{"default_team_id": DEFAULT, **row.store})
     faults: dict[str, int] = {}
-    seen: list[str] = []
-
-    def svc_api(method, url, **kwargs):
-        seen.append((kwargs.get("headers") or {}).get("X-Workspace-Id", ""))
-        return fake_svc_api()(method, url, **kwargs)
-
-    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", svc_api)
+    store.install(monkeypatch, fake_svc_api())
     first = _Hosted(store, faults)
 
     async def switch(client):
@@ -231,7 +247,7 @@ def test_the_hosted_switch_is_the_server_record(row: Row, monkeypatch, caplog) -
     if row.explain_fault:
         faults["explain"] = row.explain_fault
     later = _Hosted(store, faults) if row.restart else first
-    seen.clear()
+    store.resolved.clear()
 
     async def search(client):
         session_id = await later.session(client)  # a NEW MCP session id every time
@@ -246,7 +262,7 @@ def test_the_hosted_switch_is_the_server_record(row: Row, monkeypatch, caplog) -
         )
     else:
         assert result.get("isError") is not True, _text(result)
-    assert (seen[0] if seen else None) == row.workspace
+    assert (store.resolved[0][2:] if store.resolved else None) == row.routed
     if row.warning:
         assert any(row.warning in record.getMessage() for record in caplog.records), [
             r.getMessage() for r in caplog.records

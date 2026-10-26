@@ -37,6 +37,9 @@ class BackendCapabilities:
     # Whether `add()` runs entity/date/decision extraction (MCP-CAPTURE-ROUTING-1).
     # False is the safe default: memory_add then warns that extraction was skipped.
     add_runs_extraction: bool = False
+    # Whether a write tool's `workspace_id` argument reaches the service as `X-Workspace-Id` (WS-ROUTING-5).
+    # Lite has no workspaces, so its tools refuse the argument instead of dropping it.
+    accepts_workspace_argument: bool = False
 
     @classmethod
     def supports(cls, method: str) -> bool:
