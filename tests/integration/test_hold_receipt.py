@@ -3,16 +3,17 @@
 from uuid import uuid4
 
 import pytest
-from redis import Redis
 from smartmemory.pipeline import PipelineConfig
 from smartmemory.tools.factory import create_server_memory
 from smartmemory.utils.cache import NoOpCache
+
+from tests._falkor import falkor_client_or_skip
 
 
 @pytest.fixture
 def core(monkeypatch):
     name = f"test_core_hold_receipt_{uuid4().hex}"
-    redis = Redis(host="localhost", port=9010)
+    redis = falkor_client_or_skip()
     before = set(redis.execute_command("GRAPH.LIST"))
     cfg = PipelineConfig.graph_only(llm_enabled=False)
     cfg.extraction.entity_ruler.enabled = False

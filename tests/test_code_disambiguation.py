@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-import redis
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
@@ -22,6 +21,7 @@ from smartmemory_mcp.backends.local import LocalBackend
 from smartmemory_mcp.backends.remote import RemoteBackend
 from smartmemory_mcp.hosted.tools import _CapturingRegistrar
 from smartmemory_mcp.tools import code_tools, common
+from tests._falkor import falkor_client_or_skip, falkor_host, falkor_port
 
 REPO = "test_harden_u5_disambiguation"
 WORKSPACE = "test_harden_u5_disambiguation_workspace"
@@ -33,17 +33,17 @@ def dependency_tool(request, tmp_path, monkeypatch):
     from service_common.auth.core import get_current_user, get_scope_provider
 
     name = "test_harden_u5_disambiguation_" + uuid4().hex[:8]
-    client = redis.Redis(port=9010)
+    client = None if request.param == "local_sqlite" else falkor_client_or_skip()
     provider = DefaultScopeProvider(workspace_id=WORKSPACE)
     backend = None
     stack = ExitStack()
-    assert not client.exists(name)
+    assert client is None or not client.exists(name)
     try:
         backend = (
             SQLiteBackend(str(tmp_path / (name + ".db")))
             if request.param == "local_sqlite"
             else FalkorDBBackend(
-                host="localhost", port=9010, graph_name=name, scope_provider=provider
+                host=falkor_host(), port=falkor_port(), graph_name=name, scope_provider=provider
             )
         )
         graph = SmartGraph(backend=backend, enable_caching=False)
@@ -125,16 +125,17 @@ def dependency_tool(request, tmp_path, monkeypatch):
         stack.close()
         if backend is not None:
             backend.close()
-        client.delete(*lease_keys(name, WORKSPACE, REPO))
-        delete_graphs(client, name)
-        assert name.encode() not in client.execute_command("GRAPH.LIST")
-        leftover = [
-            key.decode()
-            for key in client.scan_iter(match="smartmemory:code:publish:*")
-            if code_publish_key_graph(key.decode()) == name
-        ]
-        assert leftover == [], f"leaked claim/publish keys: {leftover}"
-        client.close()
+        if client is not None:
+            client.delete(*lease_keys(name, WORKSPACE, REPO))
+            delete_graphs(client, name)
+            assert name.encode() not in client.execute_command("GRAPH.LIST")
+            leftover = [
+                key.decode()
+                for key in client.scan_iter(match="smartmemory:code:publish:*")
+                if code_publish_key_graph(key.decode()) == name
+            ]
+            assert leftover == [], f"leaked claim/publish keys: {leftover}"
+            client.close()
 
 
 @pytest.mark.parametrize("selector", ["file_path", "item_id"])
