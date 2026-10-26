@@ -146,7 +146,8 @@ def build_backend(mode: str, team_id: str | None = None) -> "MemoryBackend":
         _warn_once(
             "cfg-local",
             "smartmemory config says mode=local, but the MCP uses the REST backend "
-            "unless %s=local is set; no in-process store is opened.",
+            "unless %s=local is set; no in-process store is opened. Re-run "
+            "`sm mcp install <client>` to write it into the client's MCP entry.",
             MODE_ENV,
         )
     api_key = get_api_key()
