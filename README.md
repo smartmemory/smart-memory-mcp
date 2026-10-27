@@ -14,8 +14,18 @@ MCP server exposing SmartMemory operations to MCP-compatible clients (Claude Des
 
 ## Quick start
 
+Use the hosted server. Nothing to install:
+
 ```bash
-pip install -e .
+claude mcp add --transport http smartmemory https://mcp.smartmemory.ai/mcp
+```
+
+The first tool call opens a browser for consent. Other clients (Claude.ai, Grok, xAI API) are under [Client configuration](#client-configuration).
+
+Run it yourself instead (pip install, stdio):
+
+```bash
+pip install smartmemory-mcp   # or, from a checkout: pip install -e .
 
 # Run the server
 smartmemory-mcp        # or python -m smartmemory_mcp
