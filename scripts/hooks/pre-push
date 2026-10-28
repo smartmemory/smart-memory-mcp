@@ -19,7 +19,7 @@ module that exports it. A `__getattr__` or star import that cannot be read stati
 WARNING line saying so; a name no rule finds is still refused.
 
 Usage: install via scripts/install-git-hooks.sh.
-Skip with `git push --no-verify` (DO NOT make a habit of it).
+A BLOCKED result is never bypassed: verify the symbol is really missing, then report it to your lane lead.
 """
 
 from __future__ import annotations
@@ -51,8 +51,31 @@ SKIP_PATH_PARTS = {
 }
 
 
+# Git exports these into hook processes. They relocate the repo and override `cwd` / `git -C`, so a
+# lookup into a sibling repo would silently query THIS repo's git dir (always so from a linked
+# worktree) and the push would be falsely blocked. Auth/ssh/config variables are deliberately kept.
+REPO_LOCATING_GIT_ENV = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_PREFIX",
+    "GIT_NAMESPACE",
+    "GIT_QUARANTINE_PATH",
+)
+
+
+def git_env() -> dict[str, str]:
+    """os.environ minus the repo-locating git variables."""
+    return {k: v for k, v in os.environ.items() if k not in REPO_LOCATING_GIT_ENV}
+
+
 def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> str:
-    return subprocess.check_output(cmd, cwd=cwd, stderr=subprocess.DEVNULL).decode()
+    return subprocess.check_output(
+        cmd, cwd=cwd, env=git_env(), stderr=subprocess.DEVNULL
+    ).decode()
 
 
 def repo_root() -> Path:
@@ -604,7 +627,11 @@ def main(stdin_text: str | None = None) -> int:
             "Fix: push the sibling repo first, or revert the new dependency.",
             file=sys.stderr,
         )
-        print("Bypass (last resort): git push --no-verify\n", file=sys.stderr)
+        print(
+            "Before acting, verify the symbol is really missing from the sibling ref named above.\n"
+            "If it is there, this block is a false positive: report it to your lane lead, do not bypass the hook.\n",
+            file=sys.stderr,
+        )
         return 1
 
     return 0
