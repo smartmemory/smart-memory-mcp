@@ -115,6 +115,8 @@ MIGRATES = {
     "switch-during-export-then-local": ("Beta", "Alpha", ["local"]),
     "switch-during-export-no-pick-then-local": (None, "Alpha", ["local"]),
     "switch-during-export-then-round-trip": ("Beta", "Alpha", ["local", "remote"]),
+    # The switch commits before the export builds its headers (M1): the export must still read ws-b.
+    "switch-before-export-headers-then-local": ("Beta", "Alpha", ["local"]),
 }
 
 
@@ -142,11 +144,39 @@ def _migrate(monkeypatch, caplog, tmp_path, arg: str):
     if pick:
         assert "Switched to workspace" in tool_fn("switch_workspace")(workspace=pick)
 
-    def fake_export(backend, path):
+    exported_from: list[str | None] = []
+
+    class _Streamed:
+        status_code = 200
+        headers: dict[str, str] = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        def iter_bytes(self):
+            return iter(())
+
+    def fake_stream(method, url, headers=None, **kw):
+        exported_from.append((headers or {}).get("X-Workspace-Id"))
+        return _Streamed()
+
+    def fake_export(backend, path, **pin):
         if export_switch and not isinstance(backend, LocalBackend):
             # A parallel tool call (FastMCP runs sync tools in a threadpool).
             reply = tool_fn("switch_workspace")(workspace=export_switch)
             assert "Switched to workspace" in reply, reply
+            if "headers" in arg:
+                # The real export, whose headers are built after the switch committed.
+                monkeypatch.setattr(
+                    "smartmemory_mcp.backends.remote.httpx.stream", fake_stream
+                )
+                backend.export_okf(str(path.parent / "x.tar.gz"), **pin)
         return 3
 
     monkeypatch.setattr(portability_tools, "_export_okf", fake_export)
@@ -156,6 +186,8 @@ def _migrate(monkeypatch, caplog, tmp_path, arg: str):
     caplog.set_level(logging.WARNING)
     for target in targets:
         reply = tool_fn("memory_migrate")(target=target)
+    if "headers" in arg:
+        assert exported_from == ["ws-b"], exported_from
     mark = len(service.seen)
     tool_fn("memory_add")(content="after the migrate")
     headers = service.headers_after(mark)
@@ -249,7 +281,7 @@ ROWS = [
         ),
         (),
         "local",
-        "switch_workspace to ws-a during the export was not kept",
+        "switch_workspace during the export was not kept",
     ),
     (
         "migrate",
@@ -260,7 +292,7 @@ ROWS = [
         ),
         (),
         "local",
-        "switch_workspace to ws-a during the export was not kept",
+        "switch_workspace during the export was not kept",
     ),
     # item 8: the round trip returns the data to where it came from (ws-b), which the move to local named
     (
@@ -269,7 +301,19 @@ ROWS = [
         ("Imported into workspace: ws-b (your earlier remote workspace).",),
         (),
         "ws-b",
-        "switch_workspace to ws-a during the export was not kept",
+        "switch_workspace during the export was not kept",
+    ),
+    # item 8 / review M1: a switch that commits before the export's headers are built does not change what is read
+    (
+        "migrate",
+        "switch-before-export-headers-then-local",
+        (
+            "Remote workspace ws-b is no longer active",
+            "the migrated memories came from ws-b",
+        ),
+        (),
+        "local",
+        "switch_workspace during the export was not kept",
     ),
 ]
 

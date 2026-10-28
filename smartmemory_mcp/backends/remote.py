@@ -84,6 +84,8 @@ def env_workspace_id() -> str:
 CLIENT_KEY_FALLBACK = "mcp:stdio"
 _CLIENT_NAME_DROP = re.compile(r"[^A-Za-z0-9 _.\-]")
 ROUTING_EXPLAIN_PATH = "/memory/routing/explain"
+# export_okf(workspace_id=LIVE_PICK): send whatever pick is live when the headers are built.
+LIVE_PICK: Any = object()
 MISSING_TEAM_CONTEXT = "missing_team_context"
 # A header-less call that no server lever answers is refused with 400 + `X-SM-Scope-Error: missing_team_context`.
 # The MCP never answers that refusal with a guessed workspace (WS-ROUTING-5 fix round 1): the server owns the floor
@@ -627,11 +629,21 @@ class RemoteBackend(BackendCapabilities):
         """The explicit pick only (env, config, switch_workspace, login argument), or "" when the server decides."""
         return str(self._session.get("team_id") or "")
 
-    def export_okf(self, archive_path: str) -> None:
-        """Stream the active workspace's OKF archive to disk."""
+    def export_okf(self, archive_path: str, workspace_id: Any = LIVE_PICK) -> None:
+        """Stream a workspace's OKF archive to disk.
+
+        By default the live pick. A caller that parked a workspace pins the export to it: a str sends that id, None
+        sends no `X-Workspace-Id` (the service decides), so a `switch_workspace` that commits mid-export cannot
+        change what is read.
+        """
         destination = Path(archive_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        headers = self._headers()
+        if workspace_id is LIVE_PICK:
+            headers = self._headers()
+        else:
+            headers = self._headers(workspace_id or None)
+            if not workspace_id:
+                headers.pop("X-Workspace-Id", None)
         try:
             with httpx.stream(
                 "GET",

@@ -300,7 +300,7 @@ def test_migrate_reverts_config_on_total_failure(
     target_backend = object()
     backends = iter([source_backend, target_backend])
     monkeypatch.setattr(portability_tools, "get_backend", lambda: next(backends))
-    monkeypatch.setattr(portability_tools, "_export_okf", lambda backend, path: 2)
+    monkeypatch.setattr(portability_tools, "_export_okf", lambda backend, path, **_: 2)
     monkeypatch.setattr(
         portability_tools,
         "_import_okf",
@@ -341,7 +341,7 @@ def test_migrate_onto_own_backend_is_refused(
         monkeypatch.setenv("SMARTMEMORY_MCP_MODE", mode_env)
     exported: list[object] = []
     monkeypatch.setattr(
-        portability_tools, "_export_okf", lambda backend, path: exported.append(1)
+        portability_tools, "_export_okf", lambda backend, path, **_: exported.append(1)
     )
     result = _registered_tools()["memory_migrate"](target)
     assert "Nothing to migrate" in result

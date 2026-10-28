@@ -580,7 +580,7 @@ def test_a_backend_rebuild_after_a_live_switch_never_drops_it_silently(
         ),
     )
 
-    def fake_export(backend, path):
+    def fake_export(backend, path, **_):
         if outcome["now"] == "switch-during-export-then-raise":
             # A parallel tool call (FastMCP runs sync tools in a threadpool).
             assert "Switched to workspace: Alpha (ws-a)" in tool_fn("switch_workspace")(
@@ -655,7 +655,7 @@ def test_switches_racing_migrate_round_trips_never_deadlock(
     )
     monkeypatch.setitem(sys.modules, "smartmemory_app.config", config_module)
     _remote(monkeypatch, FakeService())
-    monkeypatch.setattr(portability_tools, "_export_okf", lambda backend, path: 3)
+    monkeypatch.setattr(portability_tools, "_export_okf", lambda backend, path, **_: 3)
     monkeypatch.setattr(
         portability_tools, "_import_okf", lambda backend, path: {"imported": 3}
     )
@@ -724,7 +724,7 @@ def test_a_parallel_call_waits_for_the_rebuild_instead_of_building_the_default(
     service = FakeService()
     _remote(monkeypatch, service)
     tool_fn("switch_workspace")(workspace="Beta")
-    monkeypatch.setattr(portability_tools, "_export_okf", lambda backend, path: 3)
+    monkeypatch.setattr(portability_tools, "_export_okf", lambda backend, path, **_: 3)
 
     real_build = dispatch.build_backend
     state: dict[str, Any] = {

@@ -12,7 +12,7 @@ from typing import Any
 from mcp.types import ToolAnnotations
 
 from smartmemory_mcp.backends.local import LOCAL_WORKSPACE
-from smartmemory_mcp.backends.remote import RemoteBackend
+from smartmemory_mcp.backends.remote import LIVE_PICK, RemoteBackend
 
 from .common import get_backend, graceful
 
@@ -82,12 +82,10 @@ def _leave_remote_workspace(live_workspace: str | None, latest: str | None) -> s
             "memory_migrate('remote') returns to it."
         )
     if latest and latest != live_workspace:
-        source = live_workspace or "the service default workspace"
+        source = live_workspace or "the workspace the service routed the export to"
         logger.warning(
-            "memory_migrate: switch_workspace to %s during the export was not kept: the "
-            "migrated memories came from %s",
-            latest,
-            source,
+            "memory_migrate: switch_workspace during the export was not kept: the migrated "
+            "memories came from the workspace parked for memory_migrate('remote')"
         )
         note += (
             f" Your switch to {latest} during the export was not kept: the migrated "
@@ -197,11 +195,15 @@ def _extract_bundle(archive_path: Path, destination: Path) -> Path:
     return indexes[0].parent
 
 
-def _export_okf(backend: Any, output_path: Path) -> int:
-    """Route an OKF export and return the number of item pages written."""
+def _export_okf(backend: Any, output_path: Path, workspace_id: Any = LIVE_PICK) -> int:
+    """Route an OKF export and return the number of item pages written.
+
+    ``workspace_id`` pins a remote export to a captured pick (see ``RemoteBackend.export_okf``).
+    """
     if _is_remote_backend(backend):
+        pin = {} if workspace_id is LIVE_PICK else {"workspace_id": workspace_id}
         if _is_archive(output_path):
-            backend.export_okf(str(output_path))
+            backend.export_okf(str(output_path), **pin)
             with tempfile.TemporaryDirectory(
                 prefix="smartmemory-okf-count-"
             ) as temp_dir:
@@ -211,7 +213,7 @@ def _export_okf(backend: Any, output_path: Path) -> int:
             prefix="smartmemory-okf-download-"
         ) as temp_dir:
             archive_path = Path(temp_dir) / "bundle.tar.gz"
-            backend.export_okf(str(archive_path))
+            backend.export_okf(str(archive_path), **pin)
             bundle_dir = _extract_bundle(archive_path, output_path)
             return _bundle_page_count(bundle_dir)
 
@@ -333,7 +335,15 @@ def register(mcp: Any) -> None:
         temp_root = Path(tempfile.mkdtemp(prefix="smartmemory_migrate_"))
         bundle_path = temp_root / "bundle"
         try:
-            count = _export_okf(source_backend, bundle_path)
+            # Pinned to the pick captured above: a switch_workspace that commits before the
+            # export's headers are built must not change which workspace is read.
+            count = _export_okf(
+                source_backend,
+                bundle_path,
+                workspace_id=live_workspace
+                if source_mode == dispatch.MODE_REMOTE
+                else LIVE_PICK,
+            )
         except Exception:
             shutil.rmtree(temp_root, ignore_errors=True)
             raise
