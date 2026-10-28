@@ -276,6 +276,20 @@ if not hosted_mode_requested():
 # ---------------------------------------------------------------------------
 
 
+def _bind_local_billing_mode() -> None:
+    """Lite is local end to end: bind ``billing.mode=local`` (keeps an operator's explicit choice).
+
+    Needs core 2.0 (``smartmemory.billing.mode``). An older core has no billing module, so say what is lost and go on."""
+    try:
+        from smartmemory.billing.mode import bind_local_mode_for_lite
+    except ImportError:
+        logger.warning(
+            "core without smartmemory.billing; billing mode not bound for Lite"
+        )
+        return
+    bind_local_mode_for_lite()
+
+
 def main():
     if hosted_mode_requested():
         from smartmemory_mcp.hosted.config import HostedConfig
@@ -283,6 +297,8 @@ def main():
 
         run_hosted(HostedConfig.from_env())
         return
+
+    _bind_local_billing_mode()
 
     # Warm the search models before serving. `transcript_search` reranks, and a cold
     # cross-encoder returns UNRANKED results for the first query of the process — which
