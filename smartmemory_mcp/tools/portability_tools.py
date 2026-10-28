@@ -57,22 +57,44 @@ def _rebuild_process_backend(mode: str, workspace_id: str | None) -> None:
         reset_common_backend()
 
 
-def _leave_remote_workspace(live_workspace: str | None) -> str:
-    """Park the live remote workspace on a move to local and say so."""
+def _leave_remote_workspace(live_workspace: str | None, latest: str | None) -> str:
+    """Park the live remote workspace on a move to local and say so.
+
+    ``live_workspace`` is the pick the export read from, so it is the one parked: a
+    later ``memory_migrate('remote')`` must return the data where it came from.
+    ``latest`` is the pick at the end, after any ``switch_workspace`` that committed
+    during the export; it is not kept, and the reply and a WARNING say so
+    (MCP-SWITCH-WORKSPACE-NAMING-SWEEP-1 item 8).
+    """
     _parked["remote_workspace"] = live_workspace
     if not live_workspace:
-        return f"Workspace is now {LOCAL_WORKSPACE} (local mode)."
-    logger.warning(
-        "memory_migrate: remote workspace %s is not active in local mode (Lite has one "
-        "workspace, %s); memory_migrate('remote') returns to it",
-        live_workspace,
-        LOCAL_WORKSPACE,
-    )
-    return (
-        f"Workspace changed: now {LOCAL_WORKSPACE} (local mode has one workspace). "
-        f"Remote workspace {live_workspace} is no longer active; "
-        "memory_migrate('remote') returns to it."
-    )
+        note = f"Workspace is now {LOCAL_WORKSPACE} (local mode)."
+    else:
+        logger.warning(
+            "memory_migrate: remote workspace %s is not active in local mode (Lite has one "
+            "workspace, %s); memory_migrate('remote') returns to it",
+            live_workspace,
+            LOCAL_WORKSPACE,
+        )
+        note = (
+            f"Workspace changed: now {LOCAL_WORKSPACE} (local mode has one workspace). "
+            f"Remote workspace {live_workspace} is no longer active; "
+            "memory_migrate('remote') returns to it."
+        )
+    if latest and latest != live_workspace:
+        source = live_workspace or "the service default workspace"
+        logger.warning(
+            "memory_migrate: switch_workspace to %s during the export was not kept: the "
+            "migrated memories came from %s",
+            latest,
+            source,
+        )
+        note += (
+            f" Your switch to {latest} during the export was not kept: the migrated "
+            f"memories came from {source}. After memory_migrate('remote'), run "
+            f"switch_workspace('{latest}') to use it."
+        )
+    return note
 
 
 def _arrive_remote_workspace(backend: Any, carried: str | None) -> str:
@@ -381,7 +403,11 @@ def register(mcp: Any) -> None:
 
             shutil.rmtree(temp_root, ignore_errors=True)
             if target == dispatch.MODE_LOCAL:
-                note = _leave_remote_workspace(live_workspace)
+                # Read after the forward rebuild: no switch commits onto
+                # source_backend any more (`common.commit_if_current`).
+                note = _leave_remote_workspace(
+                    live_workspace, _live_workspace(source_backend)
+                )
             else:
                 note = _arrive_remote_workspace(target_backend, carried)
             return (
