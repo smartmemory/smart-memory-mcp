@@ -290,3 +290,102 @@ def test_sibling_unreachable_is_skipped_not_blocked(tmp_path, monkeypatch, capsy
     err = capsys.readouterr().err
     assert "could not fetch origin/2.0" in err
     assert "BLOCKED" not in err
+
+
+# OPS-PREPUSH-BASE-FROM-MERGEBASE-1: a push target that is neither 2.0 nor main takes its base from the pushed commit.
+# Shape: origin/main = base + main_tip.py, origin/2.0 = base + legacy.py (diverged), the pushed commit sits on top of
+# the `cut_from` branch. `{sha}` in a stdin template is the pushed commit.
+MB_TO_V2 = "refs/heads/2.0 {sha} refs/heads/2.0 " + OLD + "\n"
+MB_TO_MAIN = "refs/heads/main {sha} refs/heads/main " + OLD + "\n"
+MB_NEW_WK = "refs/heads/wk/x {sha} refs/heads/wk/x " + ZERO + "\n"
+MB_TAG = "refs/tags/v1 {sha} refs/tags/v1 " + ZERO + "\n"
+# (row id, cut from, stdin template, new import, env, expected exit, ref named in BLOCKED (or None), WARNING text (or None))
+MB_ROWS = [
+    ("push_2_0_off_2_0", "2.0", MB_TO_V2, IMP_V2_ONLY, {}, 0, None, None),
+    ("push_main_off_main", "main", MB_TO_MAIN, IMP_MAIN_ONLY, {}, 0, None, None),
+    ("new_wk_off_2_0_v2_symbol", "2.0", MB_NEW_WK, IMP_V2_ONLY, {}, 0, None, None),
+    ("new_wk_off_2_0_main_symbol", "2.0", MB_NEW_WK, IMP_MAIN_ONLY, {}, 1, "origin/2.0", None),
+    ("new_wk_off_main_main_symbol", "main", MB_NEW_WK, IMP_MAIN_ONLY, {}, 0, None, None),
+    ("new_wk_off_main_v2_symbol", "main", MB_NEW_WK, IMP_V2_ONLY, {}, 1, "origin/main", None),
+    ("tag_off_2_0", "2.0", MB_TAG, IMP_V2_ONLY, {}, 0, None, None),
+    ("no_stdin_off_2_0", "2.0", "", IMP_V2_ONLY, {}, 1, "origin/main", "not a branch"),
+    (
+        "kill_switch_new_wk_off_2_0",
+        "2.0",
+        MB_NEW_WK,
+        IMP_V2_ONLY,
+        {"PREPUSH_BASE_FROM_MERGEBASE": "0"},
+        1,
+        "origin/main",
+        "no origin/wk/x",
+    ),
+    (
+        "old_kill_switch_still_main",
+        "2.0",
+        MB_NEW_WK,
+        IMP_V2_ONLY,
+        {"PREPUSH_TARGET_BRANCH": "0"},
+        1,
+        "origin/main",
+        None,
+    ),
+]
+
+
+def _build_diverged(tmp_path: Path, cut_from: str, new_import: str) -> tuple[Path, str]:
+    """HEAD = origin/<cut_from> + uses.py, with origin/main and origin/2.0 diverged. Returns (repo, HEAD sha)."""
+    repo = tmp_path / "mcp"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _write_tree(repo, {"memory_service/__init__.py": ""})
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "branch", "v2")
+    _write_tree(repo, {"memory_service/main_tip.py": IMP_SHARED + "\n"})
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "main tip")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _git(repo, "checkout", "-q", "v2")
+    _write_tree(repo, {"memory_service/legacy.py": IMP_SHARED + "\n"})
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "legacy")
+    _git(repo, "update-ref", "refs/remotes/origin/2.0", "HEAD")
+    if cut_from == "main":
+        _git(repo, "checkout", "-q", "main")
+    _write_tree(repo, {"memory_service/uses.py": new_import + "\n"})
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "pushed")
+    sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True, env={"PATH": os.environ["PATH"], "HOME": str(repo)}
+    ).stdout.strip()
+    return repo, sha
+
+
+@pytest.mark.parametrize(
+    "row_id,cut_from,stdin,new_import,env,expected_exit,blocked_ref,warning",
+    MB_ROWS,
+    ids=[r[0] for r in MB_ROWS],
+)
+def test_base_from_merge_base(
+    tmp_path, monkeypatch, capsys, row_id, cut_from, stdin, new_import, env, expected_exit, blocked_ref, warning
+):
+    _build_common(tmp_path)
+    repo, sha = _build_diverged(tmp_path, cut_from, new_import)
+    monkeypatch.chdir(repo)
+    for var in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "PREPUSH_TARGET_BRANCH", "PREPUSH_BASE_FROM_MERGEBASE"):
+        monkeypatch.delenv(var, raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+
+    code = _load_hook().main(stdin.format(sha=sha))
+
+    err = capsys.readouterr().err
+    assert code == expected_exit, err
+    if blocked_ref:
+        assert f"smart-memory-common@{blocked_ref}" in err, err
+    else:
+        assert "BLOCKED" not in err, err
+    if warning:
+        assert "WARNING" in err and warning in err, err
+    else:
+        assert "WARNING" not in err, err

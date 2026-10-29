@@ -11,6 +11,9 @@ The branch compared against follows the push target (OPS-PREPUSH-HOOK-TARGET-BRA
 `refs/heads/main` against `origin/main`. A target that is not a branch (a tag, no stdin) or a sibling
 that has no such branch falls back to `origin/main` with one WARNING. Kill switch:
 `PREPUSH_TARGET_BRANCH=0` restores the old always-`origin/main` behaviour.
+A target that is neither `2.0` nor `main` (a new `wk/*` branch, a tag) compares against the base its pushed commit was
+cut from: whichever of `origin/2.0` / `origin/main` is the nearest merge base of the pushed commit (fewest commits it carries beyond it)
+(OPS-PREPUSH-BASE-FROM-MERGEBASE-1, tie to `main`). Kill switch: `PREPUSH_BASE_FROM_MERGEBASE=0`.
 
 A name counts as exported (OPS-PREPUSH-HOOK-DYNAMIC-EXPORTS-1) when the sibling module binds it (def, class,
 assignment, `import`, `from m import x` re-export), lists it in `__all__`, answers it from a module `__getattr__`
@@ -86,11 +89,39 @@ DEFAULT_BRANCH = "main"
 ZERO_SHA = "0" * 40
 
 
-def target_branches(stdin_text: str, warnings: list[str]) -> list[str]:
+BASE_CANDIDATES = ("2.0", "main")
+
+
+def merge_base_branch(root: Path, local_sha: str) -> str | None:
+    """The base branch (`2.0` or `main`) a pushed commit was cut from, for a push target that names neither.
+
+    Picks the candidate whose `origin/<branch>` has the fewest commits the pushed commit carries beyond it (nearest
+    merge base); a tie goes to `DEFAULT_BRANCH`. None when no candidate resolves (unknown sha, no origin refs), so the
+    caller keeps the old target-branch behaviour. `PREPUSH_BASE_FROM_MERGEBASE=0` turns it off."""
+    if os.environ.get("PREPUSH_BASE_FROM_MERGEBASE") == "0":
+        return None
+    ahead: dict[str, int] = {}
+    for name in BASE_CANDIDATES:
+        ref = f"origin/{name}"
+        if not has_remote_ref(root, ref):
+            continue
+        try:
+            run(["git", "merge-base", local_sha, ref], cwd=root)
+            ahead[name] = int(run(["git", "rev-list", "--count", f"{ref}..{local_sha}"], cwd=root).strip())
+        except (subprocess.CalledProcessError, ValueError):
+            continue  # unknown sha or no common history
+    if not ahead:
+        return None
+    nearest = min(ahead.values())
+    return DEFAULT_BRANCH if ahead.get(DEFAULT_BRANCH) == nearest else min(ahead, key=ahead.get)
+
+
+def target_branches(stdin_text: str, warnings: list[str], root: Path | None = None) -> list[str]:
     """Branches this push updates, from the hook's stdin (`<local ref> <local sha> <remote ref> <remote sha>` per line).
 
     Deletes are skipped. A remote ref that is not `refs/heads/<name>`, or no usable stdin at all, resolves to
-    `main` with one WARNING. `PREPUSH_TARGET_BRANCH=0` forces `["main"]` with no warning (old behaviour)."""
+    `main` with one WARNING. `PREPUSH_TARGET_BRANCH=0` forces `["main"]` with no warning (old behaviour). A target that is neither `2.0` nor
+    `main` resolves to the base its pushed commit was cut from (`merge_base_branch`), given `root`."""
     if os.environ.get("PREPUSH_TARGET_BRANCH") == "0":
         return [DEFAULT_BRANCH]
     branches: list[str] = []
@@ -100,6 +131,12 @@ def target_branches(stdin_text: str, warnings: list[str]) -> list[str]:
         if len(parts) != 4 or set(parts[1]) == {"0"}:
             continue  # blank, malformed, or a delete (local sha all zeros)
         remote_ref = parts[2]
+        if root is not None and remote_ref not in (f"refs/heads/{n}" for n in BASE_CANDIDATES):
+            base = merge_base_branch(root, parts[1])  # OPS-PREPUSH-BASE-FROM-MERGEBASE-1
+            if base:
+                if base not in branches:
+                    branches.append(base)
+                continue
         if remote_ref.startswith("refs/heads/"):
             branch = remote_ref[len("refs/heads/") :]
         else:
@@ -587,7 +624,7 @@ def main(stdin_text: str | None = None) -> int:
     skipped: list[str] = []
     failures: list[tuple[Path, str, str, Path, str]] = []
     for branch in target_branches(
-        read_stdin() if stdin_text is None else stdin_text, warnings
+        read_stdin() if stdin_text is None else stdin_text, warnings, root
     ):
         for failure in validate_target(root, branch, warnings, skipped):
             if failure not in failures:
