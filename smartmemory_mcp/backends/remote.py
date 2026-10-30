@@ -19,6 +19,7 @@ import httpx
 from .interface import BackendCapabilities
 from .local import SaveReturn
 from .models import CodeIngestResult, MemoryResult, normalize_item, normalize_items
+from .path_guard import path_id
 from .receipts import read_wire_save
 
 logger = logging.getLogger(__name__)
@@ -522,7 +523,7 @@ class RemoteBackend(BackendCapabilities):
 
     def get(self, item_id: str, **kwargs: Any) -> MemoryResult | None:
         """GET /memory/{item_id}. Returns None only when the item genuinely is absent."""
-        result = self._request("GET", f"/memory/{item_id}")
+        result = self._request("GET", f"/memory/{path_id(item_id, under='/memory/')}")
         if result is None:
             return None
         # A 404 IS genuine absence — keep returning None for it. But an API 403/500
@@ -541,7 +542,9 @@ class RemoteBackend(BackendCapabilities):
         Same absence semantics as get(): 404 is genuine absence (None); any
         other API error raises rather than masquerading as absence.
         """
-        result = self._request("GET", f"/memory/{memory_id}/explain")
+        result = self._request(
+            "GET", f"/memory/{path_id(memory_id, under='/memory/')}/explain"
+        )
         if result is None:
             return None
         if err := self._fmt_error(result):
@@ -560,11 +563,18 @@ class RemoteBackend(BackendCapabilities):
         for key in ("content", "metadata", "properties", "write_mode", "memory_type"):
             if key in kwargs:
                 body[key] = kwargs[key]
-        return self._request("PATCH", f"/memory/{item_id}", json=body) or {}
+        return (
+            self._request(
+                "PATCH", f"/memory/{path_id(item_id, under='/memory/')}", json=body
+            )
+            or {}
+        )
 
     def delete(self, item_id: str, **kwargs: Any) -> bool:
         """DELETE /memory/{item_id}. Returns True on success."""
-        result = self._request("DELETE", f"/memory/{item_id}")
+        result = self._request(
+            "DELETE", f"/memory/{path_id(item_id, under='/memory/')}"
+        )
         if result is None:
             return True  # 204 No Content = success
         if isinstance(result, dict) and self._fmt_error(result):
@@ -1168,7 +1178,9 @@ class RemoteBackend(BackendCapabilities):
     def decision_get(self, decision_id: str) -> dict[str, Any] | None:
         """GET /memory/decisions/{decision_id}."""
         return self._decision_request(
-            "GET", f"/memory/decisions/{decision_id}", none_on_404=True
+            "GET",
+            f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}",
+            none_on_404=True,
         )
 
     def decision_list(
@@ -1220,7 +1232,7 @@ class RemoteBackend(BackendCapabilities):
             body["constraints"] = constraints
         result = self._decision_request(
             "POST",
-            f"/memory/decisions/{decision_id}/supersede",
+            f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/supersede",
             none_on_404=True,
             json=body,
         )
@@ -1230,7 +1242,7 @@ class RemoteBackend(BackendCapabilities):
         """POST /memory/decisions/{decision_id}/retract."""
         result = self._decision_request(
             "POST",
-            f"/memory/decisions/{decision_id}/retract",
+            f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/retract",
             none_on_404=True,
             json={"reason": reason},
         )
@@ -1242,7 +1254,7 @@ class RemoteBackend(BackendCapabilities):
         """POST /memory/decisions/{decision_id}/reinforce."""
         return self._decision_request(
             "POST",
-            f"/memory/decisions/{decision_id}/reinforce",
+            f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/reinforce",
             none_on_404=True,
             json={"evidence_id": evidence_id},
         )
@@ -1253,7 +1265,7 @@ class RemoteBackend(BackendCapabilities):
         """POST /memory/decisions/{decision_id}/contradict."""
         return self._decision_request(
             "POST",
-            f"/memory/decisions/{decision_id}/contradict",
+            f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/contradict",
             none_on_404=True,
             json={"evidence_id": evidence_id},
         )
@@ -1261,14 +1273,16 @@ class RemoteBackend(BackendCapabilities):
     def decision_provenance(self, decision_id: str) -> dict[str, Any] | None:
         """GET /memory/decisions/{decision_id}/provenance."""
         return self._decision_request(
-            "GET", f"/memory/decisions/{decision_id}/provenance", none_on_404=True
+            "GET",
+            f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/provenance",
+            none_on_404=True,
         )
 
     def decision_find_conflicts(self, decision_id: str) -> dict[str, Any] | None:
         """POST /memory/decisions/{decision_id}/conflicts."""
         return self._decision_request(
             "POST",
-            f"/memory/decisions/{decision_id}/conflicts",
+            f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/conflicts",
             none_on_404=True,
             json={},
         )
@@ -1300,7 +1314,7 @@ class RemoteBackend(BackendCapabilities):
         """
         result = self._decision_request(
             "POST",
-            f"/memory/decisions/pending/{decision_id}/resolve",
+            f"/memory/decisions/pending/{path_id(decision_id, under='/memory/decisions/pending/')}/resolve",
             none_on_404=True,
             json={"requirement_id": requirement_id, "memory_id": memory_id},
         )
@@ -1309,6 +1323,8 @@ class RemoteBackend(BackendCapabilities):
     def decision_try_activate(self, decision_id: str) -> bool:
         """POST /memory/decisions/pending/{decision_id}/activate."""
         result = self._decision_request(
-            "POST", f"/memory/decisions/pending/{decision_id}/activate", json={}
+            "POST",
+            f"/memory/decisions/pending/{path_id(decision_id, under='/memory/decisions/pending/')}/activate",
+            json={},
         )
         return bool(result.get("activated"))
