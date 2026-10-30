@@ -1,8 +1,6 @@
 name: Publish smartmemory-mcp to PyPI
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       test_pypi:
