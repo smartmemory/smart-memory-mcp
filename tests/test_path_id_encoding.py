@@ -552,7 +552,7 @@ def _static_siblings() -> dict[str, dict[str, set[str]]]:
             rest = template[len(prefix) :] if template.startswith(prefix) else ""
             segment = rest.split("/")[0]
             if segment and "{" not in segment:
-                out.setdefault(prefix, {}).setdefault(method, set()).add(segment)
+                out.setdefault(prefix, {}).setdefault(method, set()).update([segment])
     return out
 
 
@@ -590,7 +590,7 @@ def test_route_table_fixture_matches_service_snapshot():
             r'@router\.(\w+)\(\s*"([^"]*:path\}[^"]*)"', source.read_text()
         ):
             template = re.sub(r":path\}", "}", m.group(2))
-            declared.add((m.group(1).upper(), template))
+            declared.update([(m.group(1).upper(), template)])
     in_table = {(m, t) for m, t in ROUTES}
     prefixed = {
         next((m, t) for m, t in in_table if m == method and t.endswith(tail))

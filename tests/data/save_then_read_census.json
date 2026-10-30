@@ -6,7 +6,8 @@
   },
   "non_python": [
    "tests/fixtures/code_upload_before_move.json",
-   "tests/fixtures/memget_a3_8f64f81f.json"
+   "tests/fixtures/memget_a3_8f64f81f.json",
+   "tests/fixtures/service_route_table.json"
   ],
   "wait_users": {
    "tests/test_hosted_identity.py": "an asyncio Event barrier between concurrent tool calls, no save",
