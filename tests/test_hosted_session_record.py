@@ -16,7 +16,7 @@ import pytest
 
 from smartmemory_mcp.hosted.middleware import HostedIdentityMiddleware
 
-from ._hosted_fixtures import RoutingSessionStore
+from ._hosted_fixtures import API_KEY, RoutingSessionStore
 from .test_hosted_identity import (
     OAUTH_BEARER,
     OAUTH_WORKSPACE,
@@ -66,13 +66,39 @@ ROWS: list[dict[str, Any]] = [
         "refused": True,
     },
     {
+        "id": "expired-null-warns-and-uses-default",
+        "steps": [],
+        "restart": True,
+        "seed": "team-B",
+        "store": {"expired": (SM_JWT,)},
+        "team": OAUTH_WORKSPACE,
+        "warns": f"no saved pick, or it expired); using the default workspace {OAUTH_WORKSPACE}",
+    },
+    {
+        "id": "absent-warns-and-uses-default",
+        "steps": [],
+        "restart": True,
+        "store": {},
+        "team": OAUTH_WORKSPACE,
+        "warns": f"no saved pick, or it expired); using the default workspace {OAUTH_WORKSPACE}",
+    },
+    {
         "id": "read-503-warns-and-uses-default",
         "steps": [],
         "restart": True,
         "seed": "team-B",
         "store": {"get_status": 503},
         "team": OAUTH_WORKSPACE,
-        "warns": "Workspace pick read refused (status=503)",
+        "warns": f"read failure, status=503); using the default workspace {OAUTH_WORKSPACE}",
+    },
+    {
+        "id": "read-transport-error-warns-and-uses-default",
+        "steps": [],
+        "restart": True,
+        "seed": "team-B",
+        "store": {"get_raises": True},
+        "team": OAUTH_WORKSPACE,
+        "warns": f"read failure, svc-api unreachable); using the default workspace {OAUTH_WORKSPACE}",
     },
     {
         "id": "read-404-warns-and-uses-default",
@@ -81,7 +107,7 @@ ROWS: list[dict[str, Any]] = [
         "seed": "team-B",
         "store": {"get_status": 404},
         "team": OAUTH_WORKSPACE,
-        "warns": "Workspace pick read refused (status=404)",
+        "warns": f"read failure, status=404); using the default workspace {OAUTH_WORKSPACE}",
     },
 ]
 
@@ -185,3 +211,45 @@ def test_a_refused_switch_is_surfaced_by_the_hosted_tool_and_changes_nothing(
     assert "you are not a member of that workspace" in _text(switched)
     assert "team-personal" in _text(who)
     assert harness.routing.rows == {}
+
+
+# A caller removed from workspace REV whose saved pick still names it (the routing record outlives the membership).
+# `check` picks the assertion: the switch to a still-member workspace succeeds and saves the new pick (d), and the
+# listing that switch_team preflights carries no stale X-Workspace-Id (e).
+REVOKED_ROWS: list[dict[str, str]] = [
+    {"id": "d-switch-away-from-revoked-pick-succeeds", "check": "switched"},
+    {"id": "e-team-listing-omits-the-stale-header", "check": "no-stale-header"},
+]
+
+
+@pytest.mark.parametrize("row", REVOKED_ROWS, ids=[row["id"] for row in REVOKED_ROWS])
+def test_a_revoked_pick_does_not_block_switch_team(
+    row: dict[str, str], monkeypatch
+) -> None:
+    harness = _ServerHarness()
+    harness.routing.rows[(API_KEY, "mcp:test")] = "team-REV"
+    team_headers: list[dict[str, str]] = []
+    monkeypatch.setattr(
+        "smartmemory_mcp.backends.remote.httpx.request",
+        fake_svc_api(revoked=("team-REV",), team_headers=team_headers),
+    )
+
+    async def body(client):
+        session_id = await harness.session(client)
+        switched = await harness.call(
+            client, session_id, "switch_team", {"team_id": "team-B"}
+        )
+        who = await harness.call(client, session_id, "whoami")
+        return switched, who
+
+    switched, who = harness.run(body)
+
+    if row["check"] == "switched":
+        assert switched.get("isError") is not True, _text(switched)
+        puts = [call for call in harness.routing.calls if call[0] == "PUT"]
+        assert [put[1]["body"]["workspace_id"] for put in puts] == ["team-B"]
+        assert harness.routing.rows[(API_KEY, "mcp:test")] == "team-B"
+        assert "team-B" in _text(who)
+    else:
+        assert team_headers
+        assert all("x-workspace-id" not in sent for sent in team_headers)

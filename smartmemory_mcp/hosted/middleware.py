@@ -163,6 +163,7 @@ class HostedIdentityMiddleware(Middleware):
         """
         verified = verified or _bound_verified()
         if verified is None:
+            # No identity is bound: the caller is refused before any backend is built, so no call falls back.
             return None
         return await anyio.to_thread.run_sync(
             self._read_selection, verified, mcp_client_key(context)
@@ -214,29 +215,27 @@ class HostedIdentityMiddleware(Middleware):
     def _read_selection(
         self, verified: VerifiedIdentity, client_key: str
     ) -> str | None:
+        """The saved pick, or None after ONE WARNING naming the default workspace the call falls back to."""
+        default = verified.active_workspace_id
         response = self._routing_call(
             verified, "GET", params={"client_key": client_key}
         )
         if response is None:
-            logger.warning(
-                "Workspace pick unreadable (svc-api unreachable); using the default workspace"
-            )
-            return None
+            return _fallback_warning(default, "read failure, svc-api unreachable")
         if response.status_code != 200:
-            logger.warning(
-                "Workspace pick read refused (status=%s); using the default workspace",
-                response.status_code,
+            return _fallback_warning(
+                default, f"read failure, status={response.status_code}"
             )
-            return None
         try:
             body = response.json()
         except ValueError:
-            logger.warning(
-                "Workspace pick read returned a non-JSON body; using the default workspace"
-            )
-            return None
+            return _fallback_warning(default, "read failure, non-JSON body")
         workspace_id = body.get("workspace_id") if isinstance(body, dict) else None
-        return str(workspace_id) if workspace_id else None
+        if not workspace_id:
+            # svc-api answers 200 with workspace_id null for BOTH an absent and an expired record
+            # (routing.py:143), so the two cannot be told apart here.
+            return _fallback_warning(default, "no saved pick, or it expired")
+        return str(workspace_id)
 
     def _save_selection(
         self, verified: VerifiedIdentity, client_key: str, team_id: str
@@ -256,6 +255,15 @@ class HostedIdentityMiddleware(Middleware):
             409: "this API key is bound to one workspace and cannot switch",
         }.get(response.status_code, f"HTTP {response.status_code}")
         raise HostedSessionSelectionError(f"could not save the switch ({reason}).")
+
+
+def _fallback_warning(default: str | None, why: str) -> None:
+    """The one WARNING for every read that yields no pick: the call goes to the token's default workspace."""
+    logger.warning(
+        "Workspace pick unavailable (%s); using the default workspace %s",
+        why,
+        default or "(none)",
+    )
 
 
 def mcp_client_key(context: Any) -> str:

@@ -244,7 +244,12 @@ def _register_hosted_tools(
 
 def _list_team_ids() -> set[str] | None:
     """Workspace ids the caller belongs to, or None when the API did not answer."""
-    result = get_backend().request("GET", "/memory/teams")
+    backend = get_backend()
+    # Bearer only: the stored pick's X-Workspace-Id would 403 this listing for a caller removed from that
+    # workspace and lock them out of switch_team, the one tool that replaces the pick (SM20-WS-ROUTING-PARITY-1 M2).
+    headers = backend._headers()
+    headers.pop("X-Workspace-Id", None)
+    result = backend.request("GET", "/memory/teams", headers=headers)
     if isinstance(result, dict) and result.get("error"):
         logger.warning("Workspace lookup failed: %s", result["error"])
         return None

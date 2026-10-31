@@ -106,8 +106,17 @@ def _restore_hosted_mode():
 # --- the fake svc-api -------------------------------------------------------------
 
 
-def fake_svc_api(seen: list[tuple[str, str]] | None = None):
-    """A minimal but valid svc-api for every route a hosted tool can reach."""
+def fake_svc_api(
+    seen: list[tuple[str, str]] | None = None,
+    *,
+    revoked: tuple[str, ...] = (),
+    team_headers: list[dict[str, str]] | None = None,
+):
+    """A minimal but valid svc-api for every route a hosted tool can reach.
+
+    `revoked` workspaces answer 403 to any call whose `X-Workspace-Id` names them, as the real scope check does for a
+    removed member (common `scope.py:501`); `team_headers` collects the headers of every `/memory/teams` call.
+    """
 
     def handler(method: str, url: str, **kwargs: Any) -> httpx.Response:
         path = httpx.URL(url).path
@@ -148,6 +157,11 @@ def fake_svc_api(seen: list[tuple[str, str]] | None = None):
         if path == "/memory/result-feedback":
             return ok({"result_used_count": 1, "result_shown_count": 1})
         if path == "/memory/teams":
+            sent = {k.lower(): v for k, v in (kwargs.get("headers") or {}).items()}
+            if team_headers is not None:
+                team_headers.append(sent)
+            if sent.get("x-workspace-id") in revoked:
+                return ok({"detail": "insufficient_team_permissions"}, 403)
             return ok(
                 [
                     {"team_id": "team-personal", "name": "Personal"},

@@ -100,13 +100,23 @@ INITIALIZE_BODY = {
 }
 
 
+_SET_AT = "2026-10-31T09:00:00+00:00"
+_EXPIRES_AT = "2026-11-01T09:00:00+00:00"
+
+
 class RoutingSessionStore:
     """svc-api's `/memory/routing/session` record as the hosted MCP sees it, for MockTransport handlers.
 
     Rows are keyed by (bearer, client_key): the bearer stands for the caller's (tenant, user), the server's key minus
     the context hint hosted MCP never sends. The store outlives any number of MCP sessions and middleware instances,
     as the Mongo record does. `forbidden` workspaces answer 403 (not a member); `bound` bearers answer 409;
-    `get_status` set to a non-200 makes every GET fail that way (503 = service down).
+    `get_status` set to a non-200 makes every GET fail that way (503 = service down). `get_raises` makes every GET a transport error. `expired` bearers' rows stay
+    stored but GET answers the null shape, as `routing.py:143` does for an expired record.
+
+    Response shapes are `memory_service/api/routes/routing.py` at service 9878a66016b8: GET always answers
+    `workspace_id, set_at, expires_at, client_key, context_key`; PUT answers the public record
+    (`workspace_id, client_key_digest, context_key_digest, set_at, set_via, expires_at`) plus
+    `client_key, context_key, workspace_name`.
     """
 
     def __init__(
@@ -115,10 +125,14 @@ class RoutingSessionStore:
         forbidden: tuple[str, ...] = (),
         bound: tuple[str, ...] = (),
         get_status: int = 200,
+        expired: tuple[str, ...] = (),
+        get_raises: bool = False,
     ) -> None:
         self.rows: dict[tuple[str, str], str] = {}
         self.forbidden, self.bound = set(forbidden), set(bound)
         self.get_status = get_status
+        self.expired = set(expired)
+        self.get_raises = get_raises
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     @staticmethod
@@ -144,19 +158,38 @@ class RoutingSessionStore:
                     403, json={"detail": "insufficient_team_permissions"}
                 )
             self.rows[(bearer, body["client_key"])] = body["workspace_id"]
-            return httpx.Response(200, json={"workspace_id": body["workspace_id"]})
+            return httpx.Response(
+                200,
+                json={
+                    "workspace_id": body["workspace_id"],
+                    "client_key_digest": "digest-client",
+                    "context_key_digest": None,
+                    "set_at": _SET_AT,
+                    "set_via": "mcp",
+                    "expires_at": _EXPIRES_AT,
+                    "client_key": body["client_key"],
+                    "context_key": body.get("context_key"),
+                    "workspace_name": None,
+                },
+            )
         if request.method == "GET":
             client_key = request.url.params.get("client_key", "")
             self.calls.append(
                 ("GET", {"client_key": client_key, "headers": dict(request.headers)})
             )
+            if self.get_raises:
+                raise httpx.ConnectError("svc-api unreachable", request=request)
             if self.get_status != 200:
                 return httpx.Response(self.get_status, json={"detail": "unavailable"})
             chosen = self.rows.get((bearer, client_key))
+            if bearer in self.expired:
+                chosen = None
             return httpx.Response(
                 200,
                 json={
                     "workspace_id": chosen,
+                    "set_at": _SET_AT if chosen else None,
+                    "expires_at": _EXPIRES_AT if chosen else None,
                     "client_key": client_key,
                     "context_key": None,
                 },
