@@ -36,6 +36,8 @@ from smartmemory_mcp.hosted.identity import (
 from smartmemory_mcp.hosted.middleware import HostedIdentityMiddleware
 from smartmemory_mcp.tools import common
 
+from ._hosted_fixtures import RoutingSessionStore
+
 API_URL = "https://api.test"
 OAUTH_BEARER = "oat_upstream_clerk_token_value"
 API_KEY_BEARER = "sm_test_" + "a" * 24
@@ -201,12 +203,21 @@ def _exchange_payload() -> dict[str, Any]:
 class _Harness:
     """A minimal hosted server plus the request plumbing to drive it."""
 
-    def __init__(self, cache: ExchangeCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: ExchangeCache | None = None,
+        routing: RoutingSessionStore | None = None,
+    ) -> None:
         self.exchange_calls: list[str] = []
         self.cache = cache or ExchangeCache()
         self.started: dict[str, anyio.Event] = {}
 
+        self.routing = routing or RoutingSessionStore()
+
         def handler(request: httpx.Request) -> httpx.Response:
+            routed = self.routing.handle(request)
+            if routed is not None:
+                return routed
             self.exchange_calls.append(request.url.path)
             if request.url.path == "/auth/clerk/oauth-exchange":
                 return httpx.Response(200, json=_exchange_payload())
@@ -441,7 +452,9 @@ def test_switching_the_session_team_changes_the_next_call_workspace() -> None:
     assert harness.exchange_calls == ["/auth/clerk/oauth-exchange"]
 
 
-def test_a_team_switch_is_scoped_to_its_own_session() -> None:
+def test_a_team_switch_is_shared_by_sessions_of_one_caller_and_client() -> None:
+    """WS-ROUTING parity: the pick is the saved record, so a second MCP session of the same person in the same
+    client sees it (it used to be per session id); another caller never does (test_session_record.py)."""
     harness = _Harness()
 
     async def body(client):
@@ -453,10 +466,10 @@ def test_a_team_switch_is_scoped_to_its_own_session() -> None:
             await harness.call(client, OAUTH_BEARER, second, "probe"),
         )
 
-    switched, untouched = anyio.run(_run, harness, body)
+    switched, shared = anyio.run(_run, harness, body)
 
     assert json.loads(_text(switched))["team_id"] == "team-B"
-    assert json.loads(_text(untouched))["team_id"] == OAUTH_WORKSPACE
+    assert json.loads(_text(shared))["team_id"] == "team-B"
 
 
 # --------------------------------------------------------------------------------
@@ -589,11 +602,10 @@ def test_graceful_does_not_swallow_a_hosted_auth_error() -> None:
 
 
 class _FakeContext:
-    def __init__(self, team_id: str | None = None) -> None:
-        self._team_id = team_id
+    """A request context with no MCP session: the client key falls back to `mcp:hosted`."""
 
     async def get_state(self, key: str) -> Any:
-        return self._team_id if key == "team_id" else None
+        return None
 
 
 def _access_token(kind: str = "api_key", token: str = API_KEY_BEARER) -> AccessToken:
@@ -612,8 +624,19 @@ def _access_token(kind: str = "api_key", token: str = API_KEY_BEARER) -> AccessT
     )
 
 
-def _middleware_context(team_id: str | None = None) -> MiddlewareContext[Any]:
-    return MiddlewareContext(message=object(), fastmcp_context=_FakeContext(team_id))
+def _middleware_context() -> MiddlewareContext[Any]:
+    return MiddlewareContext(message=object(), fastmcp_context=_FakeContext())
+
+
+def _offline_middleware(
+    routing: RoutingSessionStore | None = None,
+) -> HostedIdentityMiddleware:
+    """A middleware whose svc-api is the in-memory routing record: no test here may reach the network."""
+    return HostedIdentityMiddleware(
+        _config(),
+        cache=ExchangeCache(),
+        transport=(routing or RoutingSessionStore()).transport(),
+    )
 
 
 def _patch_token(monkeypatch, token: AccessToken | None) -> None:
@@ -624,7 +647,7 @@ def _patch_token(monkeypatch, token: AccessToken | None) -> None:
 
 def test_contextvar_is_reset_after_a_successful_call(monkeypatch) -> None:
     _patch_token(monkeypatch, _access_token())
-    middleware = HostedIdentityMiddleware(_config(), cache=ExchangeCache())
+    middleware = _offline_middleware()
     seen: dict[str, Any] = {}
 
     async def call_next(context):
@@ -638,7 +661,7 @@ def test_contextvar_is_reset_after_a_successful_call(monkeypatch) -> None:
 
 def test_contextvar_is_reset_after_a_failing_call(monkeypatch) -> None:
     _patch_token(monkeypatch, _access_token())
-    middleware = HostedIdentityMiddleware(_config(), cache=ExchangeCache())
+    middleware = _offline_middleware()
 
     async def call_next(context):
         raise ValueError("tool blew up")
@@ -653,7 +676,7 @@ def test_hosted_auth_error_from_the_tool_becomes_an_unauthorized_tool_error(
     monkeypatch,
 ) -> None:
     _patch_token(monkeypatch, _access_token())
-    middleware = HostedIdentityMiddleware(_config(), cache=ExchangeCache())
+    middleware = _offline_middleware()
 
     async def call_next(context):
         raise HostedAuthError("session expired, retry")
@@ -667,7 +690,7 @@ def test_hosted_auth_error_from_the_tool_becomes_an_unauthorized_tool_error(
 
 def test_missing_access_token_is_refused(monkeypatch) -> None:
     _patch_token(monkeypatch, None)
-    middleware = HostedIdentityMiddleware(_config(), cache=ExchangeCache())
+    middleware = _offline_middleware()
 
     async def call_next(context):  # pragma: no cover - must never run
         raise AssertionError("the tool must not be reached")
@@ -680,7 +703,7 @@ def test_missing_access_token_is_refused(monkeypatch) -> None:
 
 def test_missing_fastmcp_context_is_refused(monkeypatch) -> None:
     _patch_token(monkeypatch, _access_token())
-    middleware = HostedIdentityMiddleware(_config(), cache=ExchangeCache())
+    middleware = _offline_middleware()
 
     async def call_next(context):  # pragma: no cover - must never run
         raise AssertionError("the tool must not be reached")
@@ -697,7 +720,7 @@ def test_an_identity_with_no_workspace_is_refused(monkeypatch) -> None:
     token.claims["default_team_id"] = None
     token.claims["active_workspace_id"] = None
     _patch_token(monkeypatch, token)
-    middleware = HostedIdentityMiddleware(_config(), cache=ExchangeCache())
+    middleware = _offline_middleware()
 
     async def call_next(context):  # pragma: no cover - must never run
         raise AssertionError("the tool must not be reached")
@@ -710,7 +733,11 @@ def test_an_identity_with_no_workspace_is_refused(monkeypatch) -> None:
 
 def test_session_team_overrides_the_default_workspace(monkeypatch) -> None:
     _patch_token(monkeypatch, _access_token())
-    middleware = HostedIdentityMiddleware(_config(), cache=ExchangeCache())
+    routing = RoutingSessionStore()
+    routing.rows[(API_KEY_BEARER, "mcp:hosted")] = (
+        "team-B"  # the saved pick, as svc-api holds it
+    )
+    middleware = _offline_middleware(routing)
     seen: dict[str, Any] = {}
 
     async def call_next(context):
@@ -719,7 +746,7 @@ def test_session_team_overrides_the_default_workspace(monkeypatch) -> None:
         seen["header_team"] = identity.backend._session["team_id"]
         return "ok"
 
-    anyio.run(middleware.on_call_tool, _middleware_context("team-B"), call_next)
+    anyio.run(middleware.on_call_tool, _middleware_context(), call_next)
 
     assert seen["team_id"] == "team-B"
     assert seen["header_team"] == "team-B"

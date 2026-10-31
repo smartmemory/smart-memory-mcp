@@ -98,3 +98,78 @@ INITIALIZE_BODY = {
         "clientInfo": {"name": "test", "version": "1"},
     },
 }
+
+
+class RoutingSessionStore:
+    """svc-api's `/memory/routing/session` record as the hosted MCP sees it, for MockTransport handlers.
+
+    Rows are keyed by (bearer, client_key): the bearer stands for the caller's (tenant, user), the server's key minus
+    the context hint hosted MCP never sends. The store outlives any number of MCP sessions and middleware instances,
+    as the Mongo record does. `forbidden` workspaces answer 403 (not a member); `bound` bearers answer 409;
+    `get_status` set to a non-200 makes every GET fail that way (503 = service down).
+    """
+
+    def __init__(
+        self,
+        *,
+        forbidden: tuple[str, ...] = (),
+        bound: tuple[str, ...] = (),
+        get_status: int = 200,
+    ) -> None:
+        self.rows: dict[tuple[str, str], str] = {}
+        self.forbidden, self.bound = set(forbidden), set(bound)
+        self.get_status = get_status
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    @staticmethod
+    def _bearer(request: httpx.Request) -> str:
+        return request.headers.get("Authorization", "").removeprefix("Bearer ")
+
+    def handle(self, request: httpx.Request) -> httpx.Response | None:
+        """The routing response for `request`, or None when the path is not the session route."""
+        import json as _json
+
+        if request.url.path != "/memory/routing/session":
+            return None
+        bearer = self._bearer(request)
+        if request.method == "PUT":
+            body = _json.loads(request.content)
+            self.calls.append(("PUT", {"body": body, "headers": dict(request.headers)}))
+            if bearer in self.bound:
+                return httpx.Response(
+                    409, json={"detail": {"error": "client_bound_to_workspace"}}
+                )
+            if body["workspace_id"] in self.forbidden:
+                return httpx.Response(
+                    403, json={"detail": "insufficient_team_permissions"}
+                )
+            self.rows[(bearer, body["client_key"])] = body["workspace_id"]
+            return httpx.Response(200, json={"workspace_id": body["workspace_id"]})
+        if request.method == "GET":
+            client_key = request.url.params.get("client_key", "")
+            self.calls.append(
+                ("GET", {"client_key": client_key, "headers": dict(request.headers)})
+            )
+            if self.get_status != 200:
+                return httpx.Response(self.get_status, json={"detail": "unavailable"})
+            chosen = self.rows.get((bearer, client_key))
+            return httpx.Response(
+                200,
+                json={
+                    "workspace_id": chosen,
+                    "client_key": client_key,
+                    "context_key": None,
+                },
+            )
+        return None
+
+    def transport(self, fallback=None) -> httpx.MockTransport:
+        def handler(request: httpx.Request) -> httpx.Response:
+            routed = self.handle(request)
+            if routed is not None:
+                return routed
+            if fallback is not None:
+                return fallback(request)
+            return httpx.Response(404, json={"detail": "unexpected"})
+
+        return httpx.MockTransport(handler)

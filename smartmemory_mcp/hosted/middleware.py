@@ -9,8 +9,8 @@ and only ever read the contextvar.
 from __future__ import annotations
 
 import hashlib
-import inspect
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -37,6 +37,18 @@ logger = logging.getLogger(__name__)
 # often svc-api re-checks one. This value only has to sit far past any single call.
 API_KEY_NO_EXPIRY = datetime(9999, 12, 31, tzinfo=timezone.utc)
 
+# SM20-WS-ROUTING-PARITY-1 (shape B): the workspace pick lives server-side in svc-api's `routing_sessions` record,
+# keyed by (tenant, user, client_key). The hosted client key is `mcp:<clientInfo.name>` (contract client_key
+# grammar `mcp:[A-Za-z0-9 _.\-]{1,64}`, same choice as main 11de00a); a client that sends no name shares `mcp:hosted`.
+# The record never routes by itself: this middleware reads it and sends the pick as X-Workspace-Id.
+SESSION_CLIENT_FALLBACK = "mcp:hosted"
+_CLIENT_NAME_DROP = re.compile(r"[^A-Za-z0-9 _.\-]")
+ROUTING_SESSION_PATH = "/memory/routing/session"
+
+
+class HostedSessionSelectionError(RuntimeError):
+    """svc-api refused or could not save the caller's workspace pick; the message is safe to show."""
+
 
 class HostedIdentityMiddleware(Middleware):
     """Bind a per-call `HostedIdentity` around every tool invocation."""
@@ -52,7 +64,6 @@ class HostedIdentityMiddleware(Middleware):
         self._web_url = config.web_url
         self._cache = DEFAULT_EXCHANGE_CACHE if cache is None else cache
         self._transport = transport
-        self._session_teams: dict[str, str] = {}
 
     async def on_call_tool(
         self,
@@ -90,7 +101,10 @@ class HostedIdentityMiddleware(Middleware):
 
         # The session team must be read BEFORE the backend is built, or the call
         # goes out with the wrong X-Workspace-Id (round 3 must-fix 1).
-        session_team = await self.get_session_team(fastmcp_context)
+        try:
+            session_team = await self.get_session_team(fastmcp_context, verified)
+        except HostedAuthError as exc:
+            raise ToolError(f"Unauthorized: {exc}") from exc
         team_id = session_team or verified.active_workspace_id
 
         try:
@@ -137,24 +151,130 @@ class HostedIdentityMiddleware(Middleware):
                 self._cache, self._api_url, upstream_token, client=client
             )
 
-    async def get_session_team(self, context: Any) -> str | None:
-        """Read the selected workspace for this MCP session, if one exists."""
-        session_id = _mcp_session_id(context)
-        if session_id and session_id in self._session_teams:
-            return self._session_teams[session_id]
-        team_id = context.get_state("team_id")
-        if inspect.isawaitable(team_id):
-            team_id = await team_id
-        return str(team_id) if team_id else None
+    async def get_session_team(
+        self, context: Any, verified: VerifiedIdentity | None = None
+    ) -> str | None:
+        """The caller's saved workspace pick for this MCP client, read from svc-api.
+
+        `GET /memory/routing/session?client_key=mcp:<name>`, bearer only. Returns None when there is no pick
+        (none, expired) and, after a WARNING, when svc-api cannot answer: the call then goes to the token's
+        default workspace exactly as it does with no pick, never to another workspace. Raises `HostedAuthError`
+        on a 401 so the next call re-exchanges.
+        """
+        verified = verified or _bound_verified()
+        if verified is None:
+            return None
+        return await anyio.to_thread.run_sync(
+            self._read_selection, verified, mcp_client_key(context)
+        )
 
     async def set_session_team(self, context: Any, team_id: str) -> None:
-        """Persist a workspace selection for the current MCP session."""
-        session_id = _mcp_session_id(context)
-        if session_id:
-            self._session_teams[session_id] = team_id
-        result = context.set_state("team_id", team_id)
-        if inspect.isawaitable(result):
-            await result
+        """Save a workspace pick for this caller and MCP client (`PUT /memory/routing/session`).
+
+        svc-api re-runs the membership check; a refusal raises `HostedSessionSelectionError`
+        and nothing is stored (here or there).
+        """
+        verified = _bound_verified()
+        if verified is None:
+            raise HostedSessionSelectionError(
+                "no hosted identity is bound to this call; the switch was not saved."
+            )
+        await anyio.to_thread.run_sync(
+            self._save_selection, verified, mcp_client_key(context), team_id
+        )
+
+    def _routing_call(
+        self, verified: VerifiedIdentity, method: str, **kwargs: Any
+    ) -> httpx.Response | None:
+        """One routing-record call; None on a transport failure (already logged)."""
+        headers = {"Authorization": f"Bearer {verified.sm_access_token}"}
+        try:
+            with httpx.Client(transport=self._transport, timeout=15.0) as client:
+                response = client.request(
+                    method,
+                    f"{self._api_url}{ROUTING_SESSION_PATH}",
+                    headers=headers,
+                    **kwargs,
+                )
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "Workspace pick %s failed (error=%s)", method, type(exc).__name__
+            )
+            return None
+        if response.status_code == 401:
+            logger.warning(
+                "svc-api rejected the hosted session on a workspace-pick call (401); "
+                "invalidating the cached exchange for fingerprint %s.",
+                verified.fingerprint[:12],
+            )
+            self._cache.invalidate(verified.fingerprint)
+            raise HostedAuthError("session expired, retry")
+        return response
+
+    def _read_selection(
+        self, verified: VerifiedIdentity, client_key: str
+    ) -> str | None:
+        response = self._routing_call(
+            verified, "GET", params={"client_key": client_key}
+        )
+        if response is None:
+            logger.warning(
+                "Workspace pick unreadable (svc-api unreachable); using the default workspace"
+            )
+            return None
+        if response.status_code != 200:
+            logger.warning(
+                "Workspace pick read refused (status=%s); using the default workspace",
+                response.status_code,
+            )
+            return None
+        try:
+            body = response.json()
+        except ValueError:
+            logger.warning(
+                "Workspace pick read returned a non-JSON body; using the default workspace"
+            )
+            return None
+        workspace_id = body.get("workspace_id") if isinstance(body, dict) else None
+        return str(workspace_id) if workspace_id else None
+
+    def _save_selection(
+        self, verified: VerifiedIdentity, client_key: str, team_id: str
+    ) -> None:
+        response = self._routing_call(
+            verified, "PUT", json={"workspace_id": team_id, "client_key": client_key}
+        )
+        if response is None:
+            raise HostedSessionSelectionError(
+                "could not reach SmartMemory to save the switch; retry."
+            )
+        if response.status_code == 200:
+            return
+        logger.warning("Workspace pick save refused (status=%s)", response.status_code)
+        reason = {
+            403: "you are not a member of that workspace",
+            409: "this API key is bound to one workspace and cannot switch",
+        }.get(response.status_code, f"HTTP {response.status_code}")
+        raise HostedSessionSelectionError(f"could not save the switch ({reason}).")
+
+
+def mcp_client_key(context: Any) -> str:
+    """`mcp:<clientInfo.name>` from the MCP `initialize` handshake, cut to the contract grammar."""
+    try:
+        params = context.session.client_params
+        info = getattr(params, "client_info", None) or getattr(
+            params, "clientInfo", None
+        )
+        name = getattr(info, "name", "") if info is not None else ""
+    except (AttributeError, RuntimeError):
+        name = ""
+    name = _CLIENT_NAME_DROP.sub("", str(name or "")).strip()[:64].strip()
+    return f"mcp:{name}" if name else SESSION_CLIENT_FALLBACK
+
+
+def _bound_verified() -> VerifiedIdentity | None:
+    identity = current_identity.get()
+    return identity.verified if identity is not None else None
 
 
 def _hosted_auth_cause(exc: BaseException) -> HostedAuthError | None:

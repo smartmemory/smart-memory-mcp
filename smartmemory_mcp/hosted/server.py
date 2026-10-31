@@ -23,7 +23,7 @@ from .auth import build_auth
 from .config import HostedConfig
 from .exchange import DEFAULT_EXCHANGE_CACHE, ExchangeCache
 from .identity import current_identity, set_hosted_mode
-from .middleware import HostedIdentityMiddleware
+from .middleware import HostedIdentityMiddleware, HostedSessionSelectionError
 from .ratelimit import hosted_asgi_middleware
 from .tools import CapturedTool, apply_allowlist, register_module_tools
 
@@ -96,7 +96,8 @@ def _register_hosted_tools(
         if identity is None:
             raise ToolError("Unauthorized: no identity bound to this call")
         verified = identity.verified
-        team_id = await identity_middleware.get_session_team(ctx) or identity.team_id
+        # The middleware already read the saved pick before it built this call's backend.
+        team_id = identity.team_id
         return "\n".join(
             [
                 f"User: {verified.email or verified.user_id}",
@@ -119,10 +120,11 @@ def _register_hosted_tools(
         ),
     )
     async def hosted_switch_team(team_id: str, ctx: Context) -> str:
-        """Switch this session to another workspace you belong to.
+        """Switch to another workspace you belong to.
 
-        The selection is per MCP session, not per process: it lasts as long as
-        the connection and never leaks into another user's calls.
+        The selection is saved server-side for you and this MCP client: it
+        survives a reconnect and a server restart, and never leaks into another
+        user's calls. On failure the previous workspace stays active.
         """
         if not team_id or not team_id.strip():
             raise ToolError("team_id is required.")
@@ -139,7 +141,10 @@ def _register_hosted_tools(
                 f"Available: {', '.join(sorted(available)) or 'none'}."
             )
 
-        await identity_middleware.set_session_team(ctx, team_id)
+        try:
+            await identity_middleware.set_session_team(ctx, team_id)
+        except HostedSessionSelectionError as exc:
+            raise ToolError(str(exc)) from exc
         return f"Switched to workspace: {team_id}"
 
     original_search = originals["memory_search"]
