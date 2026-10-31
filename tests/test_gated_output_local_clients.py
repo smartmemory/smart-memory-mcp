@@ -24,11 +24,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from smartmemory.configuration.switch_testing import switch_override
 from smartmemory.save.read_port import InMemoryPendingStore
 from smartmemory.search import facade_readers
 from smartmemory.search.lane_gate import LaneReadGate
-from smartmemory.search.visibility_gate import SWITCH
 from smartmemory.tools.factory import create_lite_memory
 
 from smartmemory_app import storage
@@ -44,12 +42,6 @@ from smartmemory_mcp.tools import (
 
 LANE_LOG = "smartmemory.search.lane_gate"
 GATE_LOG = "smartmemory.search.visibility_gate"
-OFF_SWITCH_WARNING = (
-    GATE_LOG,
-    "WARNING",
-    "switch sm2_search_visibility_gate OFF: search keeps only the legacy post-retrieval visibility filter; "
-    "no unified read gate is bound",
-)
 MEMORY_TOOLS_LOG = "smartmemory_mcp.tools.memory_tools"
 LOCAL_LOG = "smartmemory_mcp.backends.local"
 STORAGE_LOG = "smartmemory_app.storage"
@@ -115,8 +107,7 @@ class World:
 @pytest.fixture
 def world(tmp_path, monkeypatch):
     mem = create_lite_memory(data_dir=str(tmp_path), spawn_worker=False)
-    with switch_override(SWITCH, True):
-        mem.bind_pending_reads(InMemoryPendingStore(), workspace_hidden=False)
+    mem.bind_pending_reads(InMemoryPendingStore(), workspace_hidden=False)
     real = facade_readers.FacadeReadGate.lane_gate
     budget = {"max_scan": None}
 
@@ -229,9 +220,8 @@ def over(where, count, fetch):
     )
 
 
-def call(w, tool, on, **kw):
-    with switch_override(SWITCH, on):
-        return w.tools[tool](**kw)
+def call(w, tool, **kw):
+    return w.tools[tool](**kw)
 
 
 # -- the F1 reproduction: the real core says partial, the real MCP tool must not say "No results found" --------------
@@ -242,7 +232,7 @@ def test_f1_partial_empty_search_is_not_no_results_found(world, caplog):
     seed(world.mem, "semantic", visible={5})
     world.set_budget(1)
     caplog.set_level(logging.WARNING)
-    on = call(world, "memory_search", True, query="atlas budget", top_k=3)
+    on = call(world, "memory_search", query="atlas budget", top_k=3)
     assert "No results found" not in on
     assert on.startswith(
         "No visible results in the part core examined. " + PARTIAL_PHRASE
@@ -256,28 +246,16 @@ def test_f1_all_visible_control_says_nothing_partial(world, caplog):
     the visible rows are shown with the partial note, and with a roomy budget there is no note at all."""
     seed(world.mem, "semantic", visible={0, 1, 2, 3, 4, 5})
     caplog.set_level(logging.WARNING)
-    roomy = call(world, "memory_search", True, query="atlas budget", top_k=3)
+    roomy = call(world, "memory_search", query="atlas budget", top_k=3)
     assert PARTIAL_PHRASE not in roomy and len(shown(roomy)) == 3
     assert answer_log(caplog) == [unknown_origin(3)]
     world.set_budget(1)
     caplog.clear()
-    tight = call(world, "memory_search", True, query="atlas budget", top_k=3)
+    tight = call(world, "memory_search", query="atlas budget", top_k=3)
     assert (
         len(shown(tight)) == 1 and PARTIAL_PHRASE in tight and "No visible" not in tight
     )
     assert answer_log(caplog) == [gate_warning("local search"), unknown_origin(1)]
-
-
-def test_f1_off_arm_is_the_legacy_answer(world, caplog):
-    """OFF: no gate, no coverage read, no note, no client WARNING: rows the gate would hide are the legacy rows."""
-    seed(world.mem, "semantic", visible={5})
-    world.set_budget(1)
-    caplog.set_level(logging.WARNING)
-    off = call(world, "memory_search", False, query="atlas budget", top_k=3)
-    # three rows of six, one visible (5): at least two are rows the gate hides ON
-    assert PARTIAL_PHRASE not in off and "No visible" not in off
-    assert len(shown(off)) == 3 and len(shown(off) - {5}) >= 2
-    assert answer_log(caplog) == [OFF_SWITCH_WARNING, unknown_origin(3)]
 
 
 # -- every other consumer of a gated search: one row per consumer (class: normalizer/consumer drops completeness) -----
@@ -290,7 +268,6 @@ CONSUMER_ROWS = [
         "dev_query_decisions",
         {"query": "atlas budget"},
         "decision",
-        "Found ",
         "decisions",
         1,
     ),
@@ -299,7 +276,6 @@ CONSUMER_ROWS = [
         "dev_load_context",
         {"topic": "atlas budget"},
         "episodic",
-        "=== Recent",
         "recent sessions",
         2,
     ),
@@ -308,7 +284,6 @@ CONSUMER_ROWS = [
         "code_search",
         {"query": "atlas budget"},
         "code",
-        "Found ",
         "code entities",
         1,
     ),
@@ -317,7 +292,6 @@ CONSUMER_ROWS = [
         "reasoning_query_traces",
         {"query": "atlas budget"},
         "reasoning",
-        "Found ",
         "reasoning traces",
         1,
     ),
@@ -325,24 +299,20 @@ CONSUMER_ROWS = [
 
 
 @pytest.mark.parametrize(
-    "case,tool,kw,mtype,off_prefix,noun,searches",
+    "case,tool,kw,mtype,noun,searches",
     CONSUMER_ROWS,
     ids=[r[0] for r in CONSUMER_ROWS],
 )
 def test_every_consumer_of_a_partial_empty_search_says_partial_not_none(
-    world, caplog, case, tool, kw, mtype, off_prefix, noun, searches
+    world, caplog, case, tool, kw, mtype, noun, searches
 ):
     seed(world.mem, mtype, visible={5})
     world.set_budget(1)
     caplog.set_level(logging.WARNING)
-    on = call(world, tool, True, **kw)
+    on = call(world, tool, **kw)
     assert f"No visible {noun} in the part core examined." in on
     assert PARTIAL_PHRASE in on and NO_VISIBLE in on
     assert answer_log(caplog) == [gate_warning("local search")] * searches
-    caplog.clear()
-    off = call(world, tool, False, **kw)
-    assert off.startswith(off_prefix) and PARTIAL_PHRASE not in off
-    assert answer_log(caplog) == [OFF_SWITCH_WARNING]
 
 
 def test_evolution_status_with_a_partial_empty_search_is_not_idle(world):
@@ -350,12 +320,8 @@ def test_evolution_status_with_a_partial_empty_search_is_not_idle(world):
     typed refusal), so evolution_status sees a complete answer here: five retired + one visible pending row = 1."""
     seed(world.mem, "pending", visible={5})
     world.set_budget(1)
-    on = call(world, "evolution_status", True)
+    on = call(world, "evolution_status")
     assert on == "Evolution status: ready\nPending memory items (formerly 'working'): 1"
-    off = call(world, "evolution_status", False)
-    assert (
-        off == "Evolution status: ready\nPending memory items (formerly 'working'): 6"
-    )
 
 
 def test_memory_recall_with_a_partial_empty_answer_is_not_an_empty_string(
@@ -365,18 +331,16 @@ def test_memory_recall_with_a_partial_empty_answer_is_not_an_empty_string(
     seed(world.mem, "semantic", visible=set())
     world.set_budget(1)
     caplog.set_level(logging.WARNING)
-    on = call(world, "memory_recall", True, query="atlas budget", top_k=3)
+    on = call(world, "memory_recall", query="atlas budget", top_k=3)
     assert on.startswith(
         "No visible memories in the part core examined. " + PARTIAL_PHRASE
     )
-    off = call(world, "memory_recall", False, query="atlas budget", top_k=3)
-    assert PARTIAL_PHRASE not in off
 
 
 def test_memory_recall_with_a_partial_nonempty_answer_carries_the_note(world):
     seed(world.mem, "semantic", visible={5})
     world.set_budget(1)
-    on = call(world, "memory_recall", True, query="atlas budget", top_k=3)
+    on = call(world, "memory_recall", query="atlas budget", top_k=3)
     assert "test_u521_semantic_5" in on and PARTIAL_PHRASE in on
 
 
@@ -405,34 +369,25 @@ RECALL_CAP_ROWS = [
     (
         "on empty is partial, not ''",
         (),
-        True,
         "No visible memories in the part core examined. The answer was partial (fetch_bound), so matches past what "
         "was examined may not be shown. This is not proof that none exist.",
         True,
     ),
-    ("on non-empty carries the note", (0,), True, ["test_cap_000"], True),
-    ("off empty is the legacy answer", (), False, ["test_cap_200"], False),
-    (
-        "off non-empty is the legacy answer",
-        (0,),
-        False,
-        ["test_cap_000", "test_cap_200"],
-        False,
-    ),
+    ("on non-empty carries the note", (0,), ["test_cap_000"], True),
 ]
 
 
 @pytest.mark.parametrize(
-    "case,eligible,on,answer,note", RECALL_CAP_ROWS, ids=[r[0] for r in RECALL_CAP_ROWS]
+    "case,eligible,answer,note", RECALL_CAP_ROWS, ids=[r[0] for r in RECALL_CAP_ROWS]
 )
 def test_memory_recall_cap_stop_reaches_the_model_as_partial(
-    world, monkeypatch, case, eligible, on, answer, note
+    world, monkeypatch, case, eligible, answer, note
 ):
     from smartmemory_app import recall_format
 
     monkeypatch.setattr(recall_format, "_trace", lambda **kw: None)
     seed_capped(world.mem, eligible)
-    out = call(world, "memory_recall", on, query="", top_k=3)
+    out = call(world, "memory_recall", query="", top_k=3)
     if isinstance(answer, str):
         assert out == answer
     else:
@@ -477,7 +432,7 @@ def test_memory_list_pages_under_both_coverage_states(
 ):
     seed(world.mem, "semantic", visible=visible)
     caplog.set_level(logging.WARNING)
-    out = call(world, "memory_list", True, limit=limit, offset=offset)
+    out = call(world, "memory_list", limit=limit, offset=offset)
     assert out.count("- [test_u521_") == len(shown)
     assert [n for n in range(6) if f"test_u521_semantic_{n}]" in out] == shown
     assert PARTIAL_PHRASE not in out
@@ -495,23 +450,9 @@ def test_memory_list_is_exact_under_a_small_scan_budget(world, caplog):
     seed(world.mem, "episodic", visible={5})
     world.set_budget(1)
     caplog.set_level(logging.WARNING)
-    out = call(world, "memory_list", True, limit=4, offset=0)
+    out = call(world, "memory_list", limit=4, offset=0)
     assert out.count("- [test_u521_") == 2 and "Showing 2 of 2 memories" in out
     assert PARTIAL_PHRASE not in out and answer_log(caplog) == []
-
-
-def test_memory_list_off_arm_is_the_legacy_page(world, caplog):
-    seed(world.mem, "semantic", visible={5})
-    world.set_budget(1)
-    caplog.set_level(logging.WARNING)
-    out = call(world, "memory_list", False, limit=4, offset=0)
-    # four rows of six, one visible (5): at least three are rows the gate hides ON
-    assert PARTIAL_PHRASE not in out
-    assert len(shown(out)) == 4 and len(shown(out) - {5}) >= 3
-    assert answer_log(caplog) == [
-        OFF_SWITCH_WARNING,
-        LIST_TOTAL_LOST,
-    ]  # OFF is the base's page and lines
 
 
 # -- memory_list refusals: logged once by the origin when the gate is ON, the base's lines when it is OFF (F3, F4) -------
@@ -593,7 +534,6 @@ LIST_REFUSAL_ROWS = [
     (
         "on marked by its origin is logged once",
         _origin_marked,
-        True,
         RuntimeError,
         True,
         [ORIGIN_LINE],
@@ -601,69 +541,34 @@ LIST_REFUSAL_ROWS = [
     (
         "on unmarked is logged by the tool and marked",
         _unmarked,
-        True,
         RuntimeError,
         True,
-        [tool_lost()],
-    ),
-    (
-        "off marked keeps the base's two lines",
-        _origin_marked,
-        False,
-        RuntimeError,
-        True,
-        [ORIGIN_LINE, tool_lost()],
-    ),
-    (
-        "off unmarked is the base's line and no mark",
-        _unmarked,
-        False,
-        RuntimeError,
-        False,
         [tool_lost()],
     ),
     (
         "on odd text is rendered bounded",
         _odd_text,
-        True,
         OddTextError,
         True,
         [tool_lost("<OddTextError could not be rendered>")],
     ),
     (
-        "off odd text is the base's rendering",
-        _odd_text,
-        False,
-        OddTextError,
-        False,
-        [tool_lost("odd page text")],
-    ),
-    (
         "on core refusal is logged by core only",
         "core",
-        True,
         "VisibilityUnavailable",
         True,
         [CORE_UNREADABLE],
-    ),
-    (
-        "off core does not read coverage",
-        "core",
-        False,
-        None,
-        None,
-        [LIST_TOTAL_LOST],
     ),
 ]
 
 
 @pytest.mark.parametrize(
-    "case,fault,on,error,marked,warnings",
+    "case,fault,error,marked,warnings",
     LIST_REFUSAL_ROWS,
     ids=[r[0] for r in LIST_REFUSAL_ROWS],
 )
 def test_memory_list_logs_a_refusal_once_and_off_is_the_base(
-    world, monkeypatch, caplog, case, fault, on, error, marked, warnings
+    world, monkeypatch, caplog, case, fault, error, marked, warnings
 ):
     from smartmemory.refusal_logging import refusal_logged
     from smartmemory import visibility as results_module
@@ -676,24 +581,16 @@ def test_memory_list_logs_a_refusal_once_and_off_is_the_base(
     if isinstance(error, str):
         error = getattr(results_module, error)
     caplog.set_level(logging.WARNING)
-    with switch_override(SWITCH, on):
-        if error is None:
+    if error is None:
+        world.tools["memory_list"](limit=4, offset=0)
+    else:
+        with pytest.raises(error) as raised:
             world.tools["memory_list"](limit=4, offset=0)
-        else:
-            with pytest.raises(error) as raised:
-                world.tools["memory_list"](limit=4, offset=0)
-            assert refusal_logged(raised.value) is marked
+        assert refusal_logged(raised.value) is marked
     assert full_log(caplog) == warnings
 
 
 # -- memory_list: the window is a fetch bound, and a stop at it is carried (F1, F2 classes) ---------------------------
-
-LIST_CAP_LINE = (
-    LOCAL_LOG,
-    "WARNING",
-    "list_memories scanned the local cap (200 items); results beyond that window are not represented in this page or "
-    "its offset.",
-)
 
 
 def seed_many(mem, count):
@@ -709,94 +606,21 @@ def seed_many(mem, count):
         )
 
 
-class ListOverReturn:
-    """The one stand-in for list's over-return rows (real core cannot be made to break its own bound): ``top_k + 1``
-    dictionary rows, and only the LAST, past the window, has ``marker=yes``."""
-
-    def __init__(self):
-        self.calls = []
-
-    def search(self, text, *, top_k, **kwargs):
-        from smartmemory.search.results import SearchDiagnostics, SearchResults
-
-        self.calls.append(top_k)
-        rows = [
-            {
-                "item_id": f"test_over_{n}",
-                "content": "atlas",
-                "memory_type": "semantic",
-                "metadata": {"marker": "yes" if n == top_k else "no"},
-            }
-            for n in range(top_k + 1)
-        ]
-        return SearchResults(rows, SearchDiagnostics(coverage={"complete": True}))
-
-
-# (case, gate on, how the store answers, ids on the page, names carried, the WARNING list). The real-store rows hold 201
-# visible rows. ON: the frozen walk has no 200-row window, so all 201 are paged and nothing is partial; OFF: the legacy
-# wildcard window comes back full and the page carries only the legacy line. The stand-in rows (OFF only: the stand-in
-# has no walk) over-return one row past the window that alone matches the filter, and the legacy list pages it.
-LIST_BOUND_ROWS = [
-    (
-        "on full store pages in full, no window and no fetch_bound",
-        True,
-        "real",
-        4,
-        (),
-        [],
-    ),
-    (
-        "off full window is the legacy page",
-        False,
-        "real",
-        4,
-        (),
-        [OFF_SWITCH_WARNING, LIST_CAP_LINE],
-    ),
-    (
-        "off over-return is the legacy page",
-        False,
-        "over",
-        ["test_over_200"],
-        (),
-        [LIST_CAP_LINE],
-    ),
-]
-
-
-@pytest.mark.parametrize(
-    "case,on,store,page,names,warnings",
-    LIST_BOUND_ROWS,
-    ids=[r[0] for r in LIST_BOUND_ROWS],
-)
-def test_list_memories_never_pages_past_its_window_and_carries_the_stop(
-    world, monkeypatch, caplog, case, on, store, page, names, warnings
+def test_list_memories_pages_the_whole_real_store_with_no_window_and_no_fetch_bound(
+    world, caplog
 ):
-    if store == "real":
-        seed_many(world.mem, 201)
-        kw = {}
-    else:
-        world.backend._mem = ListOverReturn()
-        kw = {"metadata_key": "marker", "metadata_value": "yes"}
+    """201 visible rows: the frozen walk has no 200-row window, so every row is paged and nothing is partial."""
+    seed_many(world.mem, 201)
     caplog.set_level(logging.WARNING)
-    with switch_override(SWITCH, on):
-        got = world.backend.list_memories(limit=4, offset=0, **kw)
-    if isinstance(page, int):
-        assert len(got) == page
-    else:
-        assert [r["item_id"] for r in got] == page
-    assert getattr(got, "partial", ()) == names
-    assert type(got).__name__ == (
-        "PartialRows" if names else ("_FrozenListPage" if on else "list")
-    )
-    assert (answer_log(caplog) if store == "real" else full_log(caplog)) == warnings
-    if store == "real":
-        # through the tool: the model-facing page names the stop (ON), the legacy page does not (OFF)
-        caplog.clear()
-        with switch_override(SWITCH, on):
-            out = world.tools["memory_list"](limit=4, offset=0)
-        assert "The answer was partial (fetch_bound)" not in out
-        assert ("of 201 memories" in out) is on
+    got = world.backend.list_memories(limit=4, offset=0)
+    assert len(got) == 4
+    assert getattr(got, "partial", ()) == ()
+    assert type(got).__name__ == "_FrozenListPage"
+    assert answer_log(caplog) == []
+    caplog.clear()
+    out = world.tools["memory_list"](limit=4, offset=0)
+    assert "The answer was partial (fetch_bound)" not in out
+    assert "of 201 memories" in out
 
 
 # -- memory_list and R11, clause by clause ----------------------------------------------------------------------------
@@ -810,8 +634,7 @@ def test_list_memories_never_pages_past_its_window_and_carries_the_stop(
 
 
 def _listed(world, **kw):
-    with switch_override(SWITCH, True):
-        return [r["item_id"] for r in world.backend.list_memories(**kw)]
+    return [r["item_id"] for r in world.backend.list_memories(**kw)]
 
 
 def test_r11a_a_hidden_row_and_an_absent_row_give_the_same_page(world, caplog):
@@ -887,12 +710,11 @@ def test_r11d_paging_is_frozen_across_pages(
     )  # a walk of its own: the fixed membership
     assert len(expected) == 6
     pages = []
-    with switch_override(SWITCH, True):
-        for n, offset in enumerate(offsets):
-            page = world.backend.list_memories(limit=limit, offset=offset)
-            pages.append(([r["item_id"] for r in page], page.total))
-            if n == 0 and mutate is not None:
-                mutate(world, expected)
+    for n, offset in enumerate(offsets):
+        page = world.backend.list_memories(limit=limit, offset=offset)
+        pages.append(([r["item_id"] for r in page], page.total))
+        if n == 0 and mutate is not None:
+            mutate(world, expected)
     seen = [i for ids, _ in pages for i in ids]
     gone = expected[dropped] if dropped is not None else None
     for (ids, got_total), (lo, hi) in zip(pages, slices):
@@ -906,9 +728,8 @@ def test_r11d_unseen_offset_starts_a_walk_and_skips(world):
     seed(world.mem, "semantic", visible={0, 1, 2, 3, 4, 5})
     expected = _listed(world, limit=10, offset=0)
     world.backend._walks.clear()
-    with switch_override(SWITCH, True):
-        page = world.backend.list_memories(limit=2, offset=3)
-        nxt = world.backend.list_memories(limit=2, offset=5)
+    page = world.backend.list_memories(limit=2, offset=3)
+    nxt = world.backend.list_memories(limit=2, offset=5)
     assert [r["item_id"] for r in page] == expected[3:5] and page.total == 6
     assert [r["item_id"] for r in nxt] == expected[5:6] and nxt.total == 6
 
@@ -916,9 +737,9 @@ def test_r11d_unseen_offset_starts_a_walk_and_skips(world):
 def test_r11d_the_tool_prints_the_frozen_total_on_every_page(world, caplog):
     seed(world.mem, "semantic", visible={0, 1, 2, 3, 4, 5})
     caplog.set_level(logging.WARNING)
-    first = call(world, "memory_list", True, limit=3, offset=0)
+    first = call(world, "memory_list", limit=3, offset=0)
     _write_new_row(world, None)
-    second = call(world, "memory_list", True, limit=3, offset=3)
+    second = call(world, "memory_list", limit=3, offset=3)
     assert "Showing 3 of 6 memories" in first and "Showing 3 of 6 memories" in second
     assert "test_u521_semantic_new" not in second
     assert LIST_TOTAL_LOST not in answer_log(caplog)
@@ -965,15 +786,9 @@ def test_transcript_search_partial_empty_and_off_arm(world, transcripts, caplog)
     )
     world.set_budget(1)
     caplog.set_level(logging.WARNING)
-    with switch_override(SWITCH, True):
-        on = transcripts("atlas budget")
+    on = transcripts("atlas budget")
     assert TRANSCRIPT_NOTE in on
     assert answer_log(caplog) == [gate_warning("transcript search")]
-    caplog.clear()
-    with switch_override(SWITCH, False):
-        off = transcripts("atlas budget")
-    assert "The search was partial" not in off
-    assert answer_log(caplog) == [OFF_SWITCH_WARNING]
 
 
 # (case, gate on, how the answer starts, the WARNING list minus NOISE). The stand-in is the real search's own rows
@@ -982,21 +797,19 @@ def test_transcript_search_partial_empty_and_off_arm(world, transcripts, caplog)
 TRANSCRIPT_OVER_ROWS = [
     (
         "on is cut to the fetch",
-        True,
         "2 session(s) matching",
         [over("transcript search", 6, 2)],
     ),
-    ("off is the legacy answer", False, "6 session(s) matching", [OFF_SWITCH_WARNING]),
 ]
 
 
 @pytest.mark.parametrize(
-    "case,on,shown,warnings",
+    "case,shown,warnings",
     TRANSCRIPT_OVER_ROWS,
     ids=[r[0] for r in TRANSCRIPT_OVER_ROWS],
 )
 def test_transcript_search_never_shows_a_hit_past_its_fetch(
-    world, transcripts, monkeypatch, caplog, case, on, shown, warnings
+    world, transcripts, monkeypatch, caplog, case, shown, warnings
 ):
     from smartmemory.search.results import SearchDiagnostics, SearchResults
 
@@ -1017,8 +830,7 @@ def test_transcript_search_never_shows_a_hit_past_its_fetch(
 
     monkeypatch.setattr(world.mem, "search", over_return)
     caplog.set_level(logging.WARNING)
-    with switch_override(SWITCH, on):
-        out = transcripts("atlas budget", top_k=2)
+    out = transcripts("atlas budget", top_k=2)
     assert out.startswith(shown)
     assert answer_log(caplog) == warnings
 
@@ -1041,7 +853,6 @@ TRANSCRIPT_BOUND_ROWS = [
     # the reviewer's r3 F1 reproduction: the one matching row is ranked past the fetch, so it is cut and not used
     (
         "on over-return cut then no match is empty with the bound",
-        True,
         "/test_project",
         1,
         16,
@@ -1052,7 +863,6 @@ TRANSCRIPT_BOUND_ROWS = [
     ),
     (
         "on full fetch and no match is empty with the bound",
-        True,
         "/test_project",
         0,
         16,
@@ -1063,7 +873,6 @@ TRANSCRIPT_BOUND_ROWS = [
     ),
     (
         "on full fetch and a short answer carries the bound",
-        True,
         "/test_project",
         1,
         15,
@@ -1074,7 +883,6 @@ TRANSCRIPT_BOUND_ROWS = [
     ),
     (
         "on full fetch and a full answer carries the bound",
-        True,
         "/test_project",
         2,
         14,
@@ -1085,7 +893,6 @@ TRANSCRIPT_BOUND_ROWS = [
     ),
     (
         "on fetch not full and no match is the plain empty answer",
-        True,
         "/test_project",
         0,
         15,
@@ -1096,7 +903,6 @@ TRANSCRIPT_BOUND_ROWS = [
     ),
     (
         "on full fetch with an unmatched row keeps both notes",
-        True,
         "/test_project",
         0,
         15,
@@ -1107,7 +913,6 @@ TRANSCRIPT_BOUND_ROWS = [
     ),
     (
         "on full fetch and core partial keeps both explanations",
-        True,
         "/test_project",
         0,
         16,
@@ -1118,32 +923,9 @@ TRANSCRIPT_BOUND_ROWS = [
     ),
     (
         "on no project filter never claims a bound",
-        True,
         "",
         2,
         0,
-        0,
-        {"complete": True},
-        "",
-        [],
-    ),
-    (
-        "off full fetch and a short answer is the legacy answer",
-        False,
-        "/test_project",
-        1,
-        15,
-        0,
-        {"complete": True},
-        "",
-        [],
-    ),
-    (
-        "off over-return is not cut and the legacy answer shows the ninth",
-        False,
-        "/test_project",
-        1,
-        16,
         0,
         {"complete": True},
         "",
@@ -1153,7 +935,7 @@ TRANSCRIPT_BOUND_ROWS = [
 
 
 @pytest.mark.parametrize(
-    "case,on,project,match,other,nocwd,coverage,notes,warnings",
+    "case,project,match,other,nocwd,coverage,notes,warnings",
     TRANSCRIPT_BOUND_ROWS,
     ids=[r[0] for r in TRANSCRIPT_BOUND_ROWS],
 )
@@ -1164,7 +946,6 @@ def test_transcript_search_project_filter_keeps_the_fetch_bound_explanation(
     caplog,
     tmp_path,
     case,
-    on,
     project,
     match,
     other,
@@ -1195,12 +976,11 @@ def test_transcript_search_project_filter_keeps_the_fetch_bound_explanation(
         ),
     )
     caplog.set_level(logging.WARNING)
-    with switch_override(SWITCH, on):
-        out = transcripts("atlas", top_k=2, project=project)
+    out = transcripts("atlas", top_k=2, project=project)
 
     fetch = BOUND_FETCH if project else 2
-    # the rows the answer may show: gate ON never uses a row past the fetch
-    shown = [r for r in (rows[:fetch] if on else rows) if r.metadata.get("cwd")]
+    # the rows the answer may show: a row past the fetch is never used
+    shown = [r for r in (rows[:fetch]) if r.metadata.get("cwd")]
     if project:
         shown = [r for r in shown if r.metadata["cwd"] == "/test_project"]
     shown = shown[:2]
@@ -1252,7 +1032,7 @@ def test_transcript_search_unreadable_coverage_is_a_typed_refusal_not_complete(
         ),
     )
     caplog.set_level(logging.WARNING)
-    with switch_override(SWITCH, True), pytest.raises(PartialCoverageUnreadable):
+    with pytest.raises(PartialCoverageUnreadable):
         transcripts("atlas budget")
     # a refusal row: the COMPLETE list, every logger (the stand-in callee logs nothing of its own)
     assert full_log(caplog) == [
@@ -1265,15 +1045,11 @@ def test_transcript_search_unreadable_coverage_is_a_typed_refusal_not_complete(
     ]
 
 
-def test_local_backend_search_carries_core_partial_names_and_off_is_a_plain_list(world):
+def test_local_backend_search_carries_core_partial_names(world):
     """The normalizer hop: ``LocalBackend.search`` is a plain list to every caller, and the call's completeness rides
-    on it (ON). OFF is the plain ``list`` it always was. The per-row ``read_status`` carrier is U5.22's, not changed."""
+    on it (still a plain list to callers). The per-row ``read_status`` carrier is U5.22's, not changed."""
     seed(world.mem, "semantic", visible={5})
     world.set_budget(1)
-    with switch_override(SWITCH, True):
-        on = world.backend.search("atlas budget", top_k=3)
+    on = world.backend.search("atlas budget", top_k=3)
     assert on == [] and type(on).__name__ == "PartialRows"
     assert on.partial == ("complete", "read_gate_scan_budget_spent")
-    with switch_override(SWITCH, False):
-        off = world.backend.search("atlas budget", top_k=3)
-    assert type(off) is list and len(off) == 3
