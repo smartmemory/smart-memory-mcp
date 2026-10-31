@@ -44,6 +44,13 @@ API_KEY_NO_EXPIRY = datetime(9999, 12, 31, tzinfo=timezone.utc)
 SESSION_CLIENT_FALLBACK = "mcp:hosted"
 _CLIENT_NAME_DROP = re.compile(r"[^A-Za-z0-9 _.\-]")
 ROUTING_SESSION_PATH = "/memory/routing/session"
+# The ONE tool that runs when the saved pick cannot be read: it writes a new pick (and lists workspaces bearer-only), so it
+# must work to repair a pick that is unreadable. Every other tool is refused on a read failure.
+SWITCH_TOOL = "switch_team"
+
+
+class HostedSessionReadError(RuntimeError):
+    """The saved workspace pick could not be read from svc-api; the message is the reason and is safe to show."""
 
 
 class HostedSessionSelectionError(RuntimeError):
@@ -101,10 +108,21 @@ class HostedIdentityMiddleware(Middleware):
 
         # The session team must be read BEFORE the backend is built, or the call
         # goes out with the wrong X-Workspace-Id (round 3 must-fix 1).
+        session_team = None
         try:
-            session_team = await self.get_session_team(fastmcp_context, verified)
+            if _tool_name(context) != SWITCH_TOOL:
+                session_team = await self.get_session_team(fastmcp_context, verified)
         except HostedAuthError as exc:
             raise ToolError(f"Unauthorized: {exc}") from exc
+        except HostedSessionReadError as exc:
+            # Fail closed: an unreadable pick is NOT "no pick". Never route this call to the default workspace.
+            logger.warning(
+                "Hosted call refused: saved workspace pick unreadable (%s)", exc
+            )
+            raise ToolError(
+                f"could not read your saved workspace pick ({exc}); "
+                f"retry, or run {SWITCH_TOOL}."
+            ) from exc
         team_id = session_team or verified.active_workspace_id
 
         try:
@@ -156,10 +174,10 @@ class HostedIdentityMiddleware(Middleware):
     ) -> str | None:
         """The caller's saved workspace pick for this MCP client, read from svc-api.
 
-        `GET /memory/routing/session?client_key=mcp:<name>`, bearer only. Returns None when there is no pick
-        (none, expired) and, after a WARNING, when svc-api cannot answer: the call then goes to the token's
-        default workspace exactly as it does with no pick, never to another workspace. Raises `HostedAuthError`
-        on a 401 so the next call re-exchanges.
+        `GET /memory/routing/session?client_key=mcp:<name>`, bearer only. Returns None when svc-api answers 200 with
+        no pick (never picked or cleared; picks do not expire), and the call then uses the token's default workspace.
+        Raises `HostedSessionReadError` when the pick cannot be read (unreachable, non-200, unreadable body): the
+        caller refuses the call rather than guess. Raises `HostedAuthError` on a 401 so the next call re-exchanges.
         """
         verified = verified or _bound_verified()
         if verified is None:
@@ -215,26 +233,28 @@ class HostedIdentityMiddleware(Middleware):
     def _read_selection(
         self, verified: VerifiedIdentity, client_key: str
     ) -> str | None:
-        """The saved pick, or None after ONE WARNING naming the default workspace the call falls back to."""
-        default = verified.active_workspace_id
+        """The saved pick; None for a 200 with no pick; `HostedSessionReadError` for anything unreadable."""
         response = self._routing_call(
             verified, "GET", params={"client_key": client_key}
         )
         if response is None:
-            return _fallback_warning(default, "read failure, svc-api unreachable")
+            raise HostedSessionReadError("svc-api unreachable")
         if response.status_code != 200:
-            return _fallback_warning(
-                default, f"read failure, status={response.status_code}"
-            )
+            raise HostedSessionReadError(f"svc-api answered {response.status_code}")
         try:
             body = response.json()
         except ValueError:
-            return _fallback_warning(default, "read failure, non-JSON body")
-        workspace_id = body.get("workspace_id") if isinstance(body, dict) else None
+            raise HostedSessionReadError("svc-api answered a non-JSON body") from None
+        if not isinstance(body, dict):
+            raise HostedSessionReadError("svc-api answered an unexpected body")
+        workspace_id = body.get("workspace_id")
         if not workspace_id:
-            # svc-api answers 200 with workspace_id null for BOTH an absent and an expired record
-            # (routing.py:143), so the two cannot be told apart here.
-            return _fallback_warning(default, "no saved pick, or it expired")
+            # 200 with workspace_id null: never picked or cleared (picks never expire), the default workspace is right.
+            logger.debug(
+                "No saved workspace pick for %s; using the default workspace",
+                client_key,
+            )
+            return None
         return str(workspace_id)
 
     def _save_selection(
@@ -257,15 +277,6 @@ class HostedIdentityMiddleware(Middleware):
         raise HostedSessionSelectionError(f"could not save the switch ({reason}).")
 
 
-def _fallback_warning(default: str | None, why: str) -> None:
-    """The one WARNING for every read that yields no pick: the call goes to the token's default workspace."""
-    logger.warning(
-        "Workspace pick unavailable (%s); using the default workspace %s",
-        why,
-        default or "(none)",
-    )
-
-
 def mcp_client_key(context: Any) -> str:
     """`mcp:<clientInfo.name>` from the MCP `initialize` handshake, cut to the contract grammar."""
     try:
@@ -278,6 +289,11 @@ def mcp_client_key(context: Any) -> str:
         name = ""
     name = _CLIENT_NAME_DROP.sub("", str(name or "")).strip()[:64].strip()
     return f"mcp:{name}" if name else SESSION_CLIENT_FALLBACK
+
+
+def _tool_name(context: Any) -> str | None:
+    """The tool a `tools/call` names (`context.message.name`), or None when the message carries none."""
+    return getattr(getattr(context, "message", None), "name", None)
 
 
 def _bound_verified() -> VerifiedIdentity | None:

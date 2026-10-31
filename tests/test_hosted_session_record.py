@@ -1,7 +1,8 @@
 """The hosted workspace pick is a server-side record, not process memory (SM20-WS-ROUTING-PARITY-1, shape B).
 
 `switch_team` writes `PUT /memory/routing/session`; the middleware reads `GET /memory/routing/session` before it
-builds each call's backend and sends the pick as `X-Workspace-Id`. svc-api is a `RoutingSessionStore` behind an
+builds each call's backend and sends the pick as `X-Workspace-Id`. A pick never expires: 200 with `workspace_id` null
+means never picked (default workspace, no WARNING); an unreadable pick refuses the call (`switch_team` excepted). svc-api is a `RoutingSessionStore` behind an
 `httpx.MockTransport`: it outlives middleware instances the way the Mongo record outlives a process.
 """
 
@@ -30,7 +31,7 @@ from .test_hosted_tools_allowlist import fake_svc_api
 
 # One row per scenario. `steps` run in order on a fresh server (instance 1); `restart` then builds a NEW server
 # instance on the same record store and a NEW MCP session id before the final probe. `team` is the workspace the
-# final probe's backend (and so its X-Workspace-Id) carries; `warns` is a WARNING fragment that must be logged.
+# final probe's backend (and so its X-Workspace-Id) carries; `no_warning` asserts nothing at WARNING was logged.
 ROWS: list[dict[str, Any]] = [
     {
         "id": "switch-then-next-call",
@@ -66,48 +67,12 @@ ROWS: list[dict[str, Any]] = [
         "refused": True,
     },
     {
-        "id": "expired-null-warns-and-uses-default",
-        "steps": [],
-        "restart": True,
-        "seed": "team-B",
-        "store": {"expired": (SM_JWT,)},
-        "team": OAUTH_WORKSPACE,
-        "warns": f"no saved pick, or it expired); using the default workspace {OAUTH_WORKSPACE}",
-    },
-    {
-        "id": "absent-warns-and-uses-default",
+        "id": "absent-null-uses-default-without-a-warning",
         "steps": [],
         "restart": True,
         "store": {},
         "team": OAUTH_WORKSPACE,
-        "warns": f"no saved pick, or it expired); using the default workspace {OAUTH_WORKSPACE}",
-    },
-    {
-        "id": "read-503-warns-and-uses-default",
-        "steps": [],
-        "restart": True,
-        "seed": "team-B",
-        "store": {"get_status": 503},
-        "team": OAUTH_WORKSPACE,
-        "warns": f"read failure, status=503); using the default workspace {OAUTH_WORKSPACE}",
-    },
-    {
-        "id": "read-transport-error-warns-and-uses-default",
-        "steps": [],
-        "restart": True,
-        "seed": "team-B",
-        "store": {"get_raises": True},
-        "team": OAUTH_WORKSPACE,
-        "warns": f"read failure, svc-api unreachable); using the default workspace {OAUTH_WORKSPACE}",
-    },
-    {
-        "id": "read-404-warns-and-uses-default",
-        "steps": [],
-        "restart": True,
-        "seed": "team-B",
-        "store": {"get_status": 404},
-        "team": OAUTH_WORKSPACE,
-        "warns": f"read failure, status=404); using the default workspace {OAUTH_WORKSPACE}",
+        "no_warning": True,
     },
 ]
 
@@ -154,8 +119,66 @@ def test_the_pick_lives_in_the_server_record(row: dict[str, Any], caplog) -> Non
     if row.get("refused"):
         assert outcomes[0]["isError"] is True
         assert store.rows == {}
-    if "warns" in row:
-        assert any(row["warns"] in record.getMessage() for record in caplog.records)
+    if row.get("no_warning"):
+        assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+# One row per way the saved pick cannot be read. The call is refused with the error text, and no backend call is made
+# (neither to the default workspace nor anywhere else). `store` is the RoutingSessionStore failure knob.
+READ_FAILURE_ROWS: list[dict[str, Any]] = [
+    {
+        "id": "b-unreachable",
+        "store": {"get_raises": True},
+        "reason": "svc-api unreachable",
+    },
+    {
+        "id": "c-non-200-503",
+        "store": {"get_status": 503},
+        "reason": "svc-api answered 503",
+    },
+    {
+        "id": "c-non-200-404",
+        "store": {"get_status": 404},
+        "reason": "svc-api answered 404",
+    },
+    {
+        "id": "d-non-json-body",
+        "store": {"get_text": "<html>oops</html>"},
+        "reason": "non-JSON body",
+    },
+    {
+        "id": "d-body-not-a-dict",
+        "store": {"get_json": ["team-B"]},
+        "reason": "unexpected body",
+    },
+]
+
+
+@pytest.mark.parametrize(
+    "row", READ_FAILURE_ROWS, ids=[row["id"] for row in READ_FAILURE_ROWS]
+)
+def test_an_unreadable_pick_fails_closed(row: dict[str, Any]) -> None:
+    store = RoutingSessionStore(**row["store"])
+    harness = _Harness(routing=store)
+    store.rows[(SM_JWT, "mcp:test")] = "team-B"
+
+    async def body(client):
+        session = await harness.open_session(client, OAUTH_BEARER)
+        return [
+            await harness.call(client, OAUTH_BEARER, session, tool)
+            for tool in ("probe_call", "probe")
+        ]
+
+    results = anyio.run(_run, harness, body)
+
+    for result in results:
+        assert result["isError"] is True
+        text = _text(result)
+        assert "could not read your saved workspace pick" in text
+        assert row["reason"] in text
+        assert "retry, or run switch_team" in text
+    # no tool body ran, so no call reached svc-api for any workspace (the exchange itself is the only other call)
+    assert "/memory/mem-1" not in harness.exchange_calls
 
 
 def test_the_read_is_bearer_only_and_the_write_names_the_client_key() -> None:
@@ -253,3 +276,39 @@ def test_a_revoked_pick_does_not_block_switch_team(
     else:
         assert team_headers
         assert all("x-workspace-id" not in sent for sent in team_headers)
+
+
+# `switch_team` is the one tool that runs when the pick cannot be read: it writes a new pick.
+SWITCH_EXEMPT_ROWS: list[dict[str, Any]] = [
+    {"id": "e-unreachable", "store": {"get_raises": True}},
+    {"id": "e-503", "store": {"get_status": 503}},
+    {"id": "e-non-json", "store": {"get_text": "not json"}},
+]
+
+
+@pytest.mark.parametrize(
+    "row", SWITCH_EXEMPT_ROWS, ids=[row["id"] for row in SWITCH_EXEMPT_ROWS]
+)
+def test_switch_team_runs_when_the_pick_cannot_be_read(
+    row: dict[str, Any], monkeypatch
+) -> None:
+    harness = _ServerHarness()
+    harness.routing.get_raises = row["store"].get("get_raises", False)
+    harness.routing.get_status = row["store"].get("get_status", 200)
+    harness.routing.get_text = row["store"].get("get_text")
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", fake_svc_api())
+
+    async def body(client):
+        session_id = await harness.session(client)
+        return await harness.call(
+            client, session_id, "switch_team", {"team_id": "team-B"}
+        )
+
+    switched = harness.run(body)
+
+    assert switched.get("isError") is not True, _text(switched)
+    puts = [call for call in harness.routing.calls if call[0] == "PUT"]
+    assert [put[1]["body"]["workspace_id"] for put in puts] == ["team-B"]
+    assert [
+        call for call in harness.routing.calls if call[0] == "GET"
+    ] == []  # the exemption skips the read

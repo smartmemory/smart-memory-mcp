@@ -25,6 +25,7 @@ from ._hosted_fixtures import (
     API_KEY,
     INITIALIZE_BODY,
     LEGACY_KEY,
+    RoutingSessionStore,
     hosted_config,
     mcp_headers,
     memory_store,
@@ -43,7 +44,13 @@ class _Harness:
         self.svc_api_calls: list[str] = []
         self.cache = ExchangeCache()
 
+        # svc-api's saved-pick record (an unreadable pick refuses the call, so the read must be answered).
+        self.routing = RoutingSessionStore()
+
         def handler(request: httpx.Request) -> httpx.Response:
+            routed = self.routing.handle(request)
+            if routed is not None:
+                return routed
             self.svc_api_calls.append(request.url.path)
             if request.url.path == "/auth/me":
                 from ._hosted_fixtures import ME_PAYLOAD
