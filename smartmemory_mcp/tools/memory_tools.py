@@ -16,15 +16,15 @@ from smartmemory_mcp.backends.models import (
 from smartmemory_mcp.tools.search_window import with_search_window
 
 try:
-    from smartmemory.configuration import switches as _switches
     from smartmemory.refusal_logging import (
         mark_refusal_logged,
         refusal_logged,
         refusal_text,
     )
-    from smartmemory.search.visibility_gate import SWITCH as _GATE_SWITCH
-except ImportError:  # remote-only install: no core, so no gate can be ON and no error carries core's logged mark
-    _switches = None
+
+    _HAS_CORE = True
+except ImportError:  # remote-only install: no core, no logged mark
+    _HAS_CORE = False
 
 
 from .common import get_backend, graceful
@@ -33,13 +33,12 @@ from .lexical_contract import validate_channel_weights
 logger = logging.getLogger(__name__)
 
 
-def _gate_on() -> bool:
-    """``sm2_search_visibility_gate`` is ON (U5.21). Always False on a remote-only install, which has no core.
+def _core_marks() -> bool:
+    """Core is importable, so its read gate is bound (always on) and errors carry its refusal mark (U5.21).
 
-    Probed with ``switches.is_on``, so the OFF arm gains no switch WARNING. Every U5.21 behaviour that reads core's
-    refusal mark runs only when this is True: OFF, each legacy WARNING is logged exactly as the base did.
+    False only on a remote-only install, which has no core: there each failure is logged here as before.
     """
-    return _switches is not None and _switches.is_on(_GATE_SWITCH)
+    return _HAS_CORE
 
 
 _CREATED_AT_MAX_LEN = 40
@@ -1157,10 +1156,9 @@ def register_pro(mcp):
                 metadata_value=metadata_value,
             )
         except Exception as exc:
-            # U5.21 (C1): gate ON, a core refusal is logged once, by the site that raised it (its mark on the
-            # exception), and the text is rendered bounded. OFF, every failure is logged here exactly as the base
-            # did, mark or no mark.
-            gate_on = _gate_on()
+            # U5.21 (C1): a core refusal is logged once, by the site that raised it (its mark on the exception),
+            # and the text is rendered bounded. Without core (remote-only) every failure is logged here.
+            gate_on = _core_marks()
             if gate_on and refusal_logged(exc):
                 raise
             logger.warning(

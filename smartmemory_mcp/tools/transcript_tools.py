@@ -357,23 +357,20 @@ def register(mcp):
         found = memory.search(query, top_k=fetch, origin=origin)
         # U5.21 (C8): read core's coverage from the call's own result BEFORE `or []` replaces an empty
         # SearchResults with a plain list that carries no diagnostics.
-        from smartmemory.configuration import switches
         from smartmemory.search.visibility_gate import (
-            SWITCH,
             gated_fetch_bound,
             gated_partial_coverage,
         )
 
         partial = gated_partial_coverage(found, where="transcript search")
-        # U5.21 (C4): gate ON, a hit past the fetch was never asked for, so it is neither filtered nor shown.
+        # U5.21 (C4): a hit past the fetch was never asked for, so it is neither filtered nor shown.
         results = gated_fetch_bound(found, fetch, where="transcript search") or []
 
         note = ""
         if project:
             # U5.21 (C3/C8): a full fetch is a stop at the bound, decided from the rows fetched BEFORE this filter: the
-            # filter may leave an empty or short answer, and sessions ranked past the fetch were not examined. Gate
-            # OFF keeps the legacy note exactly.
-            bounded = fetch > 0 and len(results) >= fetch and switches.is_on(SWITCH)
+            # filter may leave an empty or short answer, and sessions ranked past the fetch were not examined.
+            bounded = fetch > 0 and len(results) >= fetch
             root = str(Path(project).expanduser().resolve())
             kept, unknown = [], 0
             for item in results:

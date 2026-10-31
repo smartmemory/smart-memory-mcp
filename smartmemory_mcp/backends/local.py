@@ -709,10 +709,8 @@ class LocalBackend(BackendCapabilities):
 
         `smartmemory.SmartMemory` has no `list_memories` — this delegation
         raised AttributeError on every local-mode call (verified 2026-08-02).
-        There is no core listing API to wire to: `get_all_items_debug()` returns
-        `{total_items, items_by_type, sample_items}`, i.e. a stats summary with
-        SAMPLE items, not a complete page. Listing is therefore served from the
-        same scan `search_by_metadata` uses, and paginated locally.
+        Listing is served from a frozen walk over core's always-on read gate
+        (``_list_frozen``), paginated locally.
         """
         mkey, mval = kwargs.get("metadata_key"), kwargs.get("metadata_value")
         if (mkey is None) != (mval is None):
@@ -721,46 +719,9 @@ class LocalBackend(BackendCapabilities):
                 f"metadata_key and metadata_value must be supplied together; {missing} is missing."
             )
 
-        from smartmemory.configuration import switches
-        from smartmemory.search.visibility_gate import SWITCH as _GATE_SWITCH
+        return self._list_frozen(limit, offset, mkey, mval)
 
-        if switches.is_on(_GATE_SWITCH):
-            return self._list_frozen(limit, offset, mkey, mval)
-
-        window = max((limit + offset) * 10, 200)
-        hits = self._mem.search("*", top_k=window)
-        from smartmemory.search.results import carry_partial
-        from smartmemory.search.visibility_gate import (
-            FETCH_BOUND_REASON,
-            SWITCH,
-            gated_fetch_bound,
-            gated_partial_coverage,
-        )
-
-        partial = gated_partial_coverage(hits, where="list_memories")
-        # U5.21 (C4): gate ON, a row past the window was never asked for, so it is not paged.
-        hits = gated_fetch_bound(hits, window, where="list_memories")
-        items = [normalize_item(raw) for raw in hits or []]
-        if mkey is not None:
-            items = [
-                i
-                for i in items
-                if _metadata_matches(i.get("metadata") or {}, mkey, mval)
-            ]
-        if len(hits or []) >= window:
-            log.warning(
-                "list_memories scanned the local cap (%d items); results beyond that window "
-                "are not represented in this page or its offset.",
-                window,
-            )
-            if switches.is_on(SWITCH):
-                # C3/C8: a full window is a stop at the bound, not the end of the corpus: the page says it is partial.
-                partial = (*partial, FETCH_BOUND_REASON)
-        # U5.21 (C8): the page is still a plain list to every caller; a partial answer's reasons ride on it so an
-        # empty page is not read as "no more memories".
-        return carry_partial(items[offset : offset + limit], partial)
-
-    # LOCAL-FROZEN-PAGE-1 (R11(d)): gate ON, a list walk is frozen by core's ``read_gated_roots_page``. ``memory_list``
+    # LOCAL-FROZEN-PAGE-1 (R11(d)): a list walk is frozen by core's ``read_gated_roots_page``. ``memory_list``
     # keeps its ``limit``/``offset`` contract (no cursor reaches a client), so the backend remembers, per filter, the
     # cursor that continues each page it served: ``offset`` N resumes the walk whose last page ended at N.
     _WALK_FILTERS_KEPT = 8
@@ -769,7 +730,7 @@ class LocalBackend(BackendCapabilities):
     def _list_frozen(
         self, limit: int, offset: int, mkey: str | None, mval: Any
     ) -> list[MemoryResult]:
-        """One page of the gate-ON list from a frozen walk: membership and ``total`` are fixed at the walk's first page."""
+        """One page of the list from a frozen walk: membership and ``total`` are fixed at the walk's first page."""
         from collections import OrderedDict
 
         from smartmemory.refusal_logging import mark_refusal_logged

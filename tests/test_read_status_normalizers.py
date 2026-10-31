@@ -1,8 +1,7 @@
 """U5.22 local MCP normalizers carry the merged-read extraction status. # trace G:G43,G46,G114,G136,G142
 
-The carrier (`read_status`) exists only on the visibility-gate-ON arm. Every
-normalizer must keep it when present and add nothing when absent, so the legacy
-arm's output is unchanged.
+The carrier (`read_status`) rides the always-on read gate. Every
+normalizer must keep it when present and add nothing when absent.
 """
 
 import logging
@@ -216,7 +215,6 @@ def test_working_context_items_keep_carrier(model_facing):
 
 # -- LocalBackend caller sites over a real lite memory (get / search / list_memories) --
 
-from smartmemory.configuration.switch_testing import switch_override  # noqa: E402
 from smartmemory.save.read_port import (  # noqa: E402
     AdmissionRow,
     InMemoryPendingStore,
@@ -224,7 +222,6 @@ from smartmemory.save.read_port import (  # noqa: E402
     ScopeKeys,
     source_sha256,
 )
-from smartmemory.search.visibility_gate import SWITCH  # noqa: E402
 from smartmemory.tools.factory import create_lite_memory  # noqa: E402
 
 SCOPE = ScopeKeys(None, "local", None)
@@ -257,44 +254,35 @@ def local_backend(tmp_path, monkeypatch):
             },
             memory_type="semantic",
         )
-        with switch_override(SWITCH, True):
-            mem.bind_pending_reads(store, workspace_hidden=False)
+        mem.bind_pending_reads(store, workspace_hidden=False)
         monkeypatch.setattr(storage, "get_memory", lambda *a, **k: mem)
         yield LocalBackend()
     finally:
         mem.close()
 
 
-@pytest.mark.parametrize("on", [False, True])
-def test_local_backend_get_search_list_follow_the_gate(local_backend, on):
-    with switch_override(SWITCH, on):
-        found = {
-            r["item_id"]: r
-            for r in local_backend.search(
-                "atlas budget", top_k=10, reranker="none", enable_hybrid=False
-            )
-        }
-        listed = {
-            r["item_id"]: r for r in local_backend.list_memories(limit=20, offset=0)
-        }
-        legacy = local_backend.get("test_legacy")
-        pending = local_backend.get("test_pending")
-    assert ("test_pending" in found) is on
-    # LOCAL-FROZEN-PAGE-1: gate ON, the list is core's frozen roots walk, which reads graph roots only. A row still
-    # pending in the intake store is not a root yet, so it is not listed until it lands (merged pending pagination is
-    # U5.8, ``direct_lists`` docstring); search and get still carry it.
-    assert "test_pending" not in listed
-    assert ("read_status" in legacy) is on
-    assert (pending is not None) is on
-    if on:
-        assert (
-            found["test_pending"]["read_status"]["extraction_state"]
-            == "extraction_pending"
+def test_local_backend_get_search_list_carry_the_gate_status(local_backend):
+    found = {
+        r["item_id"]: r
+        for r in local_backend.search(
+            "atlas budget", top_k=10, reranker="none", enable_hybrid=False
         )
-        assert listed["test_legacy"]["read_status"]["extraction_state"] == "unavailable"
-        assert pending["read_status"]["extraction_state"] == "extraction_pending"
-    else:
-        assert all("read_status" not in r for r in (*found.values(), *listed.values()))
+    }
+    listed = {r["item_id"]: r for r in local_backend.list_memories(limit=20, offset=0)}
+    legacy = local_backend.get("test_legacy")
+    pending = local_backend.get("test_pending")
+    assert "test_pending" in found
+    # LOCAL-FROZEN-PAGE-1: the list is core's frozen roots walk, which reads graph roots only. A row still pending in
+    # the intake store is not a root yet, so it is not listed until it lands (merged pending pagination is U5.8,
+    # ``direct_lists`` docstring); search and get still carry it.
+    assert "test_pending" not in listed
+    assert "read_status" in legacy
+    assert pending is not None
+    assert (
+        found["test_pending"]["read_status"]["extraction_state"] == "extraction_pending"
+    )
+    assert listed["test_legacy"]["read_status"]["extraction_state"] == "unavailable"
+    assert pending["read_status"]["extraction_state"] == "extraction_pending"
 
 
 # F5 through LocalBackend: an unreadable carrier out of the real lite memory is refused on every read path (get and
@@ -339,7 +327,7 @@ def test_local_backend_refuses_an_unreadable_core_carrier(
 
     monkeypatch.setattr(mem, method, stamped)
     caplog.clear()
-    with switch_override(SWITCH, True), caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.WARNING):
         with pytest.raises(ValueError) as err:
             call(local_backend)
     assert type(err.value).__name__ == "MalformedReadStatusError"
