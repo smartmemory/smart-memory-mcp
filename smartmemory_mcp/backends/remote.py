@@ -464,7 +464,7 @@ class RemoteBackend(BackendCapabilities):
         destination = Path(archive_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         if workspace_id is LIVE_PICK:
-            headers = self._headers()
+            headers = self._headers(workspace_id=self.active_workspace_id)
         else:
             headers = self._headers(workspace_id or None)
             if not workspace_id:

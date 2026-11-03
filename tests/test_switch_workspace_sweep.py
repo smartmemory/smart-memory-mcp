@@ -1,7 +1,9 @@
 """MCP-SWITCH-WORKSPACE-NAMING-SWEEP-1 items 5 and 8, one row table.
 
-Item 5: a Team id is not a workspace id. The switch (hosted and stdio) and the hosted
-`list_workspaces` read only `GET /memory/workspaces`; the fakes here also serve the
+Item 5: a Team id is not a workspace id. On 2.0 only the stdio rows run (FWD-MERGE-4): the
+hosted switch still lists Teams, because the hosted workspace listing and `list_workspaces` came
+with WS-ROUTING-5, which owner shape B keeps off 2.0 (MCP-2.0-SWITCH-WORKSPACE-NAMING-TWIN-1).
+The stdio switch reads only `GET /memory/workspaces`; the fakes here also serve the
 caller's Teams (`GET /memory/teams`) with a Team that is no workspace (`team-ops`) and
 omit an independent workspace shared to the caller (`ws-shared`), so a listing that
 reads Teams again (the pre-WS-ROUTING-5 `_list_team_rows`) fails rows here.
@@ -21,11 +23,10 @@ from typing import Any
 import httpx
 import pytest
 
-from smartmemory_mcp.backends.local import LocalBackend
+from smartmemory_mcp.backends.local import LocalBackend, SaveReturn
 from smartmemory_mcp.tools import portability_tools
 
 from ._tools import tool_fn
-from .test_hosted_tools_allowlist import _Harness, _text, fake_svc_api
 from .test_switch_workspace import (  # noqa: F401  (_isolate is an autouse fixture)
     API,
     FakeService,
@@ -40,11 +41,6 @@ TEAMS = [
     {"team_id": "team-personal", "name": "Personal"},
     {"team_id": "team-ops", "name": "Ops"},
 ]
-# The caller's workspaces: `ws-shared` is shared to the caller and no Team of theirs.
-HOSTED_WORKSPACES = [
-    {"workspace_id": "team-personal", "name": "Personal"},
-    {"workspace_id": "ws-shared", "name": "Shared"},
-]
 
 
 def _teams_response(method: str, url: str) -> httpx.Response | None:
@@ -55,20 +51,6 @@ def _teams_response(method: str, url: str) -> httpx.Response | None:
     return None
 
 
-def _svc_with_teams():
-    base = fake_svc_api()
-
-    def handler(method: str, url: str, **kwargs: Any) -> httpx.Response:
-        if (teams := _teams_response(method, url)) is not None:
-            return teams
-        if httpx.URL(url).path == "/memory/workspaces":
-            body = {"workspaces": HOSTED_WORKSPACES}
-            return httpx.Response(200, json=body, request=httpx.Request(method, url))
-        return base(method, url, **kwargs)
-
-    return handler
-
-
 class _StdioServiceWithTeams(FakeService):
     def __call__(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         if (teams := _teams_response(method, url)) is not None:
@@ -77,26 +59,6 @@ class _StdioServiceWithTeams(FakeService):
 
 
 # --- runners: each returns (reply, where the next request went, WARNING lines) ------
-
-
-def _hosted(monkeypatch, caplog, _tmp_path, arg: str):
-    harness = _Harness()
-    harness.routing.install(monkeypatch, _svc_with_teams())
-
-    async def body(client):
-        session_id = await harness.session(client)
-        if arg == "<list>":
-            return await harness.call(client, session_id, "list_workspaces")
-        result = await harness.call(
-            client, session_id, "switch_workspace", {"workspace": arg}
-        )
-        harness.routing.resolved.clear()
-        await harness.call(client, session_id, "memory_search", {"query": "q"})
-        return result
-
-    reply = _text(harness.run(body))
-    lands = harness.routing.resolved[0][2] if harness.routing.resolved else None
-    return reply, lands, _warnings(caplog)
 
 
 def _stdio(monkeypatch, caplog, _tmp_path, arg: str):
@@ -113,7 +75,6 @@ def _stdio(monkeypatch, caplog, _tmp_path, arg: str):
 MIGRATES = {
     "pick-then-round-trip": ("Beta", None, ["local", "remote"]),
     "switch-during-export-then-local": ("Beta", "Alpha", ["local"]),
-    "switch-during-export-no-pick-then-local": (None, "Alpha", ["local"]),
     "switch-during-export-then-round-trip": ("Beta", "Alpha", ["local", "remote"]),
     # The switch commits before the export builds its headers (M1): the export must still read ws-b.
     "switch-before-export-headers-then-local": ("Beta", "Alpha", ["local"]),
@@ -137,7 +98,12 @@ def _migrate(monkeypatch, caplog, tmp_path, arg: str):
         sys.modules, "smartmemory_app", types.ModuleType("smartmemory_app")
     )
     monkeypatch.setitem(sys.modules, "smartmemory_app.config", config_module)
-    monkeypatch.setattr(LocalBackend, "add", lambda self, content, **kw: "m-1")
+    # 2.0: memory_save's free-text path on Lite is `ingest_with_receipt` (U4.42-FU-TOOLS retired memory_add).
+    monkeypatch.setattr(
+        LocalBackend,
+        "ingest_with_receipt",
+        lambda self, content, **kw: SaveReturn("m-1"),
+    )
 
     service = FakeService()
     _remote(monkeypatch, service)
@@ -189,77 +155,29 @@ def _migrate(monkeypatch, caplog, tmp_path, arg: str):
     if "headers" in arg:
         assert exported_from == ["ws-b"], exported_from
     mark = len(service.seen)
-    tool_fn("memory_add")(content="after the migrate")
+    tool_fn("memory_save")(content="after the migrate")
     headers = service.headers_after(mark)
     return reply, (headers[0] if headers else "local"), _warnings(caplog)
 
 
-RUNNERS = {"hosted": _hosted, "stdio": _stdio, "migrate": _migrate}
+RUNNERS = {"stdio": _stdio, "migrate": _migrate}
 
 # runner, argument, reply contains, reply lacks, where the next request goes (hosted: the workspace svc-api routed
 # it to; stdio/migrate: its X-Workspace-Id, None = no pick header, "local" = the write went to Lite), a WARNING
 # line contains ("" = no WARNING check).
 ROWS = [
-    # item 5, hosted: a workspace shared to the caller is selectable by id and name
-    (
-        "hosted",
-        "ws-shared",
-        ("Switched to workspace: Shared (ws-shared)",),
-        (),
-        "ws-shared",
-        "",
-    ),
-    (
-        "hosted",
-        "shared",
-        ("Switched to workspace: Shared (ws-shared)",),
-        (),
-        "ws-shared",
-        "",
-    ),
-    # item 5, hosted: a Team id (or Team name) is never accepted as a workspace
-    (
-        "hosted",
-        "team-ops",
-        ("Workspace not switched", "You are not a member of workspace 'team-ops'"),
-        ("Switched",),
-        "team-personal",
-        "Workspace switch refused",
-    ),
-    (
-        "hosted",
-        "Ops",
-        ("Workspace not switched",),
-        ("Switched",),
-        "team-personal",
-        "Workspace switch refused",
-    ),
-    # item 5, hosted: a non-member workspace is refused
-    (
-        "hosted",
-        "ws-nobody",
-        ("Workspace not switched",),
-        ("Switched",),
-        "team-personal",
-        "Workspace switch refused",
-    ),
-    # item 5, hosted: the listing offers workspaces only
-    (
-        "hosted",
-        "<list>",
-        ("Shared (ws-shared)", "Personal (team-personal)"),
-        ("team-ops", "Ops"),
-        None,
-        "",
-    ),
+    # item 5, hosted rows NOT on 2.0 (FWD-MERGE-4): 2.0's hosted switch lists Teams (`hosted/server.py`
+    # `_list_team_rows`); the workspace-only listing and `list_workspaces` came with WS-ROUTING-5 (fcf61ad), which owner
+    # shape B keeps off 2.0. MCP-2.0-SWITCH-WORKSPACE-NAMING-TWIN-1 ports them back (main d54734b, rows hosted-*).
     # item 5, stdio: the same split
     ("stdio", "Beta", ("Switched to workspace: Beta (ws-b)",), (), "ws-b", ""),
+    # 2.0 has no WS-ROUTING-5 header rule: after a refused switch the next request still names the account default.
     (
         "stdio",
         "team-ops",
         ("Workspace not switched",),
         ("Switched",),
-        None,
+        "ws-a",
         "Workspace switch refused",
     ),
     # item 8: a switch, then a successful round trip, comes back to the switched workspace
@@ -283,17 +201,8 @@ ROWS = [
         "local",
         "switch_workspace during the export was not kept",
     ),
-    (
-        "migrate",
-        "switch-during-export-no-pick-then-local",
-        (
-            "Workspace is now default (local mode).",
-            "Your switch to ws-a during the export was not kept",
-        ),
-        (),
-        "local",
-        "switch_workspace during the export was not kept",
-    ),
+    # "switch-during-export-no-pick-then-local" is NOT on 2.0 (FWD-MERGE-4): without WS-ROUTING-5's header rule a
+    # remote session always carries a workspace, so a "no pick" park cannot occur.
     # item 8: the round trip returns the data to where it came from (ws-b), which the move to local named
     (
         "migrate",

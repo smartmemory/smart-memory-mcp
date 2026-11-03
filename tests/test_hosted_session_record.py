@@ -2,7 +2,7 @@
 
 `switch_team` writes `PUT /memory/routing/session`; the middleware reads `GET /memory/routing/session` before it
 builds each call's backend and sends the pick as `X-Workspace-Id`. A pick never expires: 200 with `workspace_id` null
-means never picked (default workspace, no WARNING); an unreadable pick refuses the call (`switch_team` excepted). svc-api is a `RoutingSessionStore` behind an
+means never picked (default workspace, no WARNING); an unreadable pick refuses the call (`switch_workspace` and its alias `switch_team` excepted). svc-api is a `RoutingSessionStore` behind an
 `httpx.MockTransport`: it outlives middleware instances the way the Mongo record outlives a process.
 """
 
@@ -176,7 +176,7 @@ def test_an_unreadable_pick_fails_closed(row: dict[str, Any]) -> None:
         text = _text(result)
         assert "could not read your saved workspace pick" in text
         assert row["reason"] in text
-        assert "retry, or run switch_team" in text
+        assert "retry, or run switch_workspace" in text
     # no tool body ran, so no call reached svc-api for any workspace (the exchange itself is the only other call)
     assert "/memory/mem-1" not in harness.exchange_calls
 
@@ -239,14 +239,20 @@ def test_a_refused_switch_is_surfaced_by_the_hosted_tool_and_changes_nothing(
 # A caller removed from workspace REV whose saved pick still names it (the routing record outlives the membership).
 # `check` picks the assertion: the switch to a still-member workspace succeeds and saves the new pick (d), and the
 # listing that switch_team preflights carries no stale X-Workspace-Id (e).
+# Both switch names run each row (FWD-MERGE-4: switch_workspace is the tool, switch_team its deprecated alias).
+SWITCH_CALLS = [("switch_workspace", "workspace"), ("switch_team", "team_id")]
 REVOKED_ROWS: list[dict[str, str]] = [
-    {"id": "d-switch-away-from-revoked-pick-succeeds", "check": "switched"},
-    {"id": "e-team-listing-omits-the-stale-header", "check": "no-stale-header"},
+    {"id": f"{case}-{tool}", "check": check, "tool": tool, "param": param}
+    for case, check in (
+        ("d-switch-away-from-revoked-pick-succeeds", "switched"),
+        ("e-team-listing-omits-the-stale-header", "no-stale-header"),
+    )
+    for tool, param in SWITCH_CALLS
 ]
 
 
 @pytest.mark.parametrize("row", REVOKED_ROWS, ids=[row["id"] for row in REVOKED_ROWS])
-def test_a_revoked_pick_does_not_block_switch_team(
+def test_a_revoked_pick_does_not_block_the_switch_tools(
     row: dict[str, str], monkeypatch
 ) -> None:
     harness = _ServerHarness()
@@ -260,7 +266,7 @@ def test_a_revoked_pick_does_not_block_switch_team(
     async def body(client):
         session_id = await harness.session(client)
         switched = await harness.call(
-            client, session_id, "switch_team", {"team_id": "team-B"}
+            client, session_id, row["tool"], {row["param"]: "team-B"}
         )
         who = await harness.call(client, session_id, "whoami")
         return switched, who
@@ -278,18 +284,22 @@ def test_a_revoked_pick_does_not_block_switch_team(
         assert all("x-workspace-id" not in sent for sent in team_headers)
 
 
-# `switch_team` is the one tool that runs when the pick cannot be read: it writes a new pick.
+# The switch tools are the ones that run when the pick cannot be read: they write a new pick.
 SWITCH_EXEMPT_ROWS: list[dict[str, Any]] = [
-    {"id": "e-unreachable", "store": {"get_raises": True}},
-    {"id": "e-503", "store": {"get_status": 503}},
-    {"id": "e-non-json", "store": {"get_text": "not json"}},
+    {"id": f"{case}-{tool}", "store": store, "tool": tool, "param": param}
+    for case, store in (
+        ("e-unreachable", {"get_raises": True}),
+        ("e-503", {"get_status": 503}),
+        ("e-non-json", {"get_text": "not json"}),
+    )
+    for tool, param in SWITCH_CALLS
 ]
 
 
 @pytest.mark.parametrize(
     "row", SWITCH_EXEMPT_ROWS, ids=[row["id"] for row in SWITCH_EXEMPT_ROWS]
 )
-def test_switch_team_runs_when_the_pick_cannot_be_read(
+def test_the_switch_tools_run_when_the_pick_cannot_be_read(
     row: dict[str, Any], monkeypatch
 ) -> None:
     harness = _ServerHarness()
@@ -301,7 +311,7 @@ def test_switch_team_runs_when_the_pick_cannot_be_read(
     async def body(client):
         session_id = await harness.session(client)
         return await harness.call(
-            client, session_id, "switch_team", {"team_id": "team-B"}
+            client, session_id, row["tool"], {row["param"]: "team-B"}
         )
 
     switched = harness.run(body)

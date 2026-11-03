@@ -21,7 +21,7 @@ import pytest
 
 from smartmemory_mcp import workspace_select
 from smartmemory_mcp.backends import dispatch
-from smartmemory_mcp.backends.local import LocalBackend
+from smartmemory_mcp.backends.local import LocalBackend, SaveReturn
 from smartmemory_mcp.backends.remote import RemoteBackend
 from smartmemory_mcp.hosted import identity as hosted_identity
 from smartmemory_mcp.tier import Tier
@@ -350,7 +350,7 @@ def test_save_as_default_writes_the_config_only_when_asked(monkeypatch) -> None:
 # One row per `memory_migrate` rebuild site. Remote rows start on the configured
 # default ws-a and switch live (unsaved) to Beta (ws-b); local rows start in Lite.
 # Each step is (target, import outcome). After the steps: the last message, where
-# every import landed, and the X-Workspace-Id of the next `memory_add` ([] = no
+# every import landed, and the X-Workspace-Id of the next `memory_save` ([] = no
 # remote request, the write went to Lite).
 REBUILD_ROWS = [
     pytest.param(
@@ -518,10 +518,11 @@ def test_a_backend_rebuild_after_a_live_switch_never_drops_it_silently(
     )
     monkeypatch.setitem(sys.modules, "smartmemory_app.config", config_module)
     local_writes: list[str] = []
+    # 2.0: memory_save's free-text path on Lite is `ingest_with_receipt` (U4.42-FU-TOOLS retired memory_add).
     monkeypatch.setattr(
         LocalBackend,
-        "add",
-        lambda self, content, **kw: local_writes.append(content) or "m-1",
+        "ingest_with_receipt",
+        lambda self, content, **kw: local_writes.append(content) or SaveReturn("m-1"),
     )
 
     service = FakeService()
@@ -619,7 +620,7 @@ def test_a_backend_rebuild_after_a_live_switch_never_drops_it_silently(
         assert expected in message, message
     assert landed == imported_into
     mark = len(service.seen)
-    tool_fn("memory_add")(content="note meant for Beta")
+    tool_fn("memory_save")(content="note meant for Beta")
     assert service.headers_after(mark) == next_header
     assert local_writes == ([] if next_header else ["note meant for Beta"])
     dropped = [
@@ -741,7 +742,7 @@ def test_a_parallel_call_waits_for_the_rebuild_instead_of_building_the_default(
             mark = len(service.seen)
 
             def write() -> None:
-                tool_fn("memory_add")(content="parallel")
+                tool_fn("memory_save")(content="parallel")
                 parallel.extend(service.headers_after(mark))
 
             state["thread"] = threading.Thread(target=write)
@@ -760,7 +761,7 @@ def test_a_parallel_call_waits_for_the_rebuild_instead_of_building_the_default(
 
 
 # MCP-WORKSPACE-ENV-PRECEDENCE-1: the startup precedence on both install shapes, through
-# the real `dispatch.build_backend` and a real `memory_add`. "bare" has no smartmemory
+# the real `dispatch.build_backend` and a real `memory_save`. "bare" has no smartmemory
 # package; "wrapper" uses the real `smartmemory_app.config` (every `pip install
 # smartmemory`) with a config home under tmp_path. Columns: shape, SMARTMEMORY_WORKSPACE_ID,
 # SMARTMEMORY_TEAM_ID, the config file's saved team_id -> the X-Workspace-Id the first
@@ -841,7 +842,7 @@ def test_the_workspace_env_precedence_table(
         backend = dispatch.build_backend(dispatch.MODE_REMOTE)
         monkeypatch.setattr(dispatch, "_backend", backend)
         monkeypatch.setattr(common, "_backend", backend)
-        tool_fn("memory_add")(content="x")
+        tool_fn("memory_save")(content="x")
 
     assert service.headers_after(0) == [expected]
     differ = [m for m in _warnings(caplog) if "differ" in m]
@@ -1044,8 +1045,10 @@ def test_whoami_names_tenant_and_workspace(monkeypatch, run, expected) -> None:
 
 def test_login_reports_the_workspace(monkeypatch) -> None:
     monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.get", _auth_me)
-    text = RemoteBackend(api_url=API, api_key="").login("sk_test")
-    assert text == "Logged in as dev@test.com, workspace: ws-a"
+    # 2.0: login returns a typed LoginResult (MCP-2.0-LOGIN-KEY-PERSIST-1); main returned the bare message.
+    result = RemoteBackend(api_url=API, api_key="").login("sk_test")
+    assert result.ok is True
+    assert result.message == "Logged in as dev@test.com, workspace: ws-a"
 
 
 # --- 5. the listing: no tenant selector, "team" only on the alias -------------------
@@ -1129,7 +1132,8 @@ def _property_names(schema: Any) -> set[str]:
 
 @pytest.mark.parametrize(
     ("server", "listing", "count"),
-    [("stdio", _stdio_listing, 100), ("hosted", _hosted_listing, 28)],
+    # 2.0 counts (measured, FWD-MERGE-4): PRO+ 97 and hosted 26, after U4.42-FU-TOOLS replaced the ingest tools.
+    [("stdio", _stdio_listing, 97), ("hosted", _hosted_listing, 26)],
 )
 def test_the_listing_has_no_tenant_selector_and_team_only_on_the_alias(
     server, listing, count
