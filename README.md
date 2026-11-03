@@ -14,8 +14,18 @@ MCP server exposing SmartMemory operations to MCP-compatible clients (Claude Des
 
 ## Quick start
 
+Use the hosted server. Nothing to install:
+
 ```bash
-pip install -e .
+claude mcp add --transport http smartmemory https://mcp.smartmemory.ai/mcp
+```
+
+The first tool call opens a browser for consent. Other clients (Claude.ai, Grok, xAI API) are under [Client configuration](#client-configuration).
+
+Run it yourself instead (pip install, stdio):
+
+```bash
+pip install smartmemory-mcp   # or, from a checkout: pip install -e .
 
 # Run the server
 smartmemory-mcp        # or python -m smartmemory_mcp
@@ -26,6 +36,32 @@ Tests:
 ```bash
 pytest tests/ -v
 ```
+
+## Backend: REST by default, in-process only on opt-in
+
+The stdio and `--http` servers talk to a SmartMemory service over REST
+(`SMARTMEMORY_API_URL`, `SMARTMEMORY_API_KEY`, `SMARTMEMORY_WORKSPACE_ID`; the older
+`SMARTMEMORY_TEAM_ID` still works). A new session starts on the first of these that
+is set: `SMARTMEMORY_WORKSPACE_ID`, then `SMARTMEMORY_TEAM_ID`, then the workspace
+saved in the smartmemory config (`switch_workspace(..., save_as_default=True)`), then
+your account's default workspace. The order is the same with or without the
+`smartmemory` package installed, and one WARNING names both variables when they are
+set to different workspaces. A live `switch_workspace` overrides all of them for the
+rest of the session. Having the
+`smartmemory` package importable does **not** switch them to an in-process store
+any more (MCP-PERF-1): that loaded the embedding model, spaCy and the reranker into
+every MCP process, 1.6-4 GB per Claude Code session.
+
+| `SMARTMEMORY_MCP_MODE` | Backend |
+|------|---------|
+| unset or `remote` | REST. A service that does not answer is logged once at WARNING with its URL, and tools return a clear error; nothing falls back to an in-process store. |
+| `local` | In-process store (`pip install smartmemory`), models load on first use. Also warms the transcript-search models at boot. |
+| `hosted` | the multi-tenant server below |
+| anything else | one WARNING, then REST |
+
+The `smartmemory` CLI config's `mode = "local"` is not an opt-in for the MCP; it is
+logged once. The transcript tools (`transcript_search` and friends) read a local
+store, so they still open it in-process on first use, with a WARNING.
 
 ## Hosted mode
 
@@ -101,7 +137,7 @@ Code indexing reports clean, partial and failed file counts plus acceptance, sta
 
 Local `code_effects(directory, repo_name=None)` scans Python effects through the shared engine without opening a memory store. Hosted `code_effects(repo, source_snapshot, limit=20, offset=0)` reads uploaded `fa_snapshot` records in the selected workspace. It accepts no filesystem path. Upload the engine's `snapshot_record` payload through existing declared-record ingestion first. Repository rules belong in the scanned checkout's `.smartmemory-effects.json`.
 
-Hosted mode advertises 25 tools, an explicit allowlist rather than a tier:
+Hosted mode advertises 26 tools, an explicit allowlist rather than a tier:
 
 `memory_save` `memory_search` `memory_recall` `read_around` `memory_get`
 `memory_explain` `memory_recall_pack` `memory_policy_bundle`
@@ -109,7 +145,10 @@ Hosted mode advertises 25 tools, an explicit allowlist rather than a tier:
 `memory_save_conversation` `memory_search_by_metadata` `memory_feedback`
 `code_search` `code_dead_code` `code_dependencies` `code_upload` `code_effects`
 `agent_set_recall_profile` `agent_get_recall_profile` `reasoning_query_traces`
-`whoami` `switch_team`
+`whoami` `switch_workspace`
+
+Deprecated: `switch_team` (an alias of `switch_workspace`, removed in the next
+release).
 
 Everything else is hidden, and hidden is the default, so a tool added to a
 shared module does not appear here until it is added to the allowlist. Three
@@ -131,8 +170,14 @@ quietly ignoring the request:
   alternative recall path builds a working context through the core activation
   scorer.
 
-`switch_team` changes the workspace for the current session only. It validates
-membership against the API and never leaks into another user's calls.
+`switch_workspace(workspace)` changes the workspace by id or name, with no
+restart. The pick is saved server-side for you and this MCP client, so it
+survives a reconnect and a server restart (SM20-WS-ROUTING-PARITY-1). It
+validates membership against the API and never leaks into another user's calls. A refused switch names the workspace
+still in use. Listing your workspaces needs an API key with the `read:teams`
+scope (a key with only `read:memories` is told so and keeps its workspace).
+`whoami` shows the user, tenant and workspace. The tenant comes from
+your credential and is never a tool argument.
 
 ### Client configuration
 
@@ -184,4 +229,4 @@ Quiesce old writers before first-open indexing. Verify the engine capability pin
 
 ### Company project alongside local memory
 
-Keep your existing local `smartmemory` connection. Add `claude mcp add --transport http smartmemory-company https://mcp.smartmemory.ai/mcp` and authenticate with your own company-org login. Check `whoami` for the expected tenant, use `switch_team` with the project's paired Workspace ID, then check again. Recheck after reconnect because selection is session-scoped. The owner and Kyle authenticate separately. No local-memory upload or local backend switch is needed. Hosted Team responses use `team_id`. Independent Workspace selection is outside this change. Live OAuth and two-user access acceptance remain required.
+Keep your existing local `smartmemory` connection. Add `claude mcp add --transport http smartmemory-company https://mcp.smartmemory.ai/mcp` and authenticate with your own company-org login. Check `whoami` for the expected tenant, use `switch_workspace` with the project's paired Workspace ID, then check again. Recheck after reconnect because selection is session-scoped. The owner and Kyle authenticate separately. No local-memory upload or local backend switch is needed. Hosted Team responses use `team_id`. Independent Workspace selection is outside this change. Live OAuth and two-user access acceptance remain required.

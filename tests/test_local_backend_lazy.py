@@ -47,12 +47,13 @@ def test_constructor_and_capabilities_do_not_import_storage(monkeypatch):
     )
     assert not any(backend.supports(method) for method in broken)
     assert not backend.supports("request")
-    assert backend.whoami() == "Local mode — single user."
+    assert backend.whoami().startswith("Local mode — single user.\nTenant: none")
     assert backend._memory is None
 
 
 @pytest.mark.parametrize("hide_peer", [False, True])
 def test_pro_tools_list_does_not_call_storage_get_memory(monkeypatch, hide_peer):
+    monkeypatch.setenv("SMARTMEMORY_MCP_MODE", "local")  # in-process opt-in
     import smartmemory_mcp.server as server
 
     storage = ModuleType("smartmemory_app.storage")

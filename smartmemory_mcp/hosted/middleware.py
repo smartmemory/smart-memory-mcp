@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -19,6 +20,7 @@ import httpx
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
+from mcp.types import TextContent
 
 from .backend import HostedNdaRequiredError
 from .config import HostedConfig
@@ -44,9 +46,18 @@ API_KEY_NO_EXPIRY = datetime(9999, 12, 31, tzinfo=timezone.utc)
 SESSION_CLIENT_FALLBACK = "mcp:hosted"
 _CLIENT_NAME_DROP = re.compile(r"[^A-Za-z0-9 _.\-]")
 ROUTING_SESSION_PATH = "/memory/routing/session"
-# The ONE tool that runs when the saved pick cannot be read: it writes a new pick (and lists workspaces bearer-only), so it
-# must work to repair a pick that is unreadable. Every other tool is refused on a read failure.
-SWITCH_TOOL = "switch_team"
+# The switch tools run when the saved pick cannot be read: they write a new pick (and list workspaces bearer-only), so
+# they must work to repair a pick that is unreadable. Every other tool is refused on a read failure. switch_team is
+# main's deprecated alias of switch_workspace (MCP-SWITCH-WORKSPACE-1), so both names are exempt.
+SWITCH_TOOL = "switch_workspace"
+SWITCH_TOOLS = frozenset({SWITCH_TOOL, "switch_team"})
+
+# MCP-FIRST-RUN-HINT-1: the first successful tool result of each MCP session carries this once. It never
+# mentions local mode: the remote server is the product here, the CLI is an extra.
+FIRST_RUN_HINT = "`pip install smartmemory` for the sm CLI"
+# Sessions already hinted, oldest first. Bounded so a long-lived process cannot grow it forever; a session that
+# falls off the end is hinted once more, which is harmless.
+HINTED_SESSIONS_MAX = 4096
 
 
 class HostedSessionReadError(RuntimeError):
@@ -71,6 +82,25 @@ class HostedIdentityMiddleware(Middleware):
         self._web_url = config.web_url
         self._cache = DEFAULT_EXCHANGE_CACHE if cache is None else cache
         self._transport = transport
+        self._hinted_sessions: OrderedDict[str, None] = OrderedDict()
+
+    def _unauthorized(self, reason: object) -> ToolError:
+        """An auth refusal that says what to do next, not just that it happened."""
+        return ToolError(
+            f"Unauthorized: {reason}. Sign in with your MCP client's OAuth prompt, or send a "
+            f"SmartMemory API key as `Authorization: Bearer <key>` (create one in the web app at "
+            f"{self._web_url})."
+        )
+
+    def _claim_first_run_hint(self, fastmcp_context: Any) -> bool:
+        """True exactly once per MCP session. No session id (no transport session) means no hint."""
+        session_id = _mcp_session_id(fastmcp_context)
+        if session_id is None or session_id in self._hinted_sessions:
+            return False
+        self._hinted_sessions[session_id] = None
+        while len(self._hinted_sessions) > HINTED_SESSIONS_MAX:
+            self._hinted_sessions.popitem(last=False)
+        return True
 
     async def on_call_tool(
         self,
@@ -81,7 +111,7 @@ class HostedIdentityMiddleware(Middleware):
         if access_token is None:
             # Transport-level auth should have caught this; if it ever does not,
             # fail closed rather than serve an unidentified caller.
-            raise ToolError("Unauthorized: no access token on this request")
+            raise self._unauthorized("no access token on this request")
 
         claims = access_token.claims or {}
         # Classify by the verifier's own claim, never by re-matching the prefix:
@@ -98,7 +128,7 @@ class HostedIdentityMiddleware(Middleware):
                 )
         except HostedAuthError as exc:
             logger.warning("Hosted identity rejected (%s): %s", kind, exc)
-            raise ToolError(f"Unauthorized: {exc}") from exc
+            raise self._unauthorized(exc) from exc
 
         fastmcp_context = context.fastmcp_context
         if fastmcp_context is None:
@@ -110,10 +140,10 @@ class HostedIdentityMiddleware(Middleware):
         # goes out with the wrong X-Workspace-Id (round 3 must-fix 1).
         session_team = None
         try:
-            if _tool_name(context) != SWITCH_TOOL:
+            if _tool_name(context) not in SWITCH_TOOLS:
                 session_team = await self.get_session_team(fastmcp_context, verified)
         except HostedAuthError as exc:
-            raise ToolError(f"Unauthorized: {exc}") from exc
+            raise self._unauthorized(exc) from exc
         except HostedSessionReadError as exc:
             # Fail closed: an unreadable pick is NOT "no pick". Never route this call to the default workspace.
             logger.warning(
@@ -140,7 +170,16 @@ class HostedIdentityMiddleware(Middleware):
         )
         token = current_identity.set(identity)
         try:
-            return await call_next(context)
+            result = await call_next(context)
+            # Claimed after the tool succeeded, so a call that errors leaves the hint for the next one.
+            if hasattr(result, "content") and self._claim_first_run_hint(
+                fastmcp_context
+            ):
+                result.content = [
+                    *result.content,
+                    TextContent(type="text", text=FIRST_RUN_HINT),
+                ]
+            return result
         except Exception as exc:
             if _hosted_nda_required_cause(exc) is not None:
                 raise ToolError(
@@ -158,7 +197,7 @@ class HostedIdentityMiddleware(Middleware):
             if auth_error is None:
                 raise
             logger.warning("Hosted call lost its authorization: %s", auth_error)
-            raise ToolError(f"Unauthorized: {auth_error}") from exc
+            raise self._unauthorized(auth_error) from exc
         finally:
             current_identity.reset(token)
 

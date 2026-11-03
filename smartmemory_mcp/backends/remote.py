@@ -22,6 +22,7 @@ from .local import SaveReturn
 from .models import CodeIngestResult, MemoryResult, normalize_item, normalize_items
 from .path_guard import path_id
 from .receipts import read_wire_save
+from smartmemory_mcp.workspace_select import SwitchResult, refuse, resolve_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,70 @@ class LoginResult:
 
     ok: bool
     message: str
+
+
+DEFAULT_API_URL = "https://api.smartmemory.ai"
+
+# `GET /memory/workspaces` is scoped `read:teams`; the web onboarding key and the
+# service default mint `read:memories` only (MCP-SWITCH-READ-TEAMS-REFUSAL-1).
+MISSING_TEAMS_SCOPE = (
+    "your API key lacks the read:teams scope, which listing your workspaces needs. "
+    "Create a key with Read teams enabled and run login(api_key) with it."
+)
+
+
+WORKSPACE_ENV = "SMARTMEMORY_WORKSPACE_ID"
+LEGACY_TEAM_ENV = "SMARTMEMORY_TEAM_ID"
+_warned_env_conflict = False
+
+
+def env_workspace() -> tuple[str, str]:
+    """(workspace id, env var name) from the environment, or ("", "") when neither is set.
+
+    One rule on every install shape (MCP-WORKSPACE-ENV-PRECEDENCE-1): a live
+    `switch_workspace` > `SMARTMEMORY_WORKSPACE_ID` > the legacy `SMARTMEMORY_TEAM_ID`
+    > the workspace saved in the smartmemory config > the account default
+    (`/auth/me`). When both variables are set and differ, one WARNING per process
+    names both. Before MCP-SWITCH-FALLBACK-ENV-HINT-1 the legacy name won, so a user
+    told to set the new one stayed on the old workspace silently.
+    """
+    global _warned_env_conflict
+    workspace = os.environ.get(WORKSPACE_ENV, "")
+    legacy = os.environ.get(LEGACY_TEAM_ENV, "")
+    if workspace and legacy and workspace != legacy and not _warned_env_conflict:
+        _warned_env_conflict = True
+        logger.warning(
+            "%s=%r and %s=%r differ; using %s (the legacy %s is ignored while it is set).",
+            WORKSPACE_ENV,
+            workspace,
+            LEGACY_TEAM_ENV,
+            legacy,
+            WORKSPACE_ENV,
+            LEGACY_TEAM_ENV,
+        )
+    if workspace:
+        return workspace, WORKSPACE_ENV
+    if legacy:
+        return legacy, LEGACY_TEAM_ENV
+    return "", ""
+
+
+def env_workspace_id() -> str:
+    """The workspace id from the environment (`env_workspace` without the name)."""
+    return env_workspace()[0]
+
+
+# export_okf(workspace_id=LIVE_PICK): send whatever pick is live when the headers are built.
+LIVE_PICK: Any = object()
+
+
+def is_missing_scope(result: Any) -> bool:
+    """True for the service's 403 `insufficient_api_key_scope` answer."""
+    return (
+        isinstance(result, dict)
+        and result.get("status_code") == 403
+        and "scope" in str(result.get("error", "")).lower()
+    )
 
 
 class RemoteBackend(BackendCapabilities):
@@ -48,24 +113,21 @@ class RemoteBackend(BackendCapabilities):
         team_id: str | None = None,
     ) -> None:
         self._api_url = (
-            api_url
-            or os.environ.get("SMARTMEMORY_API_URL", "https://api.smartmemory.ai")
+            api_url or os.environ.get("SMARTMEMORY_API_URL", DEFAULT_API_URL)
         ).rstrip("/")
         self._session: dict[str, str | bool] = {
             "access_token": api_key or os.environ.get("SMARTMEMORY_API_KEY", ""),
             "refresh_token": "",
-            "team_id": team_id
-            or os.environ.get(
-                "SMARTMEMORY_TEAM_ID", os.environ.get("SMARTMEMORY_WORKSPACE_ID", "")
-            ),
+            "team_id": team_id or env_workspace_id(),
             "user_email": "",
+            "tenant_id": "",
             "_bootstrapped": False,
         }
 
     # --- Session bootstrap -------------------------------------------------------
 
     def _bootstrap_from_api_key(self) -> None:
-        """On first use, call /auth/me to discover user identity and default team."""
+        """On first use, call /auth/me to discover user identity and default workspace."""
         if self._session["_bootstrapped"] or not self._session["access_token"]:
             return
         self._session["_bootstrapped"] = True
@@ -81,6 +143,7 @@ class RemoteBackend(BackendCapabilities):
             if r.status_code == 200:
                 user = r.json()
                 self._session["user_email"] = user.get("email", "")
+                self._session["tenant_id"] = user.get("tenant_id") or ""
                 if not self._session["team_id"]:
                     discovered = user.get("default_team_id") or ""
                     if discovered:
@@ -391,16 +454,26 @@ class RemoteBackend(BackendCapabilities):
         self._bootstrap_from_api_key()
         return str(self._session.get("team_id", ""))
 
-    def export_okf(self, archive_path: str) -> None:
-        """Stream the active workspace's OKF archive to disk."""
+    def export_okf(self, archive_path: str, workspace_id: Any = LIVE_PICK) -> None:
+        """Stream a workspace's OKF archive to disk.
+
+        By default the live pick. A caller that parked a workspace pins the export to it: a str sends that id, None
+        sends no `X-Workspace-Id` (the service decides), so a `switch_workspace` that commits mid-export cannot
+        change what is read.
+        """
         destination = Path(archive_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        workspace_id = self.active_workspace_id
+        if workspace_id is LIVE_PICK:
+            headers = self._headers()
+        else:
+            headers = self._headers(workspace_id or None)
+            if not workspace_id:
+                headers.pop("X-Workspace-Id", None)
         try:
             with httpx.stream(
                 "GET",
                 f"{self._api_url}/memory/okf/export",
-                headers=self._headers(workspace_id=workspace_id),
+                headers=headers,
                 timeout=120,
             ) as response:
                 response.raise_for_status()
@@ -472,6 +545,7 @@ class RemoteBackend(BackendCapabilities):
             r.raise_for_status()
             user = r.json()
             self._session["user_email"] = user.get("email", "")
+            self._session["tenant_id"] = user.get("tenant_id") or ""
             self._session["team_id"] = (
                 team_id or user.get("default_team_id") or str(self._session["team_id"])
             )
@@ -485,26 +559,101 @@ class RemoteBackend(BackendCapabilities):
             return LoginResult(False, f"Login failed: {e}")
         return LoginResult(
             True,
-            f"Logged in as {self._session['user_email']}, team: {self._session['team_id']}",
+            f"Logged in as {self._session['user_email']}, "
+            f"workspace: {self._session['team_id']}",
         )
 
     def whoami(self) -> str:
-        """Return current session info."""
+        """Return current session info: user, tenant, workspace, API, backend."""
         if not self._session["access_token"]:
             return (
                 f"Not authenticated. API: {self._api_url}. Call login to authenticate."
             )
+        self._bootstrap_from_api_key()
+        tenant = self._session.get("tenant_id") or "(unknown: /auth/me did not answer)"
+        workspace = self._session.get("team_id") or "(none: the service default)"
         return (
             f"User: {self._session['user_email'] or '(API key auth)'}\n"
-            f"Team: {self._session['team_id']}\n"
+            f"Tenant: {tenant}\n"
+            f"Workspace: {workspace}\n"
             f"API: {self._api_url}\n"
-            f"Backend: remote"
+            f"Backend: remote\n"
+            "Change workspace with switch_workspace(workspace)."
         )
 
-    def switch_team(self, team_id: str) -> str:
-        """Switch to a different team without re-authenticating."""
-        self._session["team_id"] = team_id
-        return f"Switched to team: {team_id}. User: {self._session['user_email']}"
+    def list_workspaces(self) -> list[dict[str, Any]] | None:
+        """`GET /memory/workspaces`: the caller's workspaces, or None on any failure."""
+        return self._fetch_workspaces()[0]
+
+    def _fetch_workspaces(self) -> tuple[list[dict[str, Any]] | None, str]:
+        """The listing, or (None, why it failed) in words a user can act on.
+
+        Sent without `X-Workspace-Id`: the listing is tenant-level, and a stale
+        selected workspace must not stop the caller from switching away from it.
+        """
+        headers = self._headers()
+        headers.pop("X-Workspace-Id", None)
+        result = self._request("GET", "/memory/workspaces", headers=headers)
+        if err := self._fmt_error(result):
+            logger.warning("Workspace lookup failed: %s", err)
+            if is_missing_scope(result):
+                return None, MISSING_TEAMS_SCOPE
+            return (
+                None,
+                f"could not list your workspaces at {self._api_url} ({err[:200]}).",
+            )
+        rows = result.get("workspaces") if isinstance(result, dict) else None
+        if not isinstance(rows, list):
+            logger.warning(
+                "Workspace lookup returned an unexpected shape: %r", type(result)
+            )
+            return None, (
+                f"could not list your workspaces at {self._api_url} "
+                "(unexpected response shape)."
+            )
+        return [r for r in rows if isinstance(r, dict) and r.get("workspace_id")], ""
+
+    def resolve_switch(self, workspace: str) -> SwitchResult:
+        """Resolve `workspace` against the caller's listing without changing anything.
+
+        `ok=True` carries the resolved id and the success message; the caller commits
+        it with `set_active_workspace`. Split from the write so the stdio tool can
+        commit under `dispatch.rebuild_lock`, only onto the backend that is still the
+        process backend (MCP-SWITCH-INFLIGHT-REBUILD-1).
+        """
+        previous = self.active_workspace_id  # bootstraps the discovered default
+        if not workspace or not workspace.strip():
+            return refuse("workspace is required (a workspace id or name).", previous)
+        if not self._session["access_token"]:
+            return refuse("not logged in; run login(api_key) first.", previous)
+        rows, why = self._fetch_workspaces()
+        if rows is None:
+            return refuse(why, previous)
+        workspace_id, detail = resolve_workspace(rows, workspace, id_key="workspace_id")
+        if workspace_id is None:
+            return refuse(detail, previous)
+        return SwitchResult(
+            ok=True,
+            message=f"Switched to workspace: {detail}. The next request uses it.",
+            workspace_id=workspace_id,
+        )
+
+    def set_active_workspace(self, workspace_id: str) -> None:
+        """Make `workspace_id` the `X-Workspace-Id` of this session's next request."""
+        self._session["team_id"] = workspace_id
+
+    def switch_workspace(self, workspace: str) -> SwitchResult:
+        """Point this live session at another of the caller's workspaces.
+
+        Takes effect on the next request from this process (the dispatch-held
+        backend is this object). The service still refuses a workspace the caller
+        is not a member of on every request; the listing here only resolves a name
+        and refuses early. On any failure the previous workspace stays active.
+        """
+        result = self.resolve_switch(workspace)
+        if result.ok:
+            self.set_active_workspace(result.workspace_id)
+        return result
 
     # --- MemoryBackend protocol: implemented (have REST routes) ------------------
 

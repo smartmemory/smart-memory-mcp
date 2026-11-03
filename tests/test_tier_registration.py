@@ -109,7 +109,8 @@ FREE_TOOLS = sorted(
     [
         "login",
         "whoami",
-        "switch_team",
+        "switch_workspace",  # MCP-SWITCH-WORKSPACE-1
+        "switch_team",  # deprecated alias of switch_workspace, one release
         "memory_save",
         "memory_search",
         "memory_recall",
@@ -145,20 +146,20 @@ FREE_TOOLS = sorted(
 
 class TestToolRegistration:
     def test_free_tier_tool_count(self):
-        """FREE tier registers exactly 30 tools (17 + the 13 decision tools)."""
+        """FREE tier registers exactly 31 tools (18 + the 13 decision tools; MCP-SWITCH-WORKSPACE-1 added switch_workspace)."""
         env = _clean_env()
         data = _run_snippet(env)
-        assert data["count"] == 30, (
-            f"Expected 30 FREE tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 31, (
+            f"Expected 31 FREE tools, got {data['count']}: {data['names']}"
         )
         assert data["names"] == FREE_TOOLS
 
     def test_pro_tier_tool_count(self):
-        """PRO tier registers exactly 65 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
+        """PRO tier registers exactly 66 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
         data = _run_snippet(env)
-        assert data["count"] == 65, (
-            f"Expected 65 remote PRO tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 66, (
+            f"Expected 66 remote PRO tools, got {data['count']}: {data['names']}"
         )
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]
@@ -169,13 +170,13 @@ class TestToolRegistration:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
 
     def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 96 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
+        """PRO_PLUS tier registers exactly 97 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
         env = _clean_env(
             SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true"
         )
         data = _run_snippet(env)
-        assert data["count"] == 96, (
-            f"Expected 96 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 97, (
+            f"Expected 97 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
         )
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]

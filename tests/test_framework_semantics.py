@@ -68,8 +68,9 @@ def test_local_falkordb_dead_code_selects_indexed_memory_type(tmp_path, monkeypa
     from smartmemory.utils import get_config
     from smartmemory.utils.cache import LocalCache
 
-    host = os.environ.get("FALKORDB_HOST", "localhost")
-    port = int(os.environ.get("FALKORDB_PORT", "9010"))
+    from tests._falkor import falkor_host, falkor_port
+
+    host, port = falkor_host(), falkor_port()
     client = Redis(
         host=host,
         port=port,
