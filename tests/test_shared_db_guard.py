@@ -110,7 +110,7 @@ def _collect_and_run_dial_nothing_shared(port, monkeypatch, tmp_path=None):
     seen, out = _child(tmp_path, [*FALKOR_FILES, "-rs"])
     assert not [a for a in seen["seen"] if a[1] in SHARED_PORTS], seen["seen"]
     # a row ends passed or skipped, never as an error that came from the refused dial
-    failed = [l for l in out.splitlines() if l.startswith(("ERROR", "FAILED")) and "recorded" in l]
+    failed = [line for line in out.splitlines() if line.startswith(("ERROR", "FAILED")) and "recorded" in line]
     assert failed == [] and "SKIPPED" in out, out[-800:]
 
 
