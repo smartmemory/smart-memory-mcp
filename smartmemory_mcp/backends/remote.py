@@ -11,6 +11,7 @@ from smartmemory_mcp.tools.lexical_contract import validate_channel_weights
 import json
 import logging
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,14 @@ from .path_guard import path_id
 from .receipts import read_wire_save
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class LoginResult:
+    """Outcome of ``RemoteBackend.login``: ``ok`` only when the service confirmed the key."""
+
+    ok: bool
+    message: str
 
 
 class RemoteBackend(BackendCapabilities):
@@ -435,11 +444,18 @@ class RemoteBackend(BackendCapabilities):
 
     # --- Auth --------------------------------------------------------------------
 
-    def login(self, api_key: str | None = None, team_id: str | None = None) -> str:
-        """Set API key and discover user identity from /auth/me."""
+    def login(
+        self, api_key: str | None = None, team_id: str | None = None
+    ) -> LoginResult:
+        """Set API key and discover user identity from /auth/me.
+
+        ``ok`` is True only after /auth/me answered 2xx; callers persist the key on that alone.
+        """
         key = api_key or os.environ.get("SMARTMEMORY_API_KEY", "")
         if not key:
-            return "No API key. Pass api_key or set SMARTMEMORY_API_KEY env var."
+            return LoginResult(
+                False, "No API key. Pass api_key or set SMARTMEMORY_API_KEY env var."
+            )
         self._session["access_token"] = key
         self._session["refresh_token"] = ""
         self._session["user_email"] = ""
@@ -461,10 +477,16 @@ class RemoteBackend(BackendCapabilities):
             )
             self._session["_bootstrapped"] = True
         except httpx.HTTPStatusError as e:
-            return f"API key validation failed ({e.response.status_code}): {e.response.text}"
+            return LoginResult(
+                False,
+                f"API key validation failed ({e.response.status_code}): {e.response.text}",
+            )
         except Exception as e:
-            return f"Login failed: {e}"
-        return f"Logged in as {self._session['user_email']}, team: {self._session['team_id']}"
+            return LoginResult(False, f"Login failed: {e}")
+        return LoginResult(
+            True,
+            f"Logged in as {self._session['user_email']}, team: {self._session['team_id']}",
+        )
 
     def whoami(self) -> str:
         """Return current session info."""

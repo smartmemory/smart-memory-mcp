@@ -56,12 +56,12 @@ def login(api_key: str) -> str:
     temp = RemoteBackend(api_key=api_key)
     result = temp.login(api_key)
 
-    if "error" in result.lower() if isinstance(result, str) else False:
-        return result
+    # Store the key only after the service confirmed it: a failed login keeps the prior key.
+    if not result.ok:
+        return result.message
 
-    # Store key for future sessions
     store_api_key(api_key)
-    return f"{result}\nRestart MCP server to unlock PRO tools."
+    return f"{result.message}\nRestart MCP server to unlock PRO tools."
 
 
 @mcp.tool(

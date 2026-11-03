@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- MCP-2.0-LOGIN-KEY-PERSIST-1 (2026-11-03, security): **a failed `login` never replaces your stored API key.** `RemoteBackend.login` now returns a typed `LoginResult(ok, message)` (`ok` only after `/auth/me` answered 2xx) and the `login` tool stores the key only on `ok`. Before, the tool looked for "error" in the reply text, so a 401 whose body had no such word (and any non-2xx or network failure) overwrote the working key. `store_api_key`'s POSIX fallback now creates a temp file with `os.open(..., 0o600)` before writing and `os.replace`s it onto the key file, so the file is never wider than 0600 and a crash keeps the prior key. Tests: new `tests/test_login_key_persist.py` (5 rows).
+
 - MCP-2.0-DECISION-TOOLS-FREE-PORT-1 (2026-10-31, user-visible): port of main `31fdb1e8` to 2.0. The 13 decision tools are registered in the FREE tier again, so a keyless local server lists and accepts them as 1.x does. Before, 2.0 `_register_tools` registered them only at `tier >= PRO`, although the entry below already described the change. Only the decision suite moved: every other PRO and PRO+ tool keeps its tier. On 2.0 FREE is 30 registered tools (was 17), PRO stays 65 and PRO+ stays 96. `memory_add` no longer exists on 2.0, so the stays-PRO row uses `memory_save_document`. Tests: `tests/test_decision_tools_free_tier.py` (new) and `tests/test_tier_registration.py` (FREE count and names).
 
 - ci, CI-2.0-MANUAL-ONLY-SWEEP-1 (2.0 port of main GH-ACTIONS-MANUAL-1, owner policy 2026-10-29): the Actions workflow triggers on this line are `workflow_dispatch` only (no push or pull_request triggers). Workflow trigger blocks only, no job body change.
