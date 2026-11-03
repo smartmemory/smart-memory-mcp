@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import gzip
 import logging
 import shutil
 import tarfile
 import tempfile
+import zlib
+from collections.abc import Iterator
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
@@ -100,6 +103,152 @@ def _arrive_remote_workspace(backend: Any, carried: str | None) -> str:
     return f"Imported into workspace: {workspace}."
 
 
+# Decoded-stream budget, twin of smart-memory-service ``portability.py`` (SVC-OKF-IMPORT-TAR-HEADER-BOMB-1; the
+# parity row in tests/test_portability_tar_budget.py pins the same values). stdlib reads each PAX/GNU extension
+# header whole before it returns a member, so a ~130 KB archive could make this process hold 512 MiB. Every decoded
+# byte is charged against an allowance that grows only by what a well-formed tar spends: a fixed slack, one header
+# block plus the padded data of each regular member, and each extension header (capped one by one, by chain length
+# and in total). Unlike the service there is no cap on regular-file data here: a local bundle may be any size.
+_TAR_BLOCK = tarfile.BLOCKSIZE
+_READ_CHUNK = 1024 * 1024
+_DECODED_SLACK_BYTES = 1024 * 1024
+_MAX_EXTENSION_HEADER_BYTES = 64 * 1024
+_MAX_EXTENSION_TOTAL_BYTES = 64 * 1024 * 1024
+_MAX_EXTENSION_CHAIN = 4
+_MAX_GLOBAL_HEADERS = 8
+_EXTENSION_TYPES = frozenset(
+    {
+        tarfile.GNUTYPE_LONGNAME,
+        tarfile.GNUTYPE_LONGLINK,
+        tarfile.XHDTYPE,
+        tarfile.XGLTYPE,
+        tarfile.SOLARIS_XHDTYPE,
+    }
+)
+
+
+class ArchiveBudgetError(ValueError):
+    """An OKF archive spends more decoded bytes on headers than its budget allows, or uses a refused member kind."""
+
+
+def _padded(size: int) -> int:
+    """Bytes a tar member body of ``size`` occupies on the stream, padded to whole blocks."""
+    return -(-size // _TAR_BLOCK) * _TAR_BLOCK
+
+
+class _DecodedBudget:
+    """Allowance for one pass over one decoded tar stream; every decoded byte is charged against it."""
+
+    def __init__(self) -> None:
+        self.allowed = _DECODED_SLACK_BYTES
+        self.decoded = 0
+        self.extension_bytes = 0
+        self.global_headers = 0
+        self.chain = 0
+
+    def charge(self, nbytes: int) -> None:
+        self.decoded += nbytes
+        if self.decoded > self.allowed:
+            raise ArchiveBudgetError("OKF archive exceeds its decoded byte allowance")
+
+    def member(self, member: tarfile.TarInfo) -> None:
+        """Grant one member's header block and, for a regular file, its padded data, before that data is read."""
+        if member.size < 0:
+            raise ArchiveBudgetError("OKF archive member declares a negative size")
+        if member.sparse is not None:
+            raise ArchiveBudgetError("OKF archives cannot contain sparse members")
+        self.allowed += _TAR_BLOCK + (_padded(member.size) if member.isreg() else 0)
+
+    def extension(self, header: tarfile.TarInfo) -> None:
+        """Check and grant a PAX or GNU long-name header from its declared size, before its body is read."""
+        if not 0 <= header.size <= _MAX_EXTENSION_HEADER_BYTES:
+            raise ArchiveBudgetError(
+                "OKF archive extension header exceeds its size limit"
+            )
+        self.chain += 1
+        if self.chain > _MAX_EXTENSION_CHAIN:
+            raise ArchiveBudgetError("OKF archive chains too many extension headers")
+        if header.type == tarfile.XGLTYPE:
+            self.global_headers += 1
+            if self.global_headers > _MAX_GLOBAL_HEADERS:
+                raise ArchiveBudgetError(
+                    "OKF archive carries too many global extension headers"
+                )
+        cost = _TAR_BLOCK + _padded(header.size)
+        self.extension_bytes += cost
+        if self.extension_bytes > _MAX_EXTENSION_TOTAL_BYTES:
+            raise ArchiveBudgetError(
+                "OKF archive extension headers exceed their total size limit"
+            )
+        self.allowed += cost
+
+
+def _budgeted_tarinfo(budget: _DecodedBudget) -> type[tarfile.TarInfo]:
+    """A TarInfo class whose header processing checks ``budget`` before stdlib reads any extension or sparse body."""
+
+    class _BudgetedTarInfo(tarfile.TarInfo):
+        # stdlib names _proc_member as the subclass hook: it runs once the 512-byte header is parsed, before any body.
+        def _proc_member(self, archive):
+            if self.type in _EXTENSION_TYPES:
+                budget.extension(self)
+            else:
+                budget.chain = 0
+                if self.type == tarfile.GNUTYPE_SPARSE:
+                    raise ArchiveBudgetError(
+                        "OKF archives cannot contain sparse members"
+                    )
+            return super()._proc_member(archive)
+
+        def _proc_gnusparse_10(self, next, pax_headers, archive):
+            # GNU sparse 1.0 reads its map from the data stream with no bound: refused before the first map byte.
+            raise ArchiveBudgetError("OKF archives cannot contain sparse members")
+
+    return _BudgetedTarInfo
+
+
+class _BudgetedReader:
+    """The gunzipped tar stream, charging every byte it returns to ``budget``; gzip failures become ``ReadError``."""
+
+    def __init__(self, decoded: Any, budget: _DecodedBudget) -> None:
+        self._decoded = decoded
+        self._budget = budget
+
+    def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0 or size > _READ_CHUNK:
+            size = _READ_CHUNK
+        try:
+            data = self._decoded.read(size)
+        except (OSError, EOFError, zlib.error) as exc:
+            raise tarfile.ReadError(
+                f"OKF archive is not a readable gzip stream: {exc}"
+            ) from None
+        self._budget.charge(len(data))
+        return data
+
+
+def _budgeted_members(
+    archive_path: Path,
+) -> Iterator[tuple[tarfile.TarFile, tarfile.TarInfo]]:
+    """Yield ``(archive, member)`` for one streaming pass, with every decoded byte charged to a fresh budget.
+
+    The member list is dropped at each step: stream mode would otherwise keep every TarInfo and its PAX dict.
+    """
+    budget = _DecodedBudget()
+    with (
+        archive_path.open("rb") as raw,
+        gzip.GzipFile(fileobj=raw, mode="rb") as decoded,
+        tarfile.open(
+            fileobj=_BudgetedReader(decoded, budget),
+            mode="r|",
+            tarinfo=_budgeted_tarinfo(budget),
+        ) as archive,
+    ):
+        while (member := archive.next()) is not None:
+            del archive.members[:]
+            budget.member(member)
+            yield archive, member
+
+
 def _is_archive(path: Path) -> bool:
     """Return whether a path names a supported compressed OKF archive."""
     return path.name.endswith(_ARCHIVE_SUFFIXES)
@@ -150,38 +299,39 @@ def _validate_archive_members(members: list[tarfile.TarInfo]) -> None:
 
 
 def _extract_bundle(archive_path: Path, destination: Path) -> Path:
-    """Safely extract an archive and return the directory containing index.md."""
+    """Safely extract an archive and return the directory containing index.md.
+
+    Both passes stream the archive under a decoded byte budget (``_DecodedBudget``), so headers, extension bodies
+    and skipped data are bounded as well as the member paths.
+    """
     if destination.exists() and any(destination.iterdir()):
         raise ValueError(f"OKF bundle destination must be empty: {destination}")
     destination.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(archive_path, mode="r:gz") as archive:
-        members = archive.getmembers()
-        _validate_archive_members(members)
-        root = destination.resolve()
-        targets = []
-        seen = set()
-        # Validate the entire archive before publishing any member.
-        for member in members:
-            target = destination.joinpath(*PurePosixPath(member.name).parts)
-            if not target.resolve().is_relative_to(root):
-                raise ValueError(f"Unsafe archive member path: {member.name}")
-            identity = target.relative_to(destination).as_posix().casefold()
-            if identity in seen:
-                raise ValueError(f"Duplicate archive member path: {member.name}")
-            seen.add(identity)
-            targets.append(target)
-        for member, target in zip(members, targets):
-            if not target.resolve().is_relative_to(root):
-                raise ValueError(f"Unsafe archive member path: {member.name}")
-            if member.isdir():
-                target.mkdir(parents=True, exist_ok=True)
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            source = archive.extractfile(member)
-            if source is None:
-                raise ValueError(f"Unable to read archive member: {member.name}")
-            with source, target.open("wb") as handle:
-                shutil.copyfileobj(source, handle)
+    root = destination.resolve()
+    seen = set()
+    # Validate the entire archive before publishing any member.
+    for _archive, member in _budgeted_members(archive_path):
+        _validate_archive_members([member])
+        target = destination.joinpath(*PurePosixPath(member.name).parts)
+        if not target.resolve().is_relative_to(root):
+            raise ValueError(f"Unsafe archive member path: {member.name}")
+        identity = target.relative_to(destination).as_posix().casefold()
+        if identity in seen:
+            raise ValueError(f"Duplicate archive member path: {member.name}")
+        seen.add(identity)
+    for archive, member in _budgeted_members(archive_path):
+        target = destination.joinpath(*PurePosixPath(member.name).parts)
+        if not target.resolve().is_relative_to(root):
+            raise ValueError(f"Unsafe archive member path: {member.name}")
+        if member.isdir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        source = archive.extractfile(member)
+        if source is None:
+            raise ValueError(f"Unable to read archive member: {member.name}")
+        with source, target.open("wb") as handle:
+            shutil.copyfileobj(source, handle)
 
     indexes = list(destination.rglob("index.md"))
     if len(indexes) != 1:
