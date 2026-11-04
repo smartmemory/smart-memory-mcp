@@ -16,6 +16,7 @@ import logging
 import textwrap
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
@@ -228,7 +229,7 @@ def _service_shaped_app(store, requests: list) -> FastAPI:
         requests.append(
             (request.method, request.url.path, dict(request.query_params), body)
         )
-        return body
+        return dict(body) if body is not None else None
 
     @app.get("/memory/patterns")
     async def list_(request: Request):
@@ -296,8 +297,28 @@ def remote(monkeypatch, mem):
         backend = RemoteBackend(api_url="http://testserver", api_key="test_pattern_key")
         backend._session["_bootstrapped"] = True
         backend._session["access_token"] = "test_pattern_token"
+
+        def forward(request: httpx.Request) -> httpx.Response:
+            # Starlette's TestClient raises its own httpx2 errors; answer through a real httpx
+            # transport so RemoteBackend sees the httpx.HTTPStatusError the service gives it.
+            reply = client.request(
+                request.method,
+                str(request.url),
+                content=request.content,
+                headers=dict(request.headers),
+            )
+            return httpx.Response(
+                reply.status_code,
+                content=reply.content,
+                headers={"content-type": reply.headers.get("content-type", "")},
+            )
+
+        wire = httpx.Client(transport=httpx.MockTransport(forward))
         monkeypatch.setattr(
-            "smartmemory_mcp.backends.remote.httpx.request", client.request
+            "smartmemory_mcp.backends.remote.httpx.request",
+            lambda method, url, **kw: wire.request(
+                method, url, **{k: v for k, v in kw.items() if k != "timeout"}
+            ),
         )
         yield _tools(monkeypatch, backend), requests
 

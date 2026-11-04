@@ -272,6 +272,7 @@
 ["POST", "/memory/opinions/create"],
 ["GET", "/memory/patterns"],
 ["POST", "/memory/patterns"],
+["POST", "/memory/patterns/seed"],
 ["DELETE", "/memory/patterns/{pattern_id}"],
 ["GET", "/memory/patterns/{pattern_id}"],
 ["PUT", "/memory/patterns/{pattern_id}"],
