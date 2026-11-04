@@ -1,5 +1,5 @@
 {
-"_source": "smart-memory-service 2.0 (c357367283cc) tests/contracts/snapshots/openapi_schema.json (paths, in snapshot order)",
+"_source": "smart-memory-service 2.0 (269ecc545742) tests/contracts/snapshots/openapi_schema.json (paths, in snapshot order)",
 "_regenerate": "python3 tests/test_path_id_encoding.py --write-route-table",
 "routes": [
 ["GET", "/admin/logs"],
@@ -149,12 +149,15 @@
 ["GET", "/memory/decisions/{decision_id}/causal-chain"],
 ["POST", "/memory/decisions/{decision_id}/conflicts"],
 ["POST", "/memory/decisions/{decision_id}/contradict"],
+["POST", "/memory/decisions/{decision_id}/evidence"],
 ["GET", "/memory/decisions/{decision_id}/provenance"],
 ["POST", "/memory/decisions/{decision_id}/reinforce"],
 ["POST", "/memory/decisions/{decision_id}/retract"],
 ["POST", "/memory/decisions/{decision_id}/supersede"],
 ["POST", "/memory/edge"],
 ["GET", "/memory/entities"],
+["POST", "/memory/evidence"],
+["GET", "/memory/evidence/{evidence_id}"],
 ["POST", "/memory/evolution/dream"],
 ["POST", "/memory/evolution/reinforce/opinions"],
 ["GET", "/memory/evolution/status"],

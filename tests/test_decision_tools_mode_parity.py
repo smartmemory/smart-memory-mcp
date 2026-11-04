@@ -204,6 +204,28 @@ def _cases():
         _remote({"decision_id": "dec_1", "confidence": 0.81, "contradiction_count": 2}),
     )
     yield (
+        "decision_link_evidence",
+        {"decision_id": "dec_1", "evidence_id": "ev:0123456789abcdef"},
+        _local(
+            _mem=_Manager(
+                link_decision_evidence=lambda _id, _ev: _Decision(
+                    {**DECISION, "evidence_ids": ["ev:0123456789abcdef"]}
+                ),
+                get_evidence=lambda _ev: _Decision(
+                    {"evidence_id": "ev:0123456789abcdef"}
+                ),
+            )
+        ),
+        _remote(
+            {
+                "decision_id": "dec_1",
+                "evidence_id": "ev:0123456789abcdef",
+                "evidence_ids": ["ev:0123456789abcdef"],
+                "confidence": 0.7,
+            }
+        ),
+    )
+    yield (
         "decision_provenance",
         {"decision_id": "dec_1"},
         _local(
@@ -298,3 +320,58 @@ def test_the_parity_suite_covers_every_registered_decision_tool():
 )
 def test_absence_reads_the_same_in_both_modes(tool, kwargs, local, remote):
     assert _render(tool, local, **kwargs) == _render(tool, remote, **kwargs)
+
+
+EVIDENCE = {
+    "evidence_id": "ev:0123456789abcdef",
+    "evidence_ref": "ev:0123456789abcdef",
+    "kind": "sha",
+    "subject": {"unit": "SM-EVIDENCE-TYPE-1"},
+    "checker": "sm20-main",
+    "observed_at": "2026-11-04T15:00:00Z",
+    "checked_at": "2026-11-04T15:00:05Z",
+    "checks": ["exists"],
+    "payload": {
+        "kind": "sha",
+        "sha": "afee2c429d3e",
+        "at": "2026-11-04T15:00:00Z",
+        "by": "sm20-main",
+    },
+}
+
+
+def test_evidence_record_reads_the_same_in_both_modes():
+    """SM-EVIDENCE-TYPE-1: evidence_record is not a decision_* name, so it is pinned here, outside CASES."""
+    pytest.importorskip(
+        "smartmemory.evidence"
+    )  # LocalBackend maps the node back with core's to_record
+    from smartmemory.evidence import to_record
+
+    local = _local(_mem=_Manager(add_evidence=lambda _rec: _Decision(EVIDENCE)))
+    remote = _remote({**EVIDENCE, "record": to_record(EVIDENCE)})
+    kwargs = {"record": to_record(EVIDENCE)}
+    assert _render("evidence_record", local, **kwargs) == _render(
+        "evidence_record", remote, **kwargs
+    )
+
+
+def test_evidence_refusals_read_the_same_in_both_modes():
+    detail = "Evidence not found: ev:ffffffffffffffff"
+
+    def refuse(*_args):
+        raise ValueError(detail)
+
+    local = _local(_mem=_Manager(link_decision_evidence=refuse))
+    remote = _remote(
+        {
+            "error": f"API error 404: {detail}",
+            "status_code": 404,
+            "body": {"detail": detail},
+        }
+    )
+    kwargs = {"decision_id": "dec_1", "evidence_id": "ev:ffffffffffffffff"}
+    assert (
+        _render("decision_link_evidence", local, **kwargs)
+        == _render("decision_link_evidence", remote, **kwargs)
+        == f"Evidence not linked: {detail}"
+    )

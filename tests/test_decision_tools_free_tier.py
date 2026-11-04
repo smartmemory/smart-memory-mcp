@@ -44,6 +44,12 @@ DECISION_ROWS = (
         {"decision_id": "dec_1", "requirement_id": "req_1", "memory_id": "mem_1"},
     ),
     ("decision_try_activate", {"decision_id": "dec_1"}),
+    # SM-EVIDENCE-TYPE-1
+    (
+        "decision_link_evidence",
+        {"decision_id": "dec_1", "evidence_id": "ev:0123456789abcdef"},
+    ),
+    ("evidence_record", {"record": {"id": "ev:0123456789abcdef"}}),
 )
 DECISION_TOOLS = tuple(name for name, _ in DECISION_ROWS)
 

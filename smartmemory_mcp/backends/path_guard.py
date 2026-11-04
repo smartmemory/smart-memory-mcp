@@ -29,7 +29,7 @@ RESERVED_SEGMENTS: dict[str, frozenset[str]] = {
         """
         adapters add admin agents analytics anchors api-keys archive ask audit beta
         by-metadata clear clear-all clustering code context decisions edge entities
-        evolution failures feedback governance graph health idp-drift import inference
+        evidence evolution failures feedback governance graph health idp-drift import inference
         ingest launch licensing link list lite locks logs maintenance okf ontology
         opinions patterns personalize pipeline plans platform plugins policy procedures
         progress read-around reasoning recall reflect result-feedback routing schemas search

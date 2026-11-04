@@ -1,4 +1,4 @@
-"""Decision lifecycle MCP tools — create, query, supersede, retract, reinforce, contradict.
+"""Decision lifecycle MCP tools — create, query, supersede, retract, reinforce, contradict, link evidence.
 
 MCP-REMOTE-DECISIONS-1: these tools are transport-agnostic. Every one of them calls
 ``backend.decision_*``, which both LocalBackend (core managers over ``_mem``) and
@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 
+from smartmemory_mcp.backends.interface import EvidenceRefused
 from .common import checked_as_of, dated, get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -327,6 +328,70 @@ def register(mcp):
             raise
 
     @mcp.tool(
+        title="Link evidence to a decision",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def decision_link_evidence(decision_id: str, evidence_id: str) -> str:
+        """Link a stored evidence receipt (its node id or `ev:` ref) to a live decision.
+
+        Confidence is unchanged (use decision_reinforce to raise it); linking twice adds nothing.
+        """
+        try:
+            backend = get_backend()
+            result = backend.decision_link_evidence(decision_id, evidence_id)
+        except EvidenceRefused as e:
+            # A store refusal names its cause: decision/evidence not found, wrong type, ended decision.
+            return f"Evidence not linked: {e}"
+        except Exception as e:
+            logger.error(f"Failed to link decision evidence: {e}", exc_info=True)
+            raise
+
+        return (
+            f"Evidence linked: {result.get('evidence_id')} -> {decision_id}\n"
+            f"Evidence count: {len(result.get('evidence_ids') or [])}\n"
+            f"Confidence: {float(result.get('confidence') or 0.0):.2f} (unchanged)"
+        )
+
+    @mcp.tool(
+        title="Record evidence",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def evidence_record(record: Dict[str, Any]) -> str:
+        """Store one checked Compose evidence receipt (an `ev:` record) as an evidence memory.
+
+        `record` is the Compose record as written: id (`ev:` + 16 hex), evidence (kind-specific, with
+        `at` and `by`), checked_at, checks, and optional subject. Saving the same record again is a no-op.
+        Link it to a decision with decision_link_evidence.
+        """
+        try:
+            backend = get_backend()
+            result = backend.evidence_record(record)
+        except EvidenceRefused as e:
+            return f"Evidence not recorded: {e}"
+        except Exception as e:
+            logger.error(f"Failed to record evidence: {e}", exc_info=True)
+            raise
+
+        return (
+            f"Evidence recorded: {result.get('evidence_id')}\n"
+            f"Ref: {result.get('evidence_ref')}\n"
+            f"Kind: {result.get('kind')}\n"
+            f"Checked at: {result.get('checked_at')}"
+        )
+
+    @mcp.tool(
         title="Contradict a decision",
         annotations=ToolAnnotations(
             readOnlyHint=False,
@@ -382,6 +447,12 @@ def register(mcp):
                 parts.append(f"Reasoning trace: {provenance['reasoning_trace']}")
             if provenance.get("evidence"):
                 parts.append(f"Evidence: {len(provenance['evidence'])} items")
+                # SM-EVIDENCE-TYPE-1: an evidence-node row names its receipt.
+                for row in provenance["evidence"]:
+                    if isinstance(row, dict) and row.get("evidence_ref"):
+                        parts.append(
+                            f"- {row['evidence_ref']} ({row.get('kind')}, checked {row.get('checked_at')})"
+                        )
             if provenance.get("superseded"):
                 parts.append(f"Superseded: {len(provenance['superseded'])} decisions")
             if provenance.get("superseded_by"):

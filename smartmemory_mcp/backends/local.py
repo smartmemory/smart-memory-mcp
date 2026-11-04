@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, NoReturn
 
-from .interface import LOCAL_BROKEN_TOOLS, BackendCapabilities
+from .interface import LOCAL_BROKEN_TOOLS, BackendCapabilities, EvidenceRefused
 from .models import MemoryResult, normalize_item, normalize_items
 from smartmemory_mcp.workspace_select import SwitchResult, refuse
 
@@ -177,6 +177,30 @@ def _resolve_save_return(value: Any, *, op: str) -> SaveReturn:
 
 def _save_value(value: Any, *, op: str) -> Any:
     return _resolve_save_return(value, op=op).value
+
+
+# SM-EVIDENCE-TYPE-1: the contract's evidence_response fields, in contract order (the service route's shape).
+_EVIDENCE_RESPONSE_FIELDS = (
+    "evidence_id",
+    "evidence_ref",
+    "kind",
+    "subject",
+    "checker",
+    "observed_at",
+    "checked_at",
+    "checks",
+    "payload",
+)
+
+
+def _evidence_dict(evidence: Any) -> dict[str, Any]:
+    """Serialize a core Evidence node to the service's evidence_response (node fields plus the Compose record)."""
+    from smartmemory.evidence import to_record
+
+    data = evidence.to_dict()
+    body = {name: data.get(name) for name in _EVIDENCE_RESPONSE_FIELDS}
+    body["record"] = to_record(evidence)
+    return body
 
 
 def _decision_dict(decision: Any) -> dict[str, Any]:
@@ -1185,6 +1209,35 @@ class LocalBackend(BackendCapabilities):
             "confidence": decision.confidence,
             "contradiction_count": decision.contradiction_count,
         }
+
+    def decision_link_evidence(
+        self, decision_id: str, evidence_id: str
+    ) -> dict[str, Any]:
+        """SmartMemory.link_decision_evidence on the real store; core's refusal is re-raised as EvidenceRefused."""
+        try:
+            decision = self._mem.link_decision_evidence(decision_id, evidence_id)
+        except ValueError as e:
+            raise EvidenceRefused(str(e)) from e
+        # The link resolved an ev: ref to its node id; read it back so the answer names the node it linked.
+        linked = self._mem.get_evidence(evidence_id)
+        if linked is None:
+            raise RuntimeError(
+                f"Linked evidence {evidence_id!r} could not be read back"
+            )
+        return {
+            "decision_id": decision_id,
+            "evidence_id": linked.evidence_id,
+            "evidence_ids": list(decision.evidence_ids),
+            "confidence": decision.confidence,
+        }
+
+    def evidence_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        """SmartMemory.add_evidence on the real store (SM-EVIDENCE-TYPE-1)."""
+        try:
+            evidence = self._mem.add_evidence(record)
+        except ValueError as e:
+            raise EvidenceRefused(str(e)) from e
+        return _evidence_dict(evidence)
 
     def decision_provenance(
         self, decision_id: str, as_of: str | None = None
