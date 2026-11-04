@@ -1405,11 +1405,13 @@ class LocalBackend(BackendCapabilities):
         from smartmemory.adherence import read_memory_dir
 
         index_text, files, refused = read_memory_dir(Path(directory) / "MEMORY.md")
+        editor = self._pattern_editor()
         return self._mem.seed_patterns(
             index_text,
             files,
             refused=refused,
-            source_prefix=f"{self._pattern_editor()}:memory_md",
+            source_prefix=f"{editor}:memory_md",
+            updated_by=editor,  # as pattern_create stamps it
         )
 
     def plan_create(

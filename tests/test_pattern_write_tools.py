@@ -211,6 +211,36 @@ def test_seed_never_reads_a_link_that_leaves_the_dir(local, mem, tmp_path, caplo
         assert link in caplog.text
 
 
+MARKER = "test_patterncrud_fix1_outside_marker"
+
+
+def _index_symlinked_out(root: Path) -> Path:
+    """A memory dir whose MEMORY.md is a symlink to a synthetic outside index (never a real secret)."""
+    outside = root / "test_outside_index.md"
+    outside.write_text(f"## Leak\n\n- [{MARKER}](x.md) — {MARKER}.\n")
+    d = root / "test_mem"
+    d.mkdir()
+    (d / "MEMORY.md").symlink_to(outside)
+    return d
+
+
+def test_seed_refuses_an_index_symlinked_out(local, mem, tmp_path):
+    """Sec review F1: the index itself must resolve inside the dir; nothing is read or created."""
+    d = _index_symlinked_out(tmp_path)
+
+    out = local["pattern_seed"](dir=str(d))
+
+    assert isinstance(out, str) and "outside_dir" in out and MARKER not in out
+    assert PatternManager(mem).queries.list_all() == []
+
+
+def test_seed_stamps_the_local_editor(local, mem, tmp_path):
+    result = local["pattern_seed"](dir=str(_memory_dir(tmp_path)))
+
+    seeded = [PatternManager(mem).get(pid) for pid in result["created"]]
+    assert len(seeded) == 3 and {p.updated_by for p in seeded} == {"mcp:local"}
+
+
 def test_seed_without_an_index_says_so(local, tmp_path):
     assert "No MEMORY.md" in local["pattern_seed"](dir=str(tmp_path))
 
@@ -251,6 +281,7 @@ def _service_shaped_app(store, requests: list) -> FastAPI:
             body["files"],
             refused=body["refused"],
             source_prefix=body["source_prefix"],
+            updated_by="rest:test_user",  # the service stamps the authenticated caller
         )
         return {**result, **ctx}
 
@@ -393,6 +424,21 @@ def test_remote_seed_sends_text_never_a_path(remote, mem, tmp_path):
     assert tools["pattern_seed"](dir=str(d))["created"] == []
 
 
+def test_remote_seed_refuses_an_index_symlinked_out_and_sends_nothing(
+    remote, mem, tmp_path
+):
+    """Sec review F1: the outside index text never reaches the service."""
+    tools, requests = remote
+    d = _index_symlinked_out(tmp_path)
+
+    out = tools["pattern_seed"](dir=str(d))
+
+    assert isinstance(out, str) and "outside_dir" in out and MARKER not in out
+    assert not [r for r in requests if r[1] == "/memory/patterns/seed"]
+    assert MARKER not in repr(requests)
+    assert PatternManager(mem).queries.list_all() == []
+
+
 # -- The two readers and the import boundary ---------------------------------------------------------
 
 
@@ -417,6 +463,47 @@ def test_mcp_reader_matches_the_core_reader(tmp_path):
         "a/../../x.md",
     ):
         assert pattern_seed_reader.link_refusal(link) == core_link_refusal(link), link
+
+
+@pytest.mark.parametrize(
+    "reader",
+    [pattern_seed_reader.read_memory_dir, core_read_memory_dir],
+    ids=["mcp", "core"],
+)
+def test_reader_refuses_a_link_swapped_out_after_the_check(
+    reader, tmp_path, monkeypatch
+):
+    """Open, then verify: a link that passes the containment check and is then swapped out is not read."""
+    d = _memory_dir(tmp_path)
+    outside = tmp_path / "test_outside_index.md"
+    outside.write_text(MARKER)
+    link = "feedback_just_do_it.md"
+    real_resolve = Path.resolve
+    swapped = {"done": False}
+
+    def resolve_then_swap(self, *args, **kwargs):
+        out = real_resolve(self, *args, **kwargs)
+        if self.name == link and not swapped["done"]:
+            swapped["done"] = True
+            (d / link).unlink()
+            (d / link).symlink_to(outside)
+        return out
+
+    monkeypatch.setattr(Path, "resolve", resolve_then_swap)
+    _, files, refused = reader(d / "MEMORY.md")
+    assert link not in files and refused.get(link) == "outside_dir"
+    assert MARKER not in repr(files)
+
+
+@pytest.mark.parametrize(
+    "reader",
+    [pattern_seed_reader.read_memory_dir, core_read_memory_dir],
+    ids=["mcp", "core"],
+)
+def test_reader_refuses_an_index_symlinked_out(reader, tmp_path):
+    with pytest.raises(PermissionError, match="outside_dir") as err:
+        reader(_index_symlinked_out(tmp_path) / "MEMORY.md")
+    assert MARKER not in str(err.value)
 
 
 def _core_imports(tree: ast.AST) -> list[str]:

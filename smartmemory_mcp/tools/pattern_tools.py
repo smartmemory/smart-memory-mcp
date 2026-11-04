@@ -209,12 +209,16 @@ def register(mcp):
         are read: an absolute link, a ``..`` part or a symlink out of the dir is
         skipped with a WARNING naming it. Titles already in the catalog are
         skipped, so a re-run creates nothing new. Returns ``{created, skipped}``
-        (each skip with its reason).
+        (each skip with its reason). A MEMORY.md that is itself a symlink out of
+        ``dir`` is refused unread (``outside_dir``).
         """
         try:
             return get_backend().pattern_seed(dir)
         except FileNotFoundError:
             return f"No MEMORY.md in {dir}. Pass the directory that holds your MEMORY.md index."
+        except PermissionError as e:
+            # An index symlinked out of dir: refused unread, nothing sent.
+            return f"Refused: {e}"
 
     @mcp.tool(
         title="Get violation patterns",
