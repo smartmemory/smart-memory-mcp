@@ -8,26 +8,12 @@ from .models import MemoryResult
 
 
 # MCP-LOCAL-BROKEN-TOOLS-1: tools that register but only error in local mode.
-# tool name -> the bug that breaks it. Each tool is its own capability (named after
+# tool name -> the bug that breaks it. Empty since SM-LOCAL-TOOLS-1 fixed all fourteen; the
+# mechanism stays for the next one. Each tool is its own capability (named after
 # the tool, not a backend method): LocalBackend declares them unsupported, remote and
 # hosted backends keep them. Delete a row here when its bug is fixed; the tool comes
 # back in local mode with no other change. Tool names in capabilities.TOOL_CAPABILITIES.
-LOCAL_BROKEN_TOOLS: dict[str, str] = {
-    "memory_search_advanced": "CORE-GRAPHCONFIG-1: no graph name configured for main",
-    "memory_policy_bundle": "Policy compilation requires a scoped workspace_id (needs hosted)",
-    "pattern_list": "'LocalBackend' object has no attribute '_graph'",
-    "pattern_query": "'LocalBackend' object has no attribute '_graph'",
-    "memory_plan_active": "'LocalBackend' object has no attribute '_graph'",
-    "memory_anchor_list": "'LocalBackend' object has no attribute '_graph'",
-    "memory_anchor_check_drift": "'LocalBackend' object has no attribute '_graph'",
-    "dev_load_context": "object of type 'NoneType' has no len() (decision with no rationale)",
-    "zettel_clusters": "ZettelMemory.__init__() got an unexpected keyword argument 'memory'",
-    "zettel_backlinks": "ZettelMemory.__init__() got an unexpected keyword argument 'memory'",
-    "zettel_connections": "ZettelMemory.__init__() got an unexpected keyword argument 'memory'",
-    "zettel_discover": "ZettelMemory.__init__() got an unexpected keyword argument 'memory'",
-    "memory_plan_create": "'LocalBackend' object has no attribute 'update_properties' (with tasks)",
-    "memory_log_failure": "object of type 'MemoryItem' has no len()",
-}
+LOCAL_BROKEN_TOOLS: dict[str, str] = {}
 
 
 class BackendCapabilities:
@@ -382,3 +368,57 @@ class MemoryBackend(Protocol):
     def decision_try_activate(self, decision_id: str) -> bool:
         """True when the pending decision became active."""
         ...
+
+    # --- Patterns, plans, anchors, failure journal (SM-LOCAL-TOOLS-1) ------------
+    # Plain dicts/lists/strings, as the decision block. Local runs the core managers on
+    # the real store; remote raises NotImplementedError (no client for the routes yet).
+
+    def pattern_query(
+        self,
+        scope: str | None = None,
+        severity: str | None = None,
+        free_text: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]: ...
+
+    def pattern_get(self, pattern_id: str) -> dict[str, Any] | None: ...
+
+    def pattern_list(self, limit: int = 200) -> list[dict[str, Any]]: ...
+
+    def plan_create(
+        self,
+        title: str,
+        tasks: list[dict[str, Any]] | None = None,
+        context: str = "",
+        created_by: str = "",
+    ) -> dict[str, Any]: ...
+
+    def plan_get(self, plan_id: str) -> dict[str, Any] | None: ...
+
+    def plan_active(self) -> list[dict[str, Any]]: ...
+
+    def plan_update_task(self, plan_id: str, task_id: str, status: str) -> None: ...
+
+    def anchor_set(self, content: str, anchor_type: str, session_id: str) -> str: ...
+
+    def anchor_list(
+        self, session_id: str = "", anchor_type: str | None = None
+    ) -> list[dict[str, Any]]: ...
+
+    def anchor_clear(
+        self, session_id: str = "", anchor_type: str | None = None
+    ) -> int: ...
+
+    def anchor_graduate(self, session_id: str = "") -> list[str]: ...
+
+    def anchor_check_drift(
+        self, session_id: str, recent_outputs: list[str]
+    ) -> list[dict[str, Any]]: ...
+
+    def log_failure(
+        self, error_type: str, content: str, context: str, **kwargs: Any
+    ) -> str: ...
+
+    def check_failure(
+        self, error_type: str, context: str, top_k: int = 3
+    ) -> list[dict[str, Any]]: ...

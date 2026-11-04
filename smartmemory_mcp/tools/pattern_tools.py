@@ -6,20 +6,13 @@ and other harnesses consume ``pattern_query`` to enforce the catalog.
 
 import logging
 import os
-from typing import Any, List, Optional, Union
+from typing import List, Optional, Union
 
 from mcp.types import ToolAnnotations
 
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
-
-
-def _pattern_to_dict(p: Any) -> dict:
-    """Serialize a Pattern dataclass for JSON-friendly MCP output."""
-    if hasattr(p, "to_dict"):
-        return p.to_dict()
-    return dict(p)
 
 
 def register(mcp):
@@ -40,7 +33,7 @@ def register(mcp):
         severity: Optional[str] = None,
         free_text: Optional[str] = None,
         limit: int = 100,
-    ) -> List[dict]:
+    ) -> Union[List[dict], str]:
         """Query the adherence pattern catalog.
 
         Filters are conjunctive. ``scope`` does case-insensitive substring
@@ -49,16 +42,12 @@ def register(mcp):
         ``info | warn | error``. ``free_text`` matches title, content, and
         rationale (case-insensitive substring).
         """
-        from smartmemory.adherence import PatternManager
-
-        manager = PatternManager(get_backend())
-        results = manager.query(
+        return get_backend().pattern_query(
             scope=scope,
             severity=severity,
             free_text=free_text,
             limit=limit,
         )
-        return [_pattern_to_dict(p) for p in results]
 
     @mcp.tool(
         title="Get an adherence pattern",
@@ -70,15 +59,9 @@ def register(mcp):
         ),
     )
     @graceful
-    def pattern_get(pattern_id: str) -> Optional[dict]:
+    def pattern_get(pattern_id: str) -> Union[dict, str, None]:
         """Fetch one pattern by id, or null if not found."""
-        from smartmemory.adherence import PatternManager
-
-        manager = PatternManager(get_backend())
-        inst = manager.get(pattern_id)
-        if inst is None:
-            return None
-        return _pattern_to_dict(inst)
+        return get_backend().pattern_get(pattern_id)
 
     @mcp.tool(
         title="List adherence patterns",
@@ -90,13 +73,9 @@ def register(mcp):
         ),
     )
     @graceful
-    def pattern_list(limit: int = 200) -> List[dict]:
+    def pattern_list(limit: int = 200) -> Union[List[dict], str]:
         """Return every active pattern (no filters)."""
-        from smartmemory.adherence import PatternManager
-
-        manager = PatternManager(get_backend())
-        results = manager.queries.list_all(limit=limit)
-        return [_pattern_to_dict(p) for p in results]
+        return get_backend().pattern_list(limit=limit)
 
     @mcp.tool(
         title="Get violation patterns",

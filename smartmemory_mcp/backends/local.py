@@ -194,7 +194,8 @@ class LocalBackend(BackendCapabilities):
     """Wraps smartmemory package for local-mode operations."""
 
     # Tools using REST have a separate local implementation. The rest are tools
-    # that only error here (MCP-LOCAL-BROKEN-TOOLS-1, bug per tool in LOCAL_BROKEN_TOOLS).
+    # that only error here (MCP-LOCAL-BROKEN-TOOLS-1, bug per tool in LOCAL_BROKEN_TOOLS;
+    # empty since SM-LOCAL-TOOLS-1).
     unsupported_capabilities = frozenset({"request"}) | frozenset(LOCAL_BROKEN_TOOLS)
 
     def __init__(self) -> None:
@@ -424,8 +425,14 @@ class LocalBackend(BackendCapabilities):
         domain: str | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Compile the in-process workspace's policy bundle unchanged."""
-        return self._mem.compile_policy_bundle(workflow=workflow, domain=domain)
+        """Compile the in-process store's policy bundle.
+
+        Lite has one unscoped workspace (``LOCAL_WORKSPACE``); core honours that label only on an
+        unscoped Lite store and refuses it on a scoped one (SM-LOCAL-TOOLS-1).
+        """
+        return self._mem.compile_policy_bundle(
+            workflow=workflow, domain=domain, workspace_id=LOCAL_WORKSPACE
+        )
 
     def peer_chat(self, **kwargs: Any) -> dict[str, Any]:
         """Zero-schema peer synthesis passthrough (CORE-ZERO-SCHEMA-1 Phase 1).
@@ -1209,3 +1216,115 @@ class LocalBackend(BackendCapabilities):
 
     def decision_try_activate(self, decision_id: str) -> bool:
         return bool(self._residuation().try_activate(decision_id))
+
+    # -- Patterns, plans, anchors, failure journal (SM-LOCAL-TOOLS-1) --
+    #
+    # Same rule as the decision block above: the core managers take the REAL SmartMemory
+    # (``self._mem``), never this wrapper. Handed the wrapper they read ``memory._graph``
+    # (AttributeError) or call ``memory.add(MemoryItem)``, which this wrapper's
+    # ``add(content: str)`` received as text. Plain dicts, lists and strings come out, so a
+    # remote implementation can return the same shapes.
+
+    def _pattern_manager(self):
+        from smartmemory.adherence import PatternManager
+
+        return PatternManager(self._mem)
+
+    def _plan_manager(self):
+        from smartmemory.plans.manager import PlanManager
+
+        return PlanManager(self._mem)
+
+    def _anchor_manager(self):
+        from smartmemory.anchors.manager import AnchorManager
+
+        return AnchorManager(self._mem)
+
+    def _failure_journal(self):
+        from smartmemory.plans.failure_journal import FailureJournal
+
+        return FailureJournal(self._mem)
+
+    def pattern_query(
+        self,
+        scope: str | None = None,
+        severity: str | None = None,
+        free_text: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        patterns = self._pattern_manager().query(
+            scope=scope, severity=severity, free_text=free_text, limit=limit
+        )
+        return [_pattern_dict(p) for p in patterns]
+
+    def pattern_get(self, pattern_id: str) -> dict[str, Any] | None:
+        pattern = self._pattern_manager().get(pattern_id)
+        return None if pattern is None else _pattern_dict(pattern)
+
+    def pattern_list(self, limit: int = 200) -> list[dict[str, Any]]:
+        return [
+            _pattern_dict(p)
+            for p in self._pattern_manager().queries.list_all(limit=limit)
+        ]
+
+    def plan_create(
+        self,
+        title: str,
+        tasks: list[dict[str, Any]] | None = None,
+        context: str = "",
+        created_by: str = "",
+    ) -> dict[str, Any]:
+        """``{"plan_id", "task_ids"}`` from PlanManager.create."""
+        return self._plan_manager().create(title, tasks or [], context, created_by)
+
+    def plan_get(self, plan_id: str) -> dict[str, Any] | None:
+        return self._plan_manager().get(plan_id)
+
+    def plan_active(self) -> list[dict[str, Any]]:
+        return self._plan_manager().get_active()
+
+    def plan_update_task(self, plan_id: str, task_id: str, status: str) -> None:
+        self._plan_manager().update_task(plan_id, task_id, status)
+
+    def anchor_set(self, content: str, anchor_type: str, session_id: str) -> str:
+        return self._anchor_manager().set(content, anchor_type, session_id)
+
+    def anchor_list(
+        self, session_id: str = "", anchor_type: str | None = None
+    ) -> list[dict[str, Any]]:
+        return self._anchor_manager().list(session_id, anchor_type)
+
+    def anchor_clear(self, session_id: str = "", anchor_type: str | None = None) -> int:
+        return self._anchor_manager().clear(session_id, anchor_type)
+
+    def anchor_graduate(self, session_id: str = "") -> list[str]:
+        return self._anchor_manager().graduate(session_id)
+
+    def anchor_check_drift(
+        self, session_id: str, recent_outputs: list[str]
+    ) -> list[dict[str, Any]]:
+        """Each core DriftReport as a dict (anchor_id, anchor_content, drift_score, missing_keywords, severity)."""
+        from dataclasses import asdict
+
+        reports = self._anchor_manager().check_drift(session_id, recent_outputs)
+        return [asdict(report) for report in reports]
+
+    def log_failure(
+        self, error_type: str, content: str, context: str, **kwargs: Any
+    ) -> str:
+        """FailureJournal.log on the real store; returns the stored item id."""
+        return self._failure_journal().log(
+            error_type=error_type, content=content, context=context, **kwargs
+        )
+
+    def check_failure(
+        self, error_type: str, context: str, top_k: int = 3
+    ) -> list[dict[str, Any]]:
+        return self._failure_journal().check_before_retry(error_type, context, top_k)
+
+
+def _pattern_dict(pattern: Any) -> dict[str, Any]:
+    """A core Pattern as a JSON-friendly dict."""
+    if hasattr(pattern, "to_dict"):
+        return pattern.to_dict()
+    return dict(pattern)

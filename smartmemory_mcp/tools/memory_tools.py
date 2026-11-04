@@ -646,10 +646,11 @@ def register_free(mcp):
 
         output = [f"Found {len(results)} results for '{query}':\n"]
         for i, item in enumerate(results, 1):
-            content = str(item["content"])
+            # The facade returns MemoryItems, not dicts.
+            content = str(item.content)
             preview = content[:200] + "..." if len(content) > 200 else content
-            item_id = item["item_id"]
-            mtype = item["memory_type"]
+            item_id = item.item_id
+            mtype = item.memory_type
             score = item.get("score")
             score_str = f" (score: {score:.3f})" if score is not None else ""
 
@@ -1339,33 +1340,30 @@ def register_pro(mcp):
         query: str, algorithm: str = "query_traversal", max_results: int = 15
     ) -> str:
         """Advanced search using Similarity Graph Traversal (SSG) algorithms."""
-        try:
-            from smartmemory.retrieval.ssg_traversal import SimilarityGraphTraversal
-        except ImportError:
-            return "Advanced search requires local backend with smartmemory installed."
-
         backend = get_backend()
         mem = getattr(backend, "_mem", None)
         if mem is None:
             return "Advanced search requires local backend."
-
-        ssg = SimilarityGraphTraversal(mem)
-        if algorithm == "query_traversal":
-            results = ssg.query_traversal(query, max_results=max_results)
-        elif algorithm == "triangulation_fulldim":
-            results = ssg.triangulation_fulldim(query, max_results=max_results)
-        else:
+        if algorithm not in ("query_traversal", "triangulation_fulldim"):
             return f"Unknown algorithm: {algorithm}. Use 'query_traversal' or 'triangulation_fulldim'"
+
+        # SM-LOCAL-TOOLS-1: through the facade, which runs SSG inside the memory's own context.
+        # Building SimilarityGraphTraversal here, outside any facade call, gave it the
+        # process-default FalkorDB vector store (no graph name under Lite: CORE-GRAPHCONFIG-1).
+        results = mem.similarity_graph_traversal(
+            query, algorithm=algorithm, max_results=max_results
+        )
 
         if not results:
             return f"No results found for query: {query}"
 
         output = [f"SSG ({algorithm}) found {len(results)} results for '{query}':\n"]
         for i, item in enumerate(results, 1):
-            content = str(item["content"])
+            # The facade returns MemoryItems, not dicts.
+            content = str(item.content)
             preview = content[:200] + "..." if len(content) > 200 else content
-            item_id = item["item_id"]
-            mtype = item["memory_type"]
+            item_id = item.item_id
+            mtype = item.memory_type
             output.append(f"{i}. [{item_id}] ({mtype})")
             output.append(f"   {preview}\n")
 

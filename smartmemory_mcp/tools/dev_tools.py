@@ -280,8 +280,9 @@ def register(mcp):
                 output.append(f"=== Related Decisions ({len(decision_results)}) ===\n")
                 for i, item in enumerate(decision_results, 1):
                     meta = item["metadata"]
-                    title = meta.get("title", "Untitled")
-                    rationale = meta.get("rationale", "")
+                    # SM-LOCAL-TOOLS-1: a decision stores rationale=None when it has none.
+                    title = meta.get("title") or "Untitled"
+                    rationale = meta.get("rationale") or ""
                     preview = (
                         rationale[:100] + "..." if len(rationale) > 100 else rationale
                     )
