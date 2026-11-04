@@ -10,9 +10,11 @@ logger = logging.getLogger(__name__)
 
 
 def _get_zettel_memory():
-    """Get ZettelMemory from the local backend's underlying SmartMemory instance.
+    """Get ZettelMemory over the local backend's own store (its SmartMemory's graph and scope).
 
-    Returns (ZettelMemory, None) on success, (None, error_message) on failure.
+    Returns (ZettelMemory, None) on success, (None, error_message) on failure. SM-LOCAL-TOOLS-1:
+    ``ZettelMemory(memory=...)`` was never a core signature, and the plain constructor builds
+    its own graph on the configured default backend, not the Lite store.
     """
     from smartmemory.memory.types.zettel_memory import ZettelMemory
 
@@ -26,7 +28,7 @@ def _get_zettel_memory():
             "Zettel tools require local backend. Remote mode does not support graph-based zettel operations.",
         )
 
-    return ZettelMemory(memory=mem), None
+    return ZettelMemory.for_memory(mem), None
 
 
 def register(mcp):

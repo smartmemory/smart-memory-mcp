@@ -13,7 +13,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import httpx
 
@@ -1499,3 +1499,43 @@ class RemoteBackend(BackendCapabilities):
             json={},
         )
         return bool(result.get("activated"))
+
+    # -- Patterns, plans, anchors, failure journal (SM-LOCAL-TOOLS-1) --
+    #
+    # Remote mode still does not run most of these. Before, the tools built a core manager over
+    # this wrapper: the writes stopped at ``ingest_structured`` (this same message) and the list
+    # reads raised AttributeError on ``_graph``; those now give this one message. The three reads
+    # that reached the service through ``get``/``search`` keep that path unchanged. The service
+    # has the routes (memory_service/api/routes/{patterns,plans,anchors,failures}.py); a client
+    # for them here is its own unit.
+
+    def _not_in_remote_mode(self, *args: Any, **kwargs: Any) -> NoReturn:
+        raise NotImplementedError("Not available in remote mode. Use local backend.")
+
+    pattern_query = pattern_list = _not_in_remote_mode
+    plan_create = plan_active = plan_update_task = _not_in_remote_mode
+    anchor_set = anchor_list = anchor_clear = anchor_graduate = _not_in_remote_mode
+    anchor_check_drift = log_failure = _not_in_remote_mode
+
+    def pattern_get(self, pattern_id: str) -> dict[str, Any] | None:
+        """PatternManager over this wrapper, as the tool ran it before (a ``get`` by id)."""
+        from smartmemory.adherence import PatternManager
+
+        from .local import _pattern_dict
+
+        pattern = PatternManager(self).get(pattern_id)
+        return None if pattern is None else _pattern_dict(pattern)
+
+    def plan_get(self, plan_id: str) -> dict[str, Any] | None:
+        """PlanManager over this wrapper, as the tool ran it before (a ``get`` by id)."""
+        from smartmemory.plans.manager import PlanManager
+
+        return PlanManager(self).get(plan_id)
+
+    def check_failure(
+        self, error_type: str, context: str, top_k: int = 3
+    ) -> list[dict[str, Any]]:
+        """FailureJournal over this wrapper, as the tool ran it before (a ``search``)."""
+        from smartmemory.plans.failure_journal import FailureJournal
+
+        return FailureJournal(self).check_before_retry(error_type, context, top_k)

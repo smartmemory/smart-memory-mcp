@@ -31,11 +31,7 @@ def register(mcp):
         created_by: str = "",
     ) -> str:
         """Create a plan with optional task nodes."""
-        from smartmemory.plans.manager import PlanManager
-
-        backend = get_backend()
-        manager = PlanManager(backend)
-        result = manager.create(title, tasks or [], context, created_by)
+        result = get_backend().plan_create(title, tasks or [], context, created_by)
         return f"Plan created. plan_id: {result['plan_id']}, tasks: {len(result['task_ids'])}"
 
     @mcp.tool(
@@ -52,11 +48,7 @@ def register(mcp):
         plan_id: str,
     ) -> str:
         """Get a plan with all its tasks."""
-        from smartmemory.plans.manager import PlanManager
-
-        backend = get_backend()
-        manager = PlanManager(backend)
-        result = manager.get(plan_id)
+        result = get_backend().plan_get(plan_id)
         if result is None:
             return f"Plan {plan_id} not found."
         return json.dumps(result, indent=2, default=str)
@@ -73,11 +65,7 @@ def register(mcp):
     @graceful
     def memory_plan_active() -> str:
         """Get all active plans."""
-        from smartmemory.plans.manager import PlanManager
-
-        backend = get_backend()
-        manager = PlanManager(backend)
-        plans = manager.get_active()
+        plans = get_backend().plan_active()
         if not plans:
             return "No active plans."
         lines = [f"Active plans ({len(plans)}):"]
@@ -103,11 +91,7 @@ def register(mcp):
         status: str,
     ) -> str:
         """Update a task's status within a plan (pending, in_progress, complete, blocked)."""
-        from smartmemory.plans.manager import PlanManager
-
-        backend = get_backend()
-        manager = PlanManager(backend)
-        manager.update_task(plan_id, task_id, status)
+        get_backend().plan_update_task(plan_id, task_id, status)
         return f"Task {task_id} updated to '{status}' in plan {plan_id}."
 
     @mcp.tool(
@@ -130,11 +114,7 @@ def register(mcp):
         resolution: Optional[str] = None,
     ) -> str:
         """Log an agent failure for cross-session error recovery."""
-        from smartmemory.plans.failure_journal import FailureJournal
-
-        backend = get_backend()
-        journal = FailureJournal(backend)
-        item_id = journal.log(
+        item_id = get_backend().log_failure(
             error_type=error_type,
             content=content,
             context=context,
@@ -161,11 +141,7 @@ def register(mcp):
         top_k: int = 3,
     ) -> str:
         """Check for matching past failures before retrying."""
-        from smartmemory.plans.failure_journal import FailureJournal
-
-        backend = get_backend()
-        journal = FailureJournal(backend)
-        matches = journal.check_before_retry(error_type, context, top_k)
+        matches = get_backend().check_failure(error_type, context, top_k)
         if not matches:
             return f"No prior failures matching {error_type} in this context."
         lines = [f"Found {len(matches)} prior failure(s):"]

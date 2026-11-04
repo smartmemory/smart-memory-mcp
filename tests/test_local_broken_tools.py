@@ -2,6 +2,10 @@
 
 Real FastMCP registration through `server._register_tools` (PRO+ tier), listed through
 the real capability middleware, in local, remote and hosted mode.
+
+SM-LOCAL-TOOLS-1 fixed all fourteen, so the table is empty and every one is advertised
+locally (behaviour per tool: test_local_tools_contract.py). The hide mechanism stays for
+the next broken tool; the mechanism tests below put one row back to prove it still works.
 """
 
 import asyncio
@@ -25,7 +29,8 @@ from smartmemory_mcp.tools import common
 
 from ._hosted_fixtures import hosted_config, memory_store
 
-# The 14 tools reproduced as failing in local mode (scratch/2026-10-10-mcp-broken-tools).
+# The 14 tools reproduced as failing in local mode (scratch/2026-10-10-mcp-broken-tools),
+# all fixed by SM-LOCAL-TOOLS-1.
 BROKEN = (
     "memory_search_advanced",
     "memory_policy_bundle",
@@ -48,9 +53,26 @@ BROKEN = (
 STAYS = ("agent_evaluation_get",)
 
 # All 15 audited tools as (name, expected to be advertised locally). Remote advertises all 15.
-AUDITED = tuple((tool, False) for tool in BROKEN) + tuple(
-    (tool, True) for tool in STAYS
-)
+AUDITED = tuple((tool, True) for tool in BROKEN) + tuple((tool, True) for tool in STAYS)
+
+# A row put back for the mechanism tests: the hide still works for the next broken tool.
+SAMPLE = "pattern_list"
+
+
+@pytest.fixture
+def one_row_back(monkeypatch):
+    """LOCAL_BROKEN_TOOLS with one row, wired the way the import-time tables would be."""
+    import smartmemory_mcp.capabilities as capabilities
+
+    monkeypatch.setitem(
+        LOCAL_BROKEN_TOOLS, SAMPLE, "test_reason: no attribute '_graph'"
+    )
+    monkeypatch.setitem(capabilities.TOOL_CAPABILITIES, SAMPLE, SAMPLE)
+    monkeypatch.setattr(
+        LocalBackend,
+        "unsupported_capabilities",
+        LocalBackend.unsupported_capabilities | {SAMPLE},
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -94,11 +116,10 @@ def _remote():
     return RemoteBackend(api_key="sk_test_key_123")
 
 
-def test_table_is_the_audited_set():
-    assert set(LOCAL_BROKEN_TOOLS) == set(BROKEN)
-    # agent_evaluation_get returns the contract's cold-start None, not an error.
-    assert "agent_evaluation_get" not in LOCAL_BROKEN_TOOLS
-    assert all(TOOL_CAPABILITIES[tool] == tool for tool in BROKEN)
+def test_table_is_empty_since_all_fourteen_are_fixed():
+    assert LOCAL_BROKEN_TOOLS == {}
+    # No capability gate is left on any of them.
+    assert not set(BROKEN) & set(TOOL_CAPABILITIES)
 
 
 @pytest.mark.parametrize(("tool", "present_locally"), AUDITED)
@@ -109,13 +130,13 @@ def test_each_audited_tool_listing_locally_and_remotely(
     assert (tool in _names(_server(monkeypatch, _local()))) is present_locally
 
 
-def test_local_list_differs_from_the_unfiltered_list_by_exactly_the_broken_tools(
+def test_local_list_equals_the_unfiltered_list(
     monkeypatch,
 ):
     everything = _names(_server(monkeypatch, _local(), middleware=False))
     local = _names(_server(monkeypatch, _local()))
-    assert everything - local == set(BROKEN)
-    assert local <= everything
+    assert local == everything
+    assert set(BROKEN) <= local
     # Literal names, not derived from this branch's registration: a tool dropped from
     # both the unfiltered and the local registry would pass the subtraction above.
     assert set(STAYS) <= everything
@@ -126,19 +147,20 @@ def test_local_list_differs_from_the_unfiltered_list_by_exactly_the_broken_tools
     assert set(BROKEN) | set(STAYS) <= remote
 
 
-@pytest.mark.parametrize("tool", BROKEN)
-def test_calling_a_hidden_tool_locally_returns_the_capability_error(monkeypatch, tool):
+def test_a_row_put_back_hides_its_tool_and_refuses_the_call(monkeypatch, one_row_back):
+    assert SAMPLE in _names(_server(monkeypatch, _remote()))
     mcp = _server(monkeypatch, _local())
+    assert SAMPLE not in _names(mcp)
 
     async def go():
         async with Client(mcp) as client:
             with pytest.raises(ToolError, match="not supported by the active backend"):
-                await client.call_tool(tool, {})
+                await client.call_tool(SAMPLE, {})
 
     asyncio.run(go())
 
 
-def test_listing_warns_once_naming_every_hidden_tool(monkeypatch, caplog):
+def test_listing_warns_once_naming_a_row_put_back(monkeypatch, caplog, one_row_back):
     mcp = _server(monkeypatch, _local())
     with caplog.at_level(logging.WARNING, logger="smartmemory_mcp.capabilities"):
         _names(mcp)
@@ -146,9 +168,15 @@ def test_listing_warns_once_naming_every_hidden_tool(monkeypatch, caplog):
     records = [r for r in caplog.records if r.name == "smartmemory_mcp.capabilities"]
     assert len(records) == 1
     assert records[0].levelno == logging.WARNING
-    for tool in BROKEN:
-        assert tool in records[0].getMessage()
+    assert SAMPLE in records[0].getMessage()
     assert "no attribute '_graph'" in records[0].getMessage()
+
+
+def test_local_listing_does_not_warn_with_the_table_empty(monkeypatch, caplog):
+    mcp = _server(monkeypatch, _local())
+    with caplog.at_level(logging.WARNING, logger="smartmemory_mcp.capabilities"):
+        _names(mcp)
+    assert not [r for r in caplog.records if r.name == "smartmemory_mcp.capabilities"]
 
 
 def test_remote_listing_does_not_warn(monkeypatch, caplog):
@@ -168,14 +196,36 @@ def test_hosted_surface_is_unchanged():
     finally:
         hosted_identity.set_hosted_mode(before)
     assert advertised == set(HOSTED_TOOLS)
-    # Hosted never installs the capability middleware, so a broken-locally tool the
-    # hosted allowlist carries stays advertised, and the others stay excluded as before.
+    # Hosted never installs the capability middleware; its allowlist carries one of the
+    # fourteen and still excludes the others, as before.
     assert advertised & set(BROKEN) == {"memory_policy_bundle"}
 
 
-def test_hosted_backend_supports_every_broken_tool():
+def test_every_backend_has_a_method_behind_the_fixed_tools():
+    """No capability gate is left, so each backend answers the backend method the tool calls:
+    Local runs it, Remote and Hosted refuse it by name (remote client: a follow-up unit)."""
     from smartmemory_mcp.hosted.backend import HostedRemoteBackend
 
-    assert not any(LocalBackend.supports(tool) for tool in BROKEN)
-    assert all(HostedRemoteBackend.supports(tool) for tool in BROKEN)
-    assert all(RemoteBackend.supports(tool) for tool in BROKEN)
+    methods = (
+        "pattern_query",
+        "pattern_get",
+        "pattern_list",
+        "plan_create",
+        "plan_get",
+        "plan_active",
+        "plan_update_task",
+        "anchor_set",
+        "anchor_list",
+        "anchor_clear",
+        "anchor_graduate",
+        "anchor_check_drift",
+        "log_failure",
+        "check_failure",
+    )
+    for backend in (LocalBackend, RemoteBackend, HostedRemoteBackend):
+        assert all(callable(getattr(backend, m, None)) for m in methods), (
+            backend.__name__
+        )
+    remote = _remote()
+    with pytest.raises(NotImplementedError, match="Not available in remote mode"):
+        remote.pattern_list()
