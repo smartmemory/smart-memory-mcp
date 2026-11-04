@@ -116,42 +116,50 @@ def merge_base_branch(root: Path, local_sha: str) -> str | None:
     return DEFAULT_BRANCH if ahead.get(DEFAULT_BRANCH) == nearest else min(ahead, key=ahead.get)
 
 
-def target_branches(stdin_text: str, warnings: list[str], root: Path | None = None) -> list[str]:
-    """Branches this push updates, from the hook's stdin (`<local ref> <local sha> <remote ref> <remote sha>` per line).
+def push_targets(stdin_text: str, warnings: list[str], root: Path | None = None) -> list[tuple[str, list[str]]]:
+    """`(branch, pushed shas)` per target branch, from the hook's stdin (`<local ref> <local sha> <remote ref> <remote sha>` per line).
 
-    Deletes are skipped. A remote ref that is not `refs/heads/<name>`, or no usable stdin at all, resolves to
-    `main` with one WARNING. `PREPUSH_TARGET_BRANCH=0` forces `["main"]` with no warning (old behaviour). A target that is neither `2.0` nor
-    `main` resolves to the base its pushed commit was cut from (`merge_base_branch`), given `root`."""
-    if os.environ.get("PREPUSH_TARGET_BRANCH") == "0":
-        return [DEFAULT_BRANCH]
-    branches: list[str] = []
+    Each sha is paired with the branch its OWN line targets, so a mixed push (`main` and `2.0` in one `git push`) checks a
+    sha only against its own branch (OPS-SERVICE-PREPUSH-PER-LINE-TARGET-1). Deletes are skipped. A remote ref that is
+    not `refs/heads/<name>`, or no usable stdin at all, resolves to `main` with one WARNING (no stdin carries no shas:
+    the caller scans HEAD). `PREPUSH_TARGET_BRANCH=0` puts every sha on `main` with no warning (old behaviour). A target
+    that is neither `2.0` nor `main` resolves to the base its pushed commit was cut from (`merge_base_branch`), given
+    `root`. Branches keep first-seen order."""
+    force_default = os.environ.get("PREPUSH_TARGET_BRANCH") == "0"
+    grouped: dict[str, list[str]] = {}
     unknown: list[str] = []
     for line in stdin_text.splitlines():
         parts = line.split()
         if len(parts) != 4 or set(parts[1]) == {"0"}:
             continue  # blank, malformed, or a delete (local sha all zeros)
-        remote_ref = parts[2]
-        if root is not None and remote_ref not in (f"refs/heads/{n}" for n in BASE_CANDIDATES):
-            base = merge_base_branch(root, parts[1])  # OPS-PREPUSH-BASE-FROM-MERGEBASE-1
-            if base:
-                if base not in branches:
-                    branches.append(base)
-                continue
-        if remote_ref.startswith("refs/heads/"):
-            branch = remote_ref[len("refs/heads/") :]
-        else:
+        local_sha, remote_ref = parts[1], parts[2]
+        branch = None
+        if force_default:
             branch = DEFAULT_BRANCH
-            unknown.append(remote_ref)
-        if branch not in branches:
-            branches.append(branch)
-    if not branches and not stdin_text.strip():
+        elif root is not None and remote_ref not in (f"refs/heads/{n}" for n in BASE_CANDIDATES):
+            branch = merge_base_branch(root, local_sha)  # OPS-PREPUSH-BASE-FROM-MERGEBASE-1
+        if branch is None:
+            if remote_ref.startswith("refs/heads/"):
+                branch = remote_ref[len("refs/heads/") :]
+            else:
+                branch = DEFAULT_BRANCH
+                unknown.append(remote_ref)
+        shas = grouped.setdefault(branch, [])
+        if local_sha not in shas:
+            shas.append(local_sha)
+    if force_default:
+        return list(grouped.items()) or [(DEFAULT_BRANCH, [])]
+    if not grouped and not stdin_text.strip():
         unknown.append("<no push target on stdin>")
-        branches.append(DEFAULT_BRANCH)
+        grouped[DEFAULT_BRANCH] = []
     for ref in unknown:
-        warnings.append(
-            f"  push target {ref} is not a branch: comparing against origin/{DEFAULT_BRANCH}"
-        )
-    return branches
+        warnings.append(f"  push target {ref} is not a branch: comparing against origin/{DEFAULT_BRANCH}")
+    return list(grouped.items())
+
+
+def target_branches(stdin_text: str, warnings: list[str], root: Path | None = None) -> list[str]:
+    """Branches this push updates (the branch half of `push_targets`)."""
+    return [branch for branch, _ in push_targets(stdin_text, warnings, root)]
 
 
 def read_stdin() -> str:
@@ -672,8 +680,7 @@ def main(stdin_text: str | None = None) -> int:
     skipped: list[str] = []
     failures: list[tuple[Path, str, str, Path, str]] = []
     stdin_text = read_stdin() if stdin_text is None else stdin_text
-    revs = pushed_shas(stdin_text)
-    for branch in target_branches(stdin_text, warnings, root):
+    for branch, revs in push_targets(stdin_text, warnings, root):  # revs: only the shas pushed to this branch
         for failure in validate_target(root, branch, warnings, skipped, revs):
             if failure not in failures:
                 failures.append(failure)
