@@ -137,10 +137,10 @@ Code indexing reports clean, partial and failed file counts plus acceptance, sta
 
 Local `code_effects(directory, repo_name=None)` scans Python effects through the shared engine without opening a memory store. Hosted `code_effects(repo, source_snapshot, limit=20, offset=0)` reads uploaded `fa_snapshot` records in the selected workspace. It accepts no filesystem path. Upload the engine's `snapshot_record` payload through existing declared-record ingestion first. Repository rules belong in the scanned checkout's `.smartmemory-effects.json`.
 
-Hosted mode advertises 26 tools, an explicit allowlist rather than a tier:
+Hosted mode advertises 28 tools, an explicit allowlist rather than a tier:
 
 `memory_save` `memory_search` `memory_recall` `read_around` `memory_get`
-`memory_explain` `memory_recall_pack` `memory_policy_bundle`
+`memory_explain` `memory_recall_pack` `memory_policy_bundle` `memory_learn` `memory_constrain`
 `memory_update` `memory_delete` `memory_list` `memory_stats`
 `memory_save_conversation` `memory_search_by_metadata` `memory_feedback`
 `code_search` `code_dead_code` `code_dependencies` `code_upload` `code_effects`

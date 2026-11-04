@@ -28,6 +28,8 @@ MEMORY_TOOLS = (
     "memory_explain",
     "memory_recall_pack",
     "memory_policy_bundle",
+    "memory_learn",
+    "memory_constrain",
     "memory_update",
     "memory_delete",
     "memory_list",

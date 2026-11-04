@@ -125,6 +125,8 @@ FREE_TOOLS = sorted(
         "read_around",  # CORE-RECALL-CENTERED-1 Phase 2
         "memory_recall_pack",  # CORE-RECALL-BUDGET-1 — budgeted context assembly, FREE by design
         "memory_policy_bundle",  # GOV-STRATUM-SEAM-1 P1 — required before a runner plans
+        "memory_learn",  # SM-LEARNED-TOOLS-1 — record a lesson, FREE like the decision suite
+        "memory_constrain",  # SM-LEARNED-TOOLS-1 — record a constraint
         # DEV-ONBOARD-FU-MCP-DECISION-TOOLS-FREE-1 — the decision suite is FREE
         # (tests/test_decision_tools_free_tier.py pins each name).
         "decision_create",

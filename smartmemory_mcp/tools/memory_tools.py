@@ -33,6 +33,10 @@ from .lexical_contract import validate_channel_weights
 logger = logging.getLogger(__name__)
 
 
+# Mirrored from smartmemory.learned.declaration.VALID_LEARNED_SCOPES (docs SM-LEARNED-TOOLS-1 contract.json).
+_LEARNED_SCOPES = ("repo", "workspace", "global")
+
+
 def _core_marks() -> bool:
     """Core is importable, so its read gate is bound (always on) and errors carry its refusal mark (U5.21).
 
@@ -969,6 +973,8 @@ def register_free(mcp):
         "notes",
         "hot_topics",
         "last_session",
+        "learned",
+        "constraints",
     )
 
     # Mirrored from smartmemory.recall_pack.PRESETS.
@@ -1003,6 +1009,9 @@ def register_free(mcp):
         small budget (~300 tokens) at session start for an L1 orientation card (active
         plan, anchors, workspace topics, last-session headline) — the default sections go
         degenerate at that size. Use ``get_working_context`` for the L2 drill-in.
+        ``learned`` and ``constraints`` are opt-in sections (SM-LEARNED-TOOLS-1): name them in
+        ``sections`` to pack the lessons and hard limits recorded with ``memory_learn`` and
+        ``memory_constrain``; an expired constraint is left out.
         Returns ``{block, manifest}``.
         """
         if not isinstance(budget_tokens, int) or budget_tokens < 1:
@@ -1047,6 +1056,82 @@ def register_free(mcp):
         bundle and is identical for local and hosted backends.
         """
         return get_backend().policy_bundle(workflow=workflow, domain=domain)
+
+    @mcp.tool(
+        title="Record a lesson learned",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def memory_learn(
+        content: str,
+        category: Optional[str] = None,
+        incident_link: Optional[str] = None,
+        learned_scope: Optional[str] = None,
+    ) -> str:
+        """Record a lesson learned, so later sessions can recall it.
+
+        Use this when a mistake, incident or surprise taught something worth keeping:
+        "never run migrations at peak". Put the lesson in `content` as one or two
+        sentences. `category` is a free-form tag, `incident_link` points at the incident
+        or ticket it came from, and `learned_scope` is where it applies: `repo`,
+        `workspace` or `global`. Read it back with `memory_recall_pack(sections=[{"name":
+        "learned"}])`.
+        """
+        if not isinstance(content, str) or not content.strip():
+            return "Error: `content` must be a non-empty string."
+        if learned_scope is not None and learned_scope not in _LEARNED_SCOPES:
+            return (
+                f"Error: unknown learned_scope {learned_scope!r}; "
+                f"known scopes: {', '.join(_LEARNED_SCOPES)}"
+            )
+        learned = get_backend().add_learning(
+            content,
+            category=category,
+            incident_link=incident_link,
+            learned_scope=learned_scope,
+        )
+        return f"Learned recorded: {learned['item_id']}"
+
+    @mcp.tool(
+        title="Record a constraint",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def memory_constrain(
+        content: str,
+        domain: Optional[str] = None,
+        source: Optional[str] = None,
+        expires_at: Optional[str] = None,
+    ) -> str:
+        """Record a hard limit that later work must respect.
+
+        Use this for a rule that must hold: "never publish an sdist", "no ARQ".
+        Put the rule in `content`. `domain` is its area (compliance, security, infra,
+        release, ...), `source` is who or what set it, and `expires_at` is an ISO-8601
+        time after which it no longer applies (a naive time is read as UTC). Read it
+        back with `memory_recall_pack(sections=[{"name": "constraints"}])`.
+        """
+        if not isinstance(content, str) or not content.strip():
+            return "Error: `content` must be a non-empty string."
+        if expires_at is not None:
+            try:
+                datetime.fromisoformat(expires_at.strip().replace("Z", "+00:00"))
+            except ValueError:
+                return f"Error: `expires_at` {expires_at!r} is not an ISO-8601 time."
+        constraint = get_backend().add_constraint(
+            content, domain=domain, source=source, expires_at=expires_at
+        )
+        return f"Constraint recorded: {constraint['item_id']}"
 
 
 # ---------------------------------------------------------------------------
