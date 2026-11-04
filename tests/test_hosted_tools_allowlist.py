@@ -67,7 +67,10 @@ EXCLUDED_TOOLS = (
     "memory_get_violation_patterns",  # reads local rule files
     "memory_anchor_set",  # AnchorManager needs a core SmartMemory
     "memory_plan_create",  # PlanManager needs a core SmartMemory
-    "pattern_query",  # PatternManager reads memory._graph
+    "pattern_query",  # REST-backed since SM-PATTERN-CRUD-1, not yet audited for hosted
+    "pattern_create",  # catalog write, not yet audited for hosted (SM-PATTERN-CRUD-1)
+    "pattern_retire",  # catalog write, not yet audited for hosted (SM-PATTERN-CRUD-1)
+    "pattern_seed",  # reads the client's MEMORY.md directory (filesystem path)
     "decision_create",  # requires _mem
     "peer_chat",  # parked remotely
     "transcript_search",  # local transcript store

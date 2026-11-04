@@ -1349,6 +1349,69 @@ class LocalBackend(BackendCapabilities):
             for p in self._pattern_manager().queries.list_all(limit=limit)
         ]
 
+    # Pattern writes (SM-PATTERN-CRUD-1, OWNER D-0089). Every write carries this process's
+    # provenance: ``source`` on create, ``updated_by`` on update, ``mcp:<agent id>`` when
+    # the store's scope is an agent, else ``mcp:local``.
+
+    def _pattern_editor(self) -> str:
+        provider = getattr(self._mem, "scope_provider", None)
+        resolve = getattr(provider, "resolve_agent_id", None)
+        agent = resolve() if callable(resolve) else None
+        return f"mcp:{agent or 'local'}"
+
+    def pattern_create(
+        self,
+        title: str,
+        content: str,
+        severity: str = "warn",
+        scope: list[str] | None = None,
+        examples: list[dict[str, Any]] | None = None,
+        rationale: str = "",
+    ) -> dict[str, Any]:
+        editor = self._pattern_editor()
+        pattern = self._pattern_manager().create(
+            content=content,
+            title=title,
+            severity=severity,
+            scope=list(scope or []),
+            examples=list(examples or []),
+            rationale=rationale,
+            source=editor,
+            updated_by=editor,
+        )
+        return _pattern_dict(pattern)
+
+    def pattern_update(
+        self, pattern_id: str, /, **fields: Any
+    ) -> dict[str, Any] | None:
+        manager = self._pattern_manager()
+        if manager.get(pattern_id) is None:
+            return None
+        fields["updated_by"] = self._pattern_editor()
+        return _pattern_dict(manager.update(pattern_id, **fields))
+
+    def pattern_retire(
+        self, pattern_id: str, reason: str = "retired via MCP"
+    ) -> dict[str, Any] | None:
+        manager = self._pattern_manager()
+        if manager.get(pattern_id) is None:
+            return None
+        manager.delete(pattern_id, reason=f"{reason} ({self._pattern_editor()})")
+        return {"pattern_id": pattern_id, "status": "retracted"}
+
+    def pattern_seed(self, directory: str) -> dict[str, Any]:
+        from pathlib import Path
+
+        from smartmemory.adherence import read_memory_dir
+
+        index_text, files, refused = read_memory_dir(Path(directory) / "MEMORY.md")
+        return self._mem.seed_patterns(
+            index_text,
+            files,
+            refused=refused,
+            source_prefix=f"{self._pattern_editor()}:memory_md",
+        )
+
     def plan_create(
         self,
         title: str,

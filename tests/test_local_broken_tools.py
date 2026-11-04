@@ -227,5 +227,6 @@ def test_every_backend_has_a_method_behind_the_fixed_tools():
             backend.__name__
         )
     remote = _remote()
+    # Patterns reach /memory/patterns since SM-PATTERN-CRUD-1; plans are still refused by name.
     with pytest.raises(NotImplementedError, match="Not available in remote mode"):
-        remote.pattern_list()
+        remote.plan_active()

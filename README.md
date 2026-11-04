@@ -74,6 +74,13 @@ core SmartMemory instance.
 Hosted search and recall ask the service to exclude speculative-derived memories
 server-side, while retaining client-side tier filtering as defence in depth.
 
+Hosted mode serves an explicit tool allowlist (`smartmemory_mcp/hosted/tools.py`).
+The adherence pattern tools are not on it: `pattern_seed` reads a MEMORY.md
+directory on the client's own disk, which a hosted server does not have, and
+`pattern_query/get/list` and `pattern_create/update/retire` are not yet audited
+for hosted. In stdio and `--http` modes all seven work, locally against your own
+store or remotely through `/memory/patterns` (the seed sends file text, never a path).
+
 ```bash
 SMARTMEMORY_MCP_MODE=hosted smartmemory-mcp
 # or

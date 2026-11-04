@@ -376,13 +376,12 @@ def test_class_a_managers_are_built_on_the_real_store_not_the_wrapper(
     assert captured["memory"] is real and captured["memory"] is not backend
 
 
-# -- Remote: the three reads that reached the service keep that path -----------------------------
+# -- Remote: the two reads that reached the service keep that path -------------------------------
 
 
 @pytest.mark.parametrize(
     ("method", "args", "target"),
     [
-        ("pattern_get", ("test_pat",), "smartmemory.adherence.PatternManager"),
         ("plan_get", ("test_plan",), "smartmemory.plans.manager.PlanManager"),
         (
             "check_failure",
@@ -420,8 +419,8 @@ def test_remote_refuses_the_rest_by_name():
     from smartmemory_mcp.backends.remote import RemoteBackend
 
     remote = RemoteBackend(api_key="sk_test_local_tools")
+    # Patterns: REST since SM-PATTERN-CRUD-1 (tests/test_pattern_write_tools.py).
     for method in (
-        "pattern_list",
         "plan_create",
         "anchor_list",
         "anchor_check_drift",

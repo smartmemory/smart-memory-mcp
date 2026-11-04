@@ -1554,11 +1554,12 @@ class RemoteBackend(BackendCapabilities):
         )
         return bool(result.get("activated"))
 
-    # -- Patterns, plans, anchors, failure journal (SM-LOCAL-TOOLS-1) --
+    # -- Plans, anchors, failure journal (SM-LOCAL-TOOLS-1) --
     #
+    # Patterns moved to the REST client at the end of this class (SM-PATTERN-CRUD-1).
     # Remote mode still does not run most of these. Before, the tools built a core manager over
     # this wrapper: the writes stopped at ``ingest_structured`` (this same message) and the list
-    # reads raised AttributeError on ``_graph``; those now give this one message. The three reads
+    # reads raised AttributeError on ``_graph``; those now give this one message. The two reads
     # that reached the service through ``get``/``search`` keep that path unchanged. The service
     # has the routes (memory_service/api/routes/{patterns,plans,anchors,failures}.py); a client
     # for them here is its own unit.
@@ -1566,19 +1567,9 @@ class RemoteBackend(BackendCapabilities):
     def _not_in_remote_mode(self, *args: Any, **kwargs: Any) -> NoReturn:
         raise NotImplementedError("Not available in remote mode. Use local backend.")
 
-    pattern_query = pattern_list = _not_in_remote_mode
     plan_create = plan_active = plan_update_task = _not_in_remote_mode
     anchor_set = anchor_list = anchor_clear = anchor_graduate = _not_in_remote_mode
     anchor_check_drift = log_failure = _not_in_remote_mode
-
-    def pattern_get(self, pattern_id: str) -> dict[str, Any] | None:
-        """PatternManager over this wrapper, as the tool ran it before (a ``get`` by id)."""
-        from smartmemory.adherence import PatternManager
-
-        from .local import _pattern_dict
-
-        pattern = PatternManager(self).get(pattern_id)
-        return None if pattern is None else _pattern_dict(pattern)
 
     def plan_get(self, plan_id: str) -> dict[str, Any] | None:
         """PlanManager over this wrapper, as the tool ran it before (a ``get`` by id)."""
@@ -1593,3 +1584,106 @@ class RemoteBackend(BackendCapabilities):
         from smartmemory.plans.failure_journal import FailureJournal
 
         return FailureJournal(self).check_before_retry(error_type, context, top_k)
+
+    # -- Adherence patterns over /memory/patterns (SM-PATTERN-CRUD-1, OWNER D-0089) --
+    #
+    # The REST routes, never core: same loud-failure rule as the decision block
+    # (absence is None, anything else raises), server-only identity stripped from the
+    # responses. ``pattern_seed`` reads the client's MEMORY.md dir HERE (links confined
+    # to the dir, pattern_seed_reader.py) and sends text only; the server never sees a path.
+
+    _PATTERN_EDITOR = "mcp:remote"
+
+    @staticmethod
+    def _pattern_path(pattern_id: str) -> str:
+        return f"/memory/patterns/{path_id(pattern_id, under='/memory/patterns/')}"
+
+    def pattern_query(
+        self,
+        scope: str | None = None,
+        severity: str | None = None,
+        free_text: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """GET /memory/patterns (filters conjunctive; the route caps limit at 500)."""
+        params: dict[str, Any] = {"limit": max(1, min(int(limit), 500))}
+        if scope is not None:
+            params["scope"] = scope
+        if severity is not None:
+            params["severity"] = severity
+        if free_text is not None:
+            params["q"] = free_text
+        result = self._decision_request("GET", "/memory/patterns", params=params)
+        return list(result.get("patterns") or [])
+
+    def pattern_get(self, pattern_id: str) -> dict[str, Any] | None:
+        """GET /memory/patterns/{id}; None on 404."""
+        result = self._decision_request(
+            "GET", self._pattern_path(pattern_id), none_on_404=True
+        )
+        return None if result is None else result.get("pattern")
+
+    def pattern_list(self, limit: int = 200) -> list[dict[str, Any]]:
+        """GET /memory/patterns with no filters."""
+        return self.pattern_query(limit=limit)
+
+    def pattern_create(
+        self,
+        title: str,
+        content: str,
+        severity: str = "warn",
+        scope: list[str] | None = None,
+        examples: list[dict[str, Any]] | None = None,
+        rationale: str = "",
+    ) -> dict[str, Any]:
+        """POST /memory/patterns; the server stamps ``updated_by = rest:<user>``."""
+        body = {
+            "title": title,
+            "content": content,
+            "severity": severity,
+            "scope": list(scope or []),
+            "examples": list(examples or []),
+            "rationale": rationale,
+            "source": self._PATTERN_EDITOR,
+        }
+        result = self._decision_request("POST", "/memory/patterns", json=body)
+        return result["pattern"]
+
+    def pattern_update(
+        self, pattern_id: str, /, **fields: Any
+    ) -> dict[str, Any] | None:
+        """PUT /memory/patterns/{id}; None on 404. A protected field is the route's 422 (raises)."""
+        body = dict(fields, updated_by=self._PATTERN_EDITOR)
+        result = self._decision_request(
+            "PUT", self._pattern_path(pattern_id), none_on_404=True, json=body
+        )
+        return None if result is None else result.get("pattern")
+
+    def pattern_retire(
+        self, pattern_id: str, reason: str = "retired via MCP"
+    ) -> dict[str, Any] | None:
+        """DELETE /memory/patterns/{id} (soft retract); None on 404."""
+        result = self._decision_request(
+            "DELETE",
+            self._pattern_path(pattern_id),
+            none_on_404=True,
+            params={"reason": reason},
+        )
+        return None if result is None else self._strip_scope(result)
+
+    def pattern_seed(self, directory: str) -> dict[str, Any]:
+        """Read <directory>/MEMORY.md here, POST /memory/patterns/seed with the text only."""
+        from .pattern_seed_reader import read_memory_dir
+
+        index_text, files, refused = read_memory_dir(Path(directory) / "MEMORY.md")
+        body = {
+            "index_text": index_text,
+            "files": files,
+            "refused": refused,
+            "source_prefix": f"{self._PATTERN_EDITOR}:memory_md",
+        }
+        result = self._decision_request("POST", "/memory/patterns/seed", json=body)
+        return {
+            "created": list(result.get("created") or []),
+            "skipped": list(result.get("skipped") or []),
+        }
