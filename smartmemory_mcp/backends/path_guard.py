@@ -39,6 +39,7 @@ RESERVED_SEGMENTS: dict[str, frozenset[str]] = {
     ),
     "/memory/decisions/": frozenset({"create", "pending", "search"}),
     "/memory/decisions/pending/": frozenset({"create"}),
+    "/memory/patterns/": frozenset({"seed"}),
     "/memory/agents/": frozenset(),
 }
 

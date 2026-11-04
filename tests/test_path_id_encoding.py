@@ -253,6 +253,27 @@ ROWS = [
         lambda b, i: b.decision_try_activate(i),
     ),
     (
+        "pattern_get",
+        REMOTE,
+        "GET",
+        "/memory/patterns/{pattern_id}",
+        lambda b, i: b.pattern_get(i),
+    ),
+    (
+        "pattern_update",
+        REMOTE,
+        "PUT",
+        "/memory/patterns/{pattern_id}",
+        lambda b, i: b.pattern_update(i, title="x"),
+    ),
+    (
+        "pattern_retire",
+        REMOTE,
+        "DELETE",
+        "/memory/patterns/{pattern_id}",
+        lambda b, i: b.pattern_retire(i, "why"),
+    ),
+    (
         "agent_set_recall_profile",
         AGENT,
         "PUT",
@@ -267,6 +288,11 @@ ROWS = [
         _agent("agent_get_recall_profile"),
     ),
 ]
+
+
+# A row whose route takes a query parameter of its own: the exact query the call sends.
+# Anything else after a `?` is still an id that grew a query string.
+OWN_QUERY = {"pattern_retire": "reason=why"}
 
 
 def _split(template: str) -> tuple[str, str]:
@@ -339,6 +365,10 @@ def test_every_id_reaches_only_its_own_service_route_or_is_refused(
             if item_id in NORMAL_IDS:
                 bad.append((item_id, "normal id refused"))
             continue
+        own_query = OWN_QUERY.get(name)
+        if own_query and outcome.endswith(f"?{own_query}"):
+            # The route's own param, not the id's.
+            outcome = outcome[: -len(own_query) - 1]
         if routes != [template]:
             bad.append((item_id, outcome, routes))
         if item_id in NORMAL_IDS and outcome != f"{prefix}{item_id}{suffix}":

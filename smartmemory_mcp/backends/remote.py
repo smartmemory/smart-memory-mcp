@@ -1540,10 +1540,6 @@ class RemoteBackend(BackendCapabilities):
 
     _PATTERN_EDITOR = "mcp:remote"
 
-    @staticmethod
-    def _pattern_path(pattern_id: str) -> str:
-        return f"/memory/patterns/{path_id(pattern_id, under='/memory/patterns/')}"
-
     def pattern_query(
         self,
         scope: str | None = None,
@@ -1565,7 +1561,9 @@ class RemoteBackend(BackendCapabilities):
     def pattern_get(self, pattern_id: str) -> dict[str, Any] | None:
         """GET /memory/patterns/{id}; None on 404."""
         result = self._decision_request(
-            "GET", self._pattern_path(pattern_id), none_on_404=True
+            "GET",
+            f"/memory/patterns/{path_id(pattern_id, under='/memory/patterns/')}",
+            none_on_404=True,
         )
         return None if result is None else result.get("pattern")
 
@@ -1601,7 +1599,10 @@ class RemoteBackend(BackendCapabilities):
         """PUT /memory/patterns/{id}; None on 404. A protected field is the route's 422 (raises)."""
         body = dict(fields, updated_by=self._PATTERN_EDITOR)
         result = self._decision_request(
-            "PUT", self._pattern_path(pattern_id), none_on_404=True, json=body
+            "PUT",
+            f"/memory/patterns/{path_id(pattern_id, under='/memory/patterns/')}",
+            none_on_404=True,
+            json=body,
         )
         return None if result is None else result.get("pattern")
 
@@ -1611,7 +1612,7 @@ class RemoteBackend(BackendCapabilities):
         """DELETE /memory/patterns/{id} (soft retract); None on 404."""
         result = self._decision_request(
             "DELETE",
-            self._pattern_path(pattern_id),
+            f"/memory/patterns/{path_id(pattern_id, under='/memory/patterns/')}",
             none_on_404=True,
             params={"reason": reason},
         )
