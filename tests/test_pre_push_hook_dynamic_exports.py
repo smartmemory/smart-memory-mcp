@@ -362,7 +362,9 @@ def test_dynamic_export_resolution(
     for var in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "PREPUSH_TARGET_BRANCH"):
         monkeypatch.delenv(var, raising=False)
 
-    code = _load_hook().main(TO_MAIN)
+    code = _load_hook().main(TO_MAIN.replace("1" * 40, subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=service, check=True, capture_output=True, text=True, env={"PATH": os.environ["PATH"], "HOME": str(service)}
+    ).stdout.strip()))  # a real pushed sha
 
     err = capsys.readouterr().err
     assert code == expected_exit, f"{why}\n{err}"

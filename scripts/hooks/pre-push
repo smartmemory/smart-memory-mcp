@@ -190,30 +190,68 @@ def own_base_ref(root: Path, branch: str, warnings: list[str]) -> str:
     return f"origin/{DEFAULT_BRANCH}"
 
 
-def files_changed_in_push(root: Path, base_ref: str = "origin/main") -> list[Path]:
-    """Python files that differ between local HEAD and `base_ref`."""
+def pushed_shas(stdin_text: str) -> list[str]:
+    """Local shas the push sends, from the hook's stdin (deletes and malformed lines skipped, order kept)."""
+    shas: list[str] = []
+    for line in stdin_text.splitlines():
+        parts = line.split()
+        if len(parts) != 4 or set(parts[1]) == {"0"}:
+            continue
+        if parts[1] not in shas:
+            shas.append(parts[1])
+    return shas
+
+
+def main_checkout_root(root: Path) -> Path:
+    """Root of the MAIN checkout (where the sibling repos sit beside), also when `root` is a linked worktree."""
     try:
-        out = run(
-            ["git", "diff", "--name-only", f"{base_ref}..HEAD", "--", "*.py"], cwd=root
-        )
+        common = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=root).strip()
     except subprocess.CalledProcessError:
-        return []
-    paths = []
-    for line in out.splitlines():
-        p = root / line.strip()
-        if any(part in SKIP_PATH_PARTS for part in p.parts):
+        return root
+    common_dir = Path(common)
+    return common_dir.parent if common_dir.name == ".git" else root
+
+
+def files_changed_in_push(
+    root: Path, base_ref: str = "origin/main", revs: list[str] | None = None, warnings: list[str] | None = None
+) -> list[tuple[Path, str]]:
+    """(path, rev) for Python files that differ between `base_ref` and each pushed rev, the union over revs.
+
+    `revs` are the pushed local shas. None or empty (no usable stdin) diffs HEAD with one WARNING. A sha this repo
+    cannot resolve falls back to HEAD with a WARNING. Files deleted at the rev are skipped."""
+    warnings = [] if warnings is None else warnings
+    if not revs:
+        warnings.append("  no pushed sha on stdin: scanning HEAD, which may not be the commit being pushed")
+        revs = ["HEAD"]
+    paths: list[tuple[Path, str]] = []
+    for rev in revs:
+        try:
+            run(["git", "rev-parse", "--verify", "--quiet", rev + "^{commit}"], cwd=root)
+        except subprocess.CalledProcessError:
+            warnings.append(f"  pushed sha {rev} not found in this repo: scanning HEAD instead")
+            rev = "HEAD"
+        try:
+            out = run(
+                ["git", "diff", "--name-only", "--diff-filter=d", f"{base_ref}..{rev}", "--", "*.py"], cwd=root
+            )
+        except subprocess.CalledProcessError:
             continue
-        if PRODUCTION_DIRS and not any(part in PRODUCTION_DIRS for part in p.parts):
-            continue
-        if p.exists():
-            paths.append(p)
+        for line in out.splitlines():
+            p = root / line.strip()
+            if any(part in SKIP_PATH_PARTS for part in p.parts):
+                continue
+            if PRODUCTION_DIRS and not any(part in PRODUCTION_DIRS for part in p.parts):
+                continue
+            if (p, rev) not in paths:
+                paths.append((p, rev))
     return paths
 
 
-def imports_from_file(path: Path) -> list[tuple[str, str]]:
+def imports_at_rev(root: Path, relpath: str, rev: str) -> list[tuple[str, str]]:
+    """`from m import n` pairs of the `rev` version of a file (what is being pushed, not the working tree)."""
     try:
-        tree = ast.parse(path.read_text())
-    except (SyntaxError, UnicodeDecodeError):
+        tree = ast.parse(run(["git", "-C", str(root), "show", f"{rev}:{relpath}"]))
+    except (subprocess.CalledProcessError, SyntaxError, UnicodeDecodeError):
         return []
     out = []
     for node in ast.walk(tree):
@@ -586,18 +624,27 @@ def symbol_exists_at_origin(
 
 
 def validate_target(
-    root: Path, branch: str, warnings: list[str], skipped: list[str]
+    root: Path,
+    branch: str,
+    warnings: list[str],
+    skipped: list[str],
+    revs: list[str] | None = None,
 ) -> list[tuple[Path, str, str, Path, str]]:
     """Cross-repo imports of a push to `branch` that do not resolve on the sibling's matching branch."""
-    changed = files_changed_in_push(root, own_base_ref(root, branch, warnings))
+    changed = files_changed_in_push(
+        root, own_base_ref(root, branch, warnings), revs, warnings
+    )
     failures: list[tuple[Path, str, str, Path, str]] = []
     if not changed:
         return failures  # nothing to validate
 
+    sibling_base = main_checkout_root(root)  # siblings sit beside the main checkout, not beside a linked worktree
     for prefix, sib_relpath in SIBLING_REPOS.items():
-        sibling = (root / sib_relpath).resolve()
+        sibling = (sibling_base / sib_relpath).resolve()
         if not sibling.exists():
-            skipped.append(f"  {prefix}: sibling not checked out at {sib_relpath}")
+            skipped.append(
+                f"  {prefix}: sibling not checked out at {sibling} (from {sib_relpath})"
+            )
             continue
         sib_ref = fetch_origin(sibling, branch, warnings)
         if sib_ref is None:
@@ -606,8 +653,9 @@ def validate_target(
             )
             continue
 
-        for py_file in changed:
-            for module, name in imports_from_file(py_file):
+        for py_file, rev in changed:
+            relpath = str(py_file.relative_to(root))
+            for module, name in imports_at_rev(root, relpath, rev):
                 if not module.split(".")[0] == prefix:
                     continue
                 if (
@@ -623,10 +671,10 @@ def main(stdin_text: str | None = None) -> int:
     warnings: list[str] = []
     skipped: list[str] = []
     failures: list[tuple[Path, str, str, Path, str]] = []
-    for branch in target_branches(
-        read_stdin() if stdin_text is None else stdin_text, warnings, root
-    ):
-        for failure in validate_target(root, branch, warnings, skipped):
+    stdin_text = read_stdin() if stdin_text is None else stdin_text
+    revs = pushed_shas(stdin_text)
+    for branch in target_branches(stdin_text, warnings, root):
+        for failure in validate_target(root, branch, warnings, skipped, revs):
             if failure not in failures:
                 failures.append(failure)
 

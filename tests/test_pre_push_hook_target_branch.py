@@ -256,6 +256,10 @@ def test_target_branch_resolution(
         if key != "LEGACY":
             monkeypatch.setenv(key, value)
 
+    if warning is None:  # the hook diffs the pushed sha: make it a real one. Warning rows keep the unresolvable
+        stdin = stdin.replace(SHA, subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=mcp, check=True, capture_output=True, text=True, env={"PATH": os.environ["PATH"], "HOME": str(mcp)}
+    ).stdout.strip())  # sha, which exercises their no-merge-base fall-through
     code = _load_hook().main(stdin)
 
     err = capsys.readouterr().err
@@ -286,7 +290,9 @@ def test_sibling_unreachable_is_skipped_not_blocked(tmp_path, monkeypatch, capsy
     for var in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "PREPUSH_TARGET_BRANCH"):
         monkeypatch.delenv(var, raising=False)
 
-    assert _load_hook().main(TO_V2) == 0
+    assert _load_hook().main(TO_V2.replace(SHA, subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=mcp, check=True, capture_output=True, text=True, env={"PATH": os.environ["PATH"], "HOME": str(mcp)}
+    ).stdout.strip())) == 0
     err = capsys.readouterr().err
     assert "could not fetch origin/2.0" in err
     assert "BLOCKED" not in err
