@@ -1,5 +1,5 @@
 {
-"_source": "smart-memory-service origin/2.0 (bf6be16117f3) tests/contracts/snapshots/openapi_schema.json (paths, in snapshot order)",
+"_source": "smart-memory-service origin/2.0 (bf6be16117f3) tests/contracts/snapshots/openapi_schema.json (paths, in snapshot order); + the 3 SM-EVIDENCE-TYPE-1 routes of smart-memory-service wk/SM-EVIDENCE-TYPE-1 (regenerate after it lands)",
 "_regenerate": "python3 <MCP-2.0-PATH-ID-GUARD-PORT-1 unit>/gen_route_table.py <service-repo> origin/2.0 tests/fixtures/service_route_table.json",
 "routes": [
 ["GET", "/admin/logs"],
@@ -150,12 +150,15 @@
 ["GET", "/memory/decisions/{decision_id}/causal-chain"],
 ["POST", "/memory/decisions/{decision_id}/conflicts"],
 ["POST", "/memory/decisions/{decision_id}/contradict"],
+["POST", "/memory/decisions/{decision_id}/evidence"],
 ["GET", "/memory/decisions/{decision_id}/provenance"],
 ["POST", "/memory/decisions/{decision_id}/reinforce"],
 ["POST", "/memory/decisions/{decision_id}/retract"],
 ["POST", "/memory/decisions/{decision_id}/supersede"],
 ["POST", "/memory/edge"],
 ["GET", "/memory/entities"],
+["POST", "/memory/evidence"],
+["GET", "/memory/evidence/{evidence_id}"],
 ["POST", "/memory/evolution/dream"],
 ["POST", "/memory/evolution/reinforce/opinions"],
 ["GET", "/memory/evolution/status"],

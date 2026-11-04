@@ -1,0 +1,198 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://compose.smartmemory.dev/contracts/evidence.schema.json",
+  "title": "evidence",
+  "version": "1.2.0",
+  "description": "One receipt for one state claim (COMP-DOGFOOD-EVIDENCE-GATE-1, row A of COMP-DOGFOOD-1). The caller says what it saw; the Compose server re-checks it against the machine (git, ps, the file, the screenshot) and never trusts it. An accepted receipt is stored and returned as an `ev:<id>` (`#/definitions/evidenceRef`), which a later claim may cite in place of the object (the ops ledger, the message bus and the four state tools all take the ref; lib/evidence-cli.js mints one outside MCP). The validator is lib/evidence.js `validateEvidence`; the re-checks are lib/evidence.js `verifyEvidence`; the store is lib/evidence.js `evidenceStorePath` (one JSON line per accepted receipt, `#/definitions/record`).",
+  "_source": "smart-memory-ops units/COMP-DOGFOOD-1/plan-dag.md row A (OWNER GO, shape (a): Compose is the system of record)",
+  "_roadmap": "COMP-DOGFOOD-EVIDENCE-GATE-1",
+  "oneOf": [
+    { "$ref": "#/definitions/evidence" },
+    { "$ref": "#/definitions/evidenceRef" }
+  ],
+  "definitions": {
+    "evidenceRef": {
+      "description": "The id the server returns for an accepted receipt. `ev:` then 16 lower-case hex characters. Citing it re-uses the stored, already re-checked receipt under the SAME id: its kind must back the claim (contracts/evidence-words.json, EVIDENCE_WRONG_KIND), its subject must match (EVIDENCE_SUBJECT_MISMATCH), a RUNNING cite is re-verified and must be checked within 15 min (EVIDENCE_STALE). An id the store does not hold as a valid record is refused (EVIDENCE_UNKNOWN_REF).",
+      "type": "string",
+      "pattern": "^ev:[0-9a-f]{16}$"
+    },
+    "evidence": {
+      "description": "One receipt. `kind` picks the shape; every kind carries the claimed time `at` and the claiming session `by`.",
+      "oneOf": [
+        { "$ref": "#/definitions/sha" },
+        { "$ref": "#/definitions/process" },
+        { "$ref": "#/definitions/file" },
+        { "$ref": "#/definitions/log" },
+        { "$ref": "#/definitions/screenshot" },
+        { "$ref": "#/definitions/command" },
+        { "$ref": "#/definitions/pixel" }
+      ]
+    },
+    "at": {
+      "description": "When the caller says it observed the thing (ISO 8601 with offset). For `process` the server compares the check time against `launched_at`, not `at`.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "by": {
+      "description": "The claiming session or runner name (`s2-coord`, `codex-review-3`).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "absPath": {
+      "description": "An absolute path on the Compose host.",
+      "type": "string",
+      "pattern": "^/",
+      "maxLength": 4096
+    },
+    "claimedLine": {
+      "description": "A line the caller says the file holds. Matched as a substring of one line (no regex), so a pasted line need not carry its line-end or leading stamp.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "sha": {
+      "description": "A commit is on the repo's default branch. Re-check: `git rev-parse --verify --quiet <sha>^{commit}` in `repo` (server/lifecycle-guard.js gitCommitExists), then `git merge-base --is-ancestor <sha> <branch>` for the default branch (origin/HEAD, else main, else master; local or origin/). An optional `branch` names a declared land branch instead (`land_branches` in contracts/evidence-words.json, starting at 2.0): the same ancestor check against that branch; any other name is refused; naming the default branch is the same as naming none.",
+      "type": "object",
+      "required": ["kind", "repo", "sha", "at", "by"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "sha" },
+        "repo": { "$ref": "#/definitions/absPath" },
+        "sha": { "type": "string", "pattern": "^[0-9a-fA-F]{7,40}$" },
+        "branch": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "at": { "$ref": "#/definitions/at" },
+        "by": { "$ref": "#/definitions/by" }
+      }
+    },
+    "process": {
+      "description": "A launched job is still running. Re-check: refused as too early before `launched_at` + 120 s; then the pid must be alive (`ps -p`), its command (`ps -o command=`) must contain `label`, and when `exit_file` or `log` is named, an exit code there (77 is the seat-ceiling gate) or a gate line in the log fails the claim with that line quoted.",
+      "type": "object",
+      "required": ["kind", "pid", "launched_at", "label", "at", "by"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "process" },
+        "pid": { "type": "integer", "minimum": 1, "maximum": 4194304 },
+        "launched_at": { "type": "string", "format": "date-time" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "exit_file": { "$ref": "#/definitions/absPath" },
+        "log": { "$ref": "#/definitions/absPath" },
+        "at": { "$ref": "#/definitions/at" },
+        "by": { "$ref": "#/definitions/by" }
+      }
+    },
+    "file": {
+      "description": "A file was written. Re-check: `at` is at most 15 min before the server's check and not in the future, the file exists, its mtime is no older than `at` minus the server's skew, and `line` (when given) is in it.",
+      "type": "object",
+      "required": ["kind", "path", "at", "by"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "file" },
+        "path": { "$ref": "#/definitions/absPath" },
+        "line": { "$ref": "#/definitions/claimedLine" },
+        "at": { "$ref": "#/definitions/at" },
+        "by": { "$ref": "#/definitions/by" }
+      }
+    },
+    "log": {
+      "description": "A log says something. Same re-check as `file`; `line` is required, a log receipt is always a claim about a line.",
+      "type": "object",
+      "required": ["kind", "path", "line", "at", "by"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "log" },
+        "path": { "$ref": "#/definitions/absPath" },
+        "line": { "$ref": "#/definitions/claimedLine" },
+        "at": { "$ref": "#/definitions/at" },
+        "by": { "$ref": "#/definitions/by" }
+      }
+    },
+    "screenshot": {
+      "description": "A screenshot was taken. Re-check: the PNG exists, is fresh (as `file`), and `region` (when given) lies inside the image.",
+      "type": "object",
+      "required": ["kind", "path", "at", "by"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "screenshot" },
+        "path": { "$ref": "#/definitions/absPath" },
+        "region": { "$ref": "#/definitions/region" },
+        "at": { "$ref": "#/definitions/at" },
+        "by": { "$ref": "#/definitions/by" }
+      }
+    },
+    "command": {
+      "description": "A command printed a line. The server never re-runs the command: `output_line` must appear in `log`, the file the caller wrote the output to, which must be fresh (as `file`).",
+      "type": "object",
+      "required": ["kind", "command", "output_line", "log", "at", "by"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "command" },
+        "command": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "output_line": { "$ref": "#/definitions/claimedLine" },
+        "log": { "$ref": "#/definitions/absPath" },
+        "at": { "$ref": "#/definitions/at" },
+        "by": { "$ref": "#/definitions/by" }
+      }
+    },
+    "pixel": {
+      "description": "A point on screen shows a colour. Re-check: the PNG is sampled at `point` and compared channel by channel with `expected` within the server's tolerance (lib/evidence.js PIXEL_TOLERANCE).",
+      "type": "object",
+      "required": ["kind", "path", "point", "expected", "at", "by"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "pixel" },
+        "path": { "$ref": "#/definitions/absPath" },
+        "point": {
+          "type": "object",
+          "required": ["x", "y"],
+          "additionalProperties": false,
+          "properties": {
+            "x": { "type": "integer", "minimum": 0 },
+            "y": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "expected": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "at": { "$ref": "#/definitions/at" },
+        "by": { "$ref": "#/definitions/by" }
+      }
+    },
+    "region": {
+      "type": "object",
+      "required": ["x", "y", "w", "h"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "subject": {
+      "description": "What the receipt was accepted for. The four state tools fill it (the tool and the claim it backed: feature code and the claimed state, or gate id and outcome); record_evidence and `evidence-cli.js record --subject` take it from the caller (`unit` or `feature`, and `claim`). Absent for a receipt recorded with no subject. A cite through a state tool must name the same feature (or unit, or gate) as the record's subject (EVIDENCE_SUBJECT_MISMATCH); a record with no subject is cited only by its own `by` session (COMPOSE_SESSION_NAME).",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "tool": { "type": "string" },
+        "unit": { "description": "An ops unit code (record_evidence); compared with a cite's feature code like `feature`.", "type": "string" },
+        "feature": { "type": "string" },
+        "claim": { "description": "The state the receipt backs: a feature status (`COMPLETE`), a state word (`RUNNING`, `LANDED`), or `evidence-only` for a record_completion with set_status false.", "type": "string" },
+        "gate": { "type": "string" },
+        "outcome": { "type": "string" }
+      }
+    },
+    "record": {
+      "description": "One line of the evidence store: an accepted receipt, its id, when the server checked it, and what each check found. Every reader (lib/evidence.js readEvidence, claim_check.py) validates a line against this definition; a line that fails is unknown. A cite of an existing id never adds a line here: it appends `{cites, at, tool, subject, by}` to the side log beside the store (`evidence-cites.jsonl`, lib/evidence.js citesPath), and the id stays the same.",
+      "type": "object",
+      "required": ["id", "evidence", "checked_at", "checks"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/definitions/evidenceRef" },
+        "evidence": { "$ref": "#/definitions/evidence" },
+        "checked_at": { "type": "string", "format": "date-time" },
+        "checks": { "type": "array", "items": { "type": "string" } },
+        "subject": { "$ref": "#/definitions/subject" }
+      }
+    }
+  }
+}

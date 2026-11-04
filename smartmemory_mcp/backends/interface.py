@@ -30,6 +30,14 @@ LOCAL_BROKEN_TOOLS: dict[str, str] = {
 }
 
 
+class EvidenceRefused(ValueError):
+    """SM-EVIDENCE-TYPE-1: the store refused an evidence write or link, with the cause in the message.
+
+    Local mode re-raises core's ValueError as this; remote mode raises it for the route's 404/409/422. A path-guard
+    refusal (``path_guard.path_id``) stays a plain ValueError, so the tools render only store refusals as text.
+    """
+
+
 class BackendCapabilities:
     """Central capability check, including explicitly unsupported operations."""
 
@@ -355,8 +363,27 @@ class MemoryBackend(Protocol):
         """{decision_id, confidence, contradiction_count}, or None when absent."""
         ...
 
+    def decision_link_evidence(
+        self, decision_id: str, evidence_id: str
+    ) -> dict[str, Any]:
+        """SM-EVIDENCE-TYPE-1: link a stored evidence node (node id or ``ev:`` ref) to a live decision.
+
+        {decision_id, evidence_id (the node id), evidence_ids, confidence}; confidence is unchanged. Raises
+        EvidenceRefused naming the refusal: decision or evidence not found, a node of another type, an ended decision.
+        """
+        ...
+
     def decision_provenance(self, decision_id: str) -> dict[str, Any] | None:
         """{decision, reasoning_trace, evidence, superseded, superseded_by}, or None when absent."""
+        ...
+
+    def evidence_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        """SM-EVIDENCE-TYPE-1: store one Compose ``ev:`` record as an `evidence` node (idempotent on its id).
+
+        The contract's evidence_response: {evidence_id, evidence_ref, kind, subject, checker, observed_at,
+        checked_at, checks, payload, record}. Raises EvidenceRefused for a malformed record or a different body
+        under a stored id.
+        """
         ...
 
     def decision_find_conflicts(self, decision_id: str) -> dict[str, Any] | None:

@@ -225,6 +225,13 @@ ROWS = [
         lambda b, i: b.decision_contradict(i, "ev"),
     ),
     (
+        "decision_link_evidence",
+        REMOTE,
+        "POST",
+        "/memory/decisions/{decision_id}/evidence",
+        lambda b, i: b.decision_link_evidence(i, "ev"),
+    ),
+    (
         "decision_provenance",
         REMOTE,
         "GET",
@@ -413,6 +420,12 @@ TOOL_ROWS = [
         "POST",
         "/memory/decisions/{decision_id}/contradict",
         _tool(decision_tools.register, "decision_contradict", "ev"),
+    ),
+    (
+        "decision_link_evidence",
+        "POST",
+        "/memory/decisions/{decision_id}/evidence",
+        _tool(decision_tools.register, "decision_link_evidence", "ev"),
     ),
     (
         "decision_provenance",

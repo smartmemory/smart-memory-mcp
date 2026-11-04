@@ -17,7 +17,7 @@ from typing import Any
 
 import httpx
 
-from .interface import BackendCapabilities
+from .interface import BackendCapabilities, EvidenceRefused
 from .local import SaveReturn
 from .models import CodeIngestResult, MemoryResult, normalize_item, normalize_items
 from .path_guard import path_id
@@ -1439,6 +1439,37 @@ class RemoteBackend(BackendCapabilities):
             f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/contradict",
             none_on_404=True,
             json={"evidence_id": evidence_id},
+        )
+
+    def _evidence_request(self, method: str, path: str, **kwargs: Any) -> Any:
+        """Call an evidence route (SM-EVIDENCE-TYPE-1). The route's refusals (404 not found, 409 ended decision or a
+        different body, 422 wrong type or a malformed record) raise EvidenceRefused with the route's detail, as local
+        mode does; anything else raises RuntimeError."""
+        result = self._request(method, path, **kwargs)
+        if err := self._fmt_error(result):
+            if result.get("status_code") in (404, 409, 422):
+                body = result.get("body")
+                detail = body.get("detail") if isinstance(body, dict) else None
+                raise EvidenceRefused(detail if isinstance(detail, str) else err)
+            raise RuntimeError(f"{method} {path} failed: {err}")
+        if result is None:
+            raise RuntimeError(f"{method} {path} failed: empty response from the API")
+        return result
+
+    def decision_link_evidence(
+        self, decision_id: str, evidence_id: str
+    ) -> dict[str, Any]:
+        """POST /memory/decisions/{decision_id}/evidence."""
+        return self._evidence_request(
+            "POST",
+            f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/evidence",
+            json={"evidence_id": evidence_id},
+        )
+
+    def evidence_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        """POST /memory/evidence."""
+        return self._evidence_request(
+            "POST", "/memory/evidence", json={"record": record}
         )
 
     def decision_provenance(self, decision_id: str) -> dict[str, Any] | None:
