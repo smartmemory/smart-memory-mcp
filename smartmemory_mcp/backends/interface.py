@@ -385,6 +385,38 @@ class MemoryBackend(Protocol):
 
     def pattern_list(self, limit: int = 200) -> list[dict[str, Any]]: ...
 
+    # Pattern writes (SM-PATTERN-CRUD-1, OWNER D-0089): local runs core over the user's own
+    # store, remote calls /memory/patterns and never imports core. Absence is None; a
+    # protected field raises ValueError.
+
+    def pattern_create(
+        self,
+        title: str,
+        content: str,
+        severity: str = "warn",
+        scope: list[str] | None = None,
+        examples: list[dict[str, Any]] | None = None,
+        rationale: str = "",
+    ) -> dict[str, Any]:
+        """Create a pattern; ``source`` is this MCP process's provenance tag."""
+        ...
+
+    def pattern_update(
+        self, pattern_id: str, /, **fields: Any
+    ) -> dict[str, Any] | None:
+        """Change fields (version bumps, ``updated_by`` recorded); None when absent."""
+        ...
+
+    def pattern_retire(
+        self, pattern_id: str, reason: str = "retired via MCP"
+    ) -> dict[str, Any] | None:
+        """Soft retract: ``{pattern_id, status: 'retracted'}``, or None when absent."""
+        ...
+
+    def pattern_seed(self, directory: str) -> dict[str, Any]:
+        """Seed from ``<directory>/MEMORY.md`` and its in-dir linked files: ``{created, skipped}``."""
+        ...
+
     def plan_create(
         self,
         title: str,

@@ -1,12 +1,28 @@
 """Adherence pattern catalog MCP tools (CORE-ADHERENCE-1).
 
-Read-only surface — write goes through REST. Compose's ``COMP-POLICY-CHECK``
-and other harnesses consume ``pattern_query`` to enforce the catalog.
+Read and write: ``pattern_query/get/list`` and ``pattern_create/update/retire/seed``.
+Compose's ``COMP-POLICY-CHECK`` and other harnesses consume ``pattern_query`` to
+enforce the catalog.
+
+**KILLED (2026-11-04):** "Read-only surface, write goes through REST" (agents
+shouldn't mutate the rule catalog they are held to). OWNER D-0089
+(SM-PATTERN-CRUD-1): agents write the catalog over MCP. Every write is scoped to
+the backend's workspace and carries provenance (``source`` on create,
+``updated_by`` on update: ``mcp:<agent id>``/``mcp:local`` locally, ``mcp:remote``
+plus the server's ``@rest:<user>`` remotely). Retire is a soft retract.
+
+The tools call backend methods only: local mode runs core over the user's own
+store, remote mode calls ``/memory/patterns`` and never imports core.
+``pattern_seed`` reads ``<dir>/MEMORY.md`` and only the ``.md`` files it links to
+inside ``<dir>`` (no absolute link, no ``..``, no symlink out; each refusal is a
+WARNING naming the link); remote mode sends the text, never a path. None of
+these tools is on the hosted allowlist (``hosted/tools.py``): ``pattern_seed``
+needs the client's filesystem, and the rest are not yet audited for hosted.
 """
 
 import logging
 import os
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from mcp.types import ToolAnnotations
 
@@ -16,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 def register(mcp):
-    """Register read-only pattern tools with the MCP server."""
+    """Register the pattern catalog tools (reads and writes) with the MCP server."""
 
     @mcp.tool(
         title="Query adherence patterns",
@@ -76,6 +92,129 @@ def register(mcp):
     def pattern_list(limit: int = 200) -> Union[List[dict], str]:
         """Return every active pattern (no filters)."""
         return get_backend().pattern_list(limit=limit)
+
+    @mcp.tool(
+        title="Create an adherence pattern",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def pattern_create(
+        title: str,
+        content: str,
+        severity: str = "warn",
+        scope: Optional[List[str]] = None,
+        examples: Optional[List[Dict[str, Any]]] = None,
+        rationale: str = "",
+    ) -> Union[dict, str]:
+        """Add a rule to the adherence pattern catalog of this workspace.
+
+        ``content`` is the one-line rule; ``severity`` is ``info | warn | error``;
+        ``scope`` lists glob/path fragments (empty = repo-wide); ``examples`` are
+        ``{"kind": "good"|"bad", "text": ...}``. The pattern records this MCP
+        process as its ``source``.
+        """
+        return get_backend().pattern_create(
+            title=title,
+            content=content,
+            severity=severity,
+            scope=scope,
+            examples=examples,
+            rationale=rationale,
+        )
+
+    @mcp.tool(
+        title="Update an adherence pattern",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def pattern_update(
+        pattern_id: str,
+        title: Optional[str] = None,
+        content: Optional[str] = None,
+        severity: Optional[str] = None,
+        scope: Optional[List[str]] = None,
+        examples: Optional[List[Dict[str, Any]]] = None,
+        rationale: Optional[str] = None,
+    ) -> Union[dict, str]:
+        """Change the given fields of an active pattern; its ``version`` goes up by one.
+
+        Only these fields can change: the id, status, supersession and creation
+        time are lifecycle-managed. ``updated_by`` records this MCP process.
+        """
+        fields = {
+            k: v
+            for k, v in (
+                ("title", title),
+                ("content", content),
+                ("severity", severity),
+                ("scope", scope),
+                ("examples", examples),
+                ("rationale", rationale),
+            )
+            if v is not None
+        }
+        if not fields:
+            return "No fields to update: pass at least one of title, content, severity, scope, examples, rationale."
+        updated = get_backend().pattern_update(pattern_id, **fields)
+        if updated is None:
+            return (
+                f"Pattern {pattern_id!r} not found (or not active) in this workspace."
+            )
+        return updated
+
+    @mcp.tool(
+        title="Retire an adherence pattern",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def pattern_retire(
+        pattern_id: str, reason: str = "retired via MCP"
+    ) -> Union[dict, str]:
+        """Retire a pattern: it is retracted (kept, with the reason, for audit) and leaves every query and list."""
+        retired = get_backend().pattern_retire(pattern_id, reason=reason)
+        if retired is None:
+            return f"Pattern {pattern_id!r} not found (or already retired) in this workspace."
+        return retired
+
+    @mcp.tool(
+        title="Seed adherence patterns from a memory directory",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def pattern_seed(dir: str) -> Union[dict, str]:
+        """Create one pattern per rule linked from ``<dir>/MEMORY.md``.
+
+        Each bullet ``- [Title](file.md) — description`` becomes a pattern; the
+        linked file's text is its rationale. Only links that stay inside ``dir``
+        are read: an absolute link, a ``..`` part or a symlink out of the dir is
+        skipped with a WARNING naming it. Titles already in the catalog are
+        skipped, so a re-run creates nothing new. Returns ``{created, skipped}``
+        (each skip with its reason).
+        """
+        try:
+            return get_backend().pattern_seed(dir)
+        except FileNotFoundError:
+            return f"No MEMORY.md in {dir}. Pass the directory that holds your MEMORY.md index."
 
     @mcp.tool(
         title="Get violation patterns",
