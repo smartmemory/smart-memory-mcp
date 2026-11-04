@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from smartmemory_mcp.backends.local import LocalBackend
+from smartmemory_mcp.backends.local import LOCAL_WORKSPACE, LocalBackend
 from smartmemory_mcp.backends.remote import RemoteBackend
 from smartmemory_mcp.tools import memory_tools
 
@@ -65,8 +65,9 @@ def test_local_backend_calls_the_core_facade():
     backend._mem = SimpleNamespace(compile_policy_bundle=Mock(return_value=_bundle()))
 
     assert backend.policy_bundle(workflow="deploy", domain="security") == _bundle()
+    # SM-LOCAL-TOOLS-1: Lite's one workspace is named; core honours it only on an unscoped Lite store.
     backend._mem.compile_policy_bundle.assert_called_once_with(
-        workflow="deploy", domain="security"
+        workflow="deploy", domain="security", workspace_id=LOCAL_WORKSPACE
     )
 
 
