@@ -36,7 +36,9 @@ def _git(cwd: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-def _sibling(tmp: Path, name: str, pkg: str, module: str, main_src: str, two_src: str | None = None) -> None:
+def _sibling(
+    tmp: Path, name: str, pkg: str, module: str, main_src: str, two_src: str | None = None, two_replaces: bool = False
+) -> None:
     """tmp/<name>: a clone of a bare origin whose `main` (and optionally `2.0`) carries the given module source."""
     seed = tmp / f"seed-{name}"
     (seed / pkg).mkdir(parents=True)
@@ -52,14 +54,21 @@ def _sibling(tmp: Path, name: str, pkg: str, module: str, main_src: str, two_src
     _git(seed, "commit", "-q", "-m", "init")
     if two_src is not None:
         _git(seed, "checkout", "-q", "-b", "2.0")
-        target.write_text(main_src + two_src)
+        target.write_text(two_src if two_replaces else main_src + two_src)
         _git(seed, "commit", "-qam", "two")
     _git(tmp, "clone", "-q", "--bare", str(seed), str(tmp / f"{name}-origin.git"))
     _git(tmp, "clone", "-q", str(tmp / f"{name}-origin.git"), str(tmp / name))
 
 
-def _repo(tmp: Path, with_core: bool = True) -> Path:
-    _sibling(tmp, "smart-memory-common", "service_common", "core", "present = 1\n", "only2 = 1\n")
+def _repo(tmp: Path, with_core: bool = True, diverged: bool = False) -> Path:
+    """`diverged`: the common sibling's `main` has only `only_main` (plus `present`) and its `2.0` only `only2`."""
+    if diverged:
+        _sibling(
+            tmp, "smart-memory-common", "service_common", "core", "present = 1\nonly_main = 1\n",
+            "present = 1\nonly2 = 1\n", two_replaces=True,
+        )
+    else:
+        _sibling(tmp, "smart-memory-common", "service_common", "core", "present = 1\n", "only2 = 1\n")
     if with_core:
         _sibling(tmp, "smart-memory-core", "smartmemory", "thing", "present_core = 1\n")
     repo = tmp / "smart-memory-mcp"
@@ -161,3 +170,33 @@ def test_an_unresolvable_pushed_sha_falls_back_to_head_with_a_warning(tmp_path):
     done = _hook(repo, _push("1" * 40), tmp_path)
     assert done.returncode == 0, done.stderr
     assert f"pushed sha {'1' * 40} not found in this repo: scanning HEAD instead" in done.stderr, done.stderr
+
+
+ONLY_MAIN = "from service_common.auth.core import only_main"
+
+
+def _mixed_stdin(sha_main: str, sha_20: str) -> str:
+    return _push(sha_main, "main") + _push(sha_20, "2.0")
+
+
+def test_a_mixed_push_checks_each_line_against_its_own_target(tmp_path):
+    """OPS-SERVICE-PREPUSH-PER-LINE-TARGET-1: main imports a main-only symbol, 2.0 a 2.0-only one; each is clean alone."""
+    repo = _repo(tmp_path, diverged=True)
+    sha_main = _commit_on(repo, "m", ONLY_MAIN)
+    sha_20 = _commit_on(repo, "t", ONLY_2_0)
+    assert _hook(repo, _push(sha_main, "main"), tmp_path).returncode == 0
+    assert _hook(repo, _push(sha_20, "2.0"), tmp_path).returncode == 0
+    done = _hook(repo, _mixed_stdin(sha_main, sha_20), tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert "BLOCKED" not in done.stderr, done.stderr
+
+
+def test_a_mixed_push_still_blocks_a_line_that_misses_its_own_target(tmp_path):
+    """The inverse: the main line imports a 2.0-only symbol, so it is blocked against `@origin/main` only."""
+    repo = _repo(tmp_path, diverged=True)
+    sha_main = _commit_on(repo, "m", ONLY_2_0)
+    sha_20 = _commit_on(repo, "t", ONLY_2_0)
+    done = _hook(repo, _mixed_stdin(sha_main, sha_20), tmp_path)
+    assert done.returncode == 1, done.stderr
+    assert "@origin/main" in done.stderr, done.stderr
+    assert "@origin/2.0" not in done.stderr, done.stderr
