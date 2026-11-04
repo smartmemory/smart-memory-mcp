@@ -425,13 +425,14 @@ class LocalBackend(BackendCapabilities):
         domain: str | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Compile the in-process store's policy bundle.
+        """Compile the in-process store's policy bundle (as of ``as_of`` when given).
 
         Lite has one unscoped workspace (``LOCAL_WORKSPACE``); core honours that label only on an
         unscoped Lite store and refuses it on a scoped one (SM-LOCAL-TOOLS-1).
         """
+        dated = {} if kwargs.get("as_of") is None else {"as_of": kwargs["as_of"]}
         return self._mem.compile_policy_bundle(
-            workflow=workflow, domain=domain, workspace_id=LOCAL_WORKSPACE
+            workflow=workflow, domain=domain, workspace_id=LOCAL_WORKSPACE, **dated
         )
 
     def peer_chat(self, **kwargs: Any) -> dict[str, Any]:
@@ -1067,8 +1068,14 @@ class LocalBackend(BackendCapabilities):
         )
         return _decision_dict(decision)
 
-    def decision_get(self, decision_id: str) -> dict[str, Any] | None:
-        decision = self._decision_manager().get_decision(decision_id)
+    def decision_get(
+        self, decision_id: str, as_of: str | None = None
+    ) -> dict[str, Any] | None:
+        if as_of is not None:
+            # SM-ASOF-DECISIONS-1: a dated read is history access; the facade binds its history read gate.
+            decision = self._mem.get_decision(decision_id, as_of=as_of)
+        else:
+            decision = self._decision_manager().get_decision(decision_id)
         return _decision_dict(decision) if decision else None
 
     def decision_list(
@@ -1077,19 +1084,36 @@ class LocalBackend(BackendCapabilities):
         decision_type: str | None = None,
         min_confidence: float = 0.0,
         limit: int = 50,
+        as_of: str | None = None,
     ) -> list[dict[str, Any]]:
-        decisions = self._decision_queries().get_active_decisions(
-            domain=domain,
-            decision_type=decision_type,
-            min_confidence=min_confidence,
-            limit=limit,
-        )
+        if as_of is not None:
+            decisions = self._mem.get_active_decisions(
+                domain=domain,
+                decision_type=decision_type,
+                min_confidence=min_confidence,
+                limit=limit,
+                as_of=as_of,
+            )
+        else:
+            decisions = self._decision_queries().get_active_decisions(
+                domain=domain,
+                decision_type=decision_type,
+                min_confidence=min_confidence,
+                limit=limit,
+            )
         return [_decision_dict(d) for d in decisions]
 
-    def decision_search(self, topic: str, limit: int = 20) -> list[dict[str, Any]]:
-        decisions = self._decision_queries().get_decisions_about(
-            topic=topic, limit=limit
-        )
+    def decision_search(
+        self, topic: str, limit: int = 20, as_of: str | None = None
+    ) -> list[dict[str, Any]]:
+        if as_of is not None:
+            decisions = self._mem.get_decisions_about(
+                topic=topic, limit=limit, as_of=as_of
+            )
+        else:
+            decisions = self._decision_queries().get_decisions_about(
+                topic=topic, limit=limit
+            )
         return [_decision_dict(d) for d in decisions]
 
     def decision_supersede(
@@ -1162,8 +1186,13 @@ class LocalBackend(BackendCapabilities):
             "contradiction_count": decision.contradiction_count,
         }
 
-    def decision_provenance(self, decision_id: str) -> dict[str, Any] | None:
-        provenance = self._decision_queries().get_decision_provenance(decision_id)
+    def decision_provenance(
+        self, decision_id: str, as_of: str | None = None
+    ) -> dict[str, Any] | None:
+        if as_of is not None:
+            provenance = self._mem.get_decision_provenance(decision_id, as_of=as_of)
+        else:
+            provenance = self._decision_queries().get_decision_provenance(decision_id)
         if not provenance or provenance.get("decision") is None:
             return None
         return {

@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 
-from .common import get_backend, graceful
+from .common import checked_as_of, dated, get_backend, graceful
 
 logger = logging.getLogger(__name__)
 
@@ -137,11 +137,16 @@ def register(mcp):
         ),
     )
     @graceful
-    def decision_get(decision_id: str) -> str:
-        """Retrieve a decision by ID."""
+    def decision_get(decision_id: str, as_of: Optional[str] = None) -> str:
+        """Retrieve a decision by ID.
+
+        ``as_of`` (ISO 8601; omit for now): the decision as it stood then, its status
+        from the supersession chain and version history; "not found" if it did not
+        exist yet."""
+        as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
-            decision = backend.decision_get(decision_id)
+            decision = backend.decision_get(decision_id, **dated(as_of))
 
             if not decision:
                 return f"Decision not found: {decision_id}"
@@ -166,8 +171,14 @@ def register(mcp):
         decision_type: Optional[str] = None,
         min_confidence: float = 0.0,
         limit: int = 50,
+        as_of: Optional[str] = None,
     ) -> str:
-        """List active decisions with optional filtering."""
+        """List active decisions with optional filtering.
+
+        ``as_of`` (ISO 8601; omit for now) lists the decisions that were active at
+        that instant: a decision superseded or retracted since is listed, one
+        created later is not."""
+        as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
             decisions = backend.decision_list(
@@ -175,12 +186,14 @@ def register(mcp):
                 decision_type=decision_type,
                 min_confidence=min_confidence,
                 limit=limit,
+                **dated(as_of),
             )
 
+            when = "" if as_of is None else f" as of {as_of}"
             if not decisions:
-                return "No active decisions found."
+                return f"No active decisions found{when}."
 
-            output = [f"Found {len(decisions)} active decisions:\n"]
+            output = [f"Found {len(decisions)} active decisions{when}:\n"]
             output.extend(_summary_line(d) for d in decisions)
             return "\n".join(output)
         except Exception as e:
@@ -197,11 +210,18 @@ def register(mcp):
         ),
     )
     @graceful
-    def decision_search(topic: str, limit: int = 20) -> str:
-        """Search for active decisions related to a topic."""
+    def decision_search(
+        topic: str, limit: int = 20, as_of: Optional[str] = None
+    ) -> str:
+        """Search for active decisions related to a topic.
+
+        ``as_of`` (ISO 8601; omit for now): the decisions active at that instant."""
+        as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
-            decisions = backend.decision_search(topic=topic, limit=limit)
+            decisions = backend.decision_search(
+                topic=topic, limit=limit, **dated(as_of)
+            )
 
             if not decisions:
                 return f"No decisions found about: {topic}"
@@ -343,11 +363,15 @@ def register(mcp):
         ),
     )
     @graceful
-    def decision_provenance(decision_id: str) -> str:
-        """Get full provenance chain for a decision."""
+    def decision_provenance(decision_id: str, as_of: Optional[str] = None) -> str:
+        """Get full provenance chain for a decision.
+
+        ``as_of`` (ISO 8601; omit for now): the provenance as it stood then; a
+        successor that came later is not listed."""
+        as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
-            provenance = backend.decision_provenance(decision_id)
+            provenance = backend.decision_provenance(decision_id, **dated(as_of))
 
             if not provenance or provenance.get("decision") is None:
                 return f"Decision not found: {decision_id}"

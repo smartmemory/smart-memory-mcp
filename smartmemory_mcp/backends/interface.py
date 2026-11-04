@@ -293,8 +293,10 @@ class MemoryBackend(Protocol):
         """Create a decision. Returns at least decision_id/decision_type/confidence."""
         ...
 
-    def decision_get(self, decision_id: str) -> dict[str, Any] | None:
-        """Full `Decision.to_dict()`, or None when the decision does not exist."""
+    def decision_get(
+        self, decision_id: str, as_of: str | None = None
+    ) -> dict[str, Any] | None:
+        """Full `Decision.to_dict()`, or None when the decision does not exist (at `as_of` when set)."""
         ...
 
     def decision_list(
@@ -303,12 +305,15 @@ class MemoryBackend(Protocol):
         decision_type: str | None = None,
         min_confidence: float = 0.0,
         limit: int = 50,
+        as_of: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Active decisions, filtered."""
+        """Active decisions, filtered (active at `as_of` when set, SM-ASOF-DECISIONS-1)."""
         ...
 
-    def decision_search(self, topic: str, limit: int = 20) -> list[dict[str, Any]]:
-        """Active decisions related to a topic."""
+    def decision_search(
+        self, topic: str, limit: int = 20, as_of: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Active decisions related to a topic (active at `as_of` when set)."""
         ...
 
     def decision_supersede(
@@ -341,8 +346,10 @@ class MemoryBackend(Protocol):
         """{decision_id, confidence, contradiction_count}, or None when absent."""
         ...
 
-    def decision_provenance(self, decision_id: str) -> dict[str, Any] | None:
-        """{decision, reasoning_trace, evidence, superseded, superseded_by}, or None when absent."""
+    def decision_provenance(
+        self, decision_id: str, as_of: str | None = None
+    ) -> dict[str, Any] | None:
+        """{decision, reasoning_trace, evidence, superseded, superseded_by}, or None when absent (at `as_of`)."""
         ...
 
     def decision_find_conflicts(self, decision_id: str) -> dict[str, Any] | None:

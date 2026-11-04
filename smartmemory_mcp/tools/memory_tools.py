@@ -27,7 +27,7 @@ except ImportError:  # remote-only install: no core, no logged mark
     _HAS_CORE = False
 
 
-from .common import get_backend, graceful
+from .common import checked_as_of, dated, get_backend, graceful
 from .lexical_contract import validate_channel_weights
 
 logger = logging.getLogger(__name__)
@@ -990,6 +990,7 @@ def register_free(mcp):
         query: Optional[str] = None,
         sections: Optional[list] = None,
         preset: Optional[str] = None,
+        as_of: Optional[str] = None,
     ) -> dict:
         """Assemble the most useful context that fits in a token budget.
 
@@ -1004,8 +1005,12 @@ def register_free(mcp):
         small budget (~300 tokens) at session start for an L1 orientation card (active
         plan, anchors, workspace topics, last-session headline) — the default sections go
         degenerate at that size. Use ``get_working_context`` for the L2 drill-in.
+        ``as_of`` (ISO 8601; omit for now) answers every section as of that instant:
+        nothing created later; a section that cannot (active plan, anchors) is left
+        out and named in ``manifest.dropped_sections``.
         Returns ``{block, manifest}``.
         """
+        as_of = checked_as_of(as_of)
         if not isinstance(budget_tokens, int) or budget_tokens < 1:
             return {"error": "`budget_tokens` must be an integer >= 1."}
         if preset is not None:
@@ -1024,7 +1029,11 @@ def register_free(mcp):
 
         backend = get_backend()
         return backend.recall_pack(
-            budget_tokens=budget_tokens, query=query, sections=sections, preset=preset
+            budget_tokens=budget_tokens,
+            query=query,
+            sections=sections,
+            preset=preset,
+            **dated(as_of),
         )
 
     @mcp.tool(
@@ -1040,14 +1049,20 @@ def register_free(mcp):
     def memory_policy_bundle(
         workflow: Optional[str] = None,
         domain: Optional[str] = None,
+        as_of: Optional[str] = None,
     ) -> dict:
         """Compile active workspace decisions into a Stratum policy bundle.
 
         ``workflow`` is echoed in the selector for the runner. ``domain`` narrows
-        the source decisions. The returned JSON is the policy-exchange contract
-        bundle and is identical for local and hosted backends.
+        the source decisions. ``as_of`` (ISO 8601; omit for now) compiles the
+        decisions active at that instant and the bundle echoes it. The returned
+        JSON is the policy-exchange contract bundle and is identical for local
+        and hosted backends.
         """
-        return get_backend().policy_bundle(workflow=workflow, domain=domain)
+        as_of = checked_as_of(as_of)
+        return get_backend().policy_bundle(
+            workflow=workflow, domain=domain, **dated(as_of)
+        )
 
 
 # ---------------------------------------------------------------------------

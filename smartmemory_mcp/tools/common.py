@@ -69,6 +69,31 @@ def _is_connection_error(exc: Exception) -> bool:
     )
 
 
+def checked_as_of(as_of):
+    """The ``as_of`` argument of a dated read (SM-ASOF-DECISIONS-1), checked before any backend call.
+
+    None stays None (now). Anything else must be an ISO 8601 instant; the original string is passed on unchanged
+    (core and the service own the as-of semantics). An unparseable value is a ``ToolError`` naming it, never a
+    silent "now".
+    """
+    if as_of is None:
+        return None
+    from datetime import datetime
+
+    from fastmcp.exceptions import ToolError
+
+    try:
+        datetime.fromisoformat(str(as_of).strip().replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ToolError(f"as_of is not an ISO 8601 timestamp: {as_of!r}") from exc
+    return as_of
+
+
+def dated(as_of) -> dict:
+    """``{"as_of": as_of}`` when set, else ``{}``: a call without it stays byte-identical."""
+    return {} if as_of is None else {"as_of": as_of}
+
+
 def graceful(func):
     """Wrap MCP tool to return helpful message on infrastructure failure."""
 

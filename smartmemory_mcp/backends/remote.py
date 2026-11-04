@@ -760,7 +760,7 @@ class RemoteBackend(BackendCapabilities):
         to what the SDKs send, so one route body shape serves every caller.
         """
         body: dict[str, Any] = {"budget_tokens": budget_tokens}
-        for key in ("query", "sections", "preset"):
+        for key in ("query", "sections", "preset", "as_of"):
             if kwargs.get(key) is not None:
                 body[key] = kwargs[key]
         return self._request("POST", "/memory/recall/pack", json=body)
@@ -774,7 +774,11 @@ class RemoteBackend(BackendCapabilities):
         """GET /memory/policy/bundle (GOV-STRATUM-SEAM-1 P1)."""
         params = {
             key: value
-            for key, value in {"workflow": workflow, "domain": domain}.items()
+            for key, value in {
+                "workflow": workflow,
+                "domain": domain,
+                "as_of": kwargs.get("as_of"),
+            }.items()
             if value is not None
         }
         return self._request("GET", "/memory/policy/bundle", params=params)
@@ -1346,12 +1350,15 @@ class RemoteBackend(BackendCapabilities):
             self._decision_request("POST", "/memory/decisions/create", json=body)
         )
 
-    def decision_get(self, decision_id: str) -> dict[str, Any] | None:
-        """GET /memory/decisions/{decision_id}."""
+    def decision_get(
+        self, decision_id: str, as_of: str | None = None
+    ) -> dict[str, Any] | None:
+        """GET /memory/decisions/{decision_id} (``?as_of=`` when set)."""
         return self._decision_request(
             "GET",
             f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}",
             none_on_404=True,
+            **self._as_of_params(as_of),
         )
 
     def decision_list(
@@ -1360,6 +1367,7 @@ class RemoteBackend(BackendCapabilities):
         decision_type: str | None = None,
         min_confidence: float = 0.0,
         limit: int = 50,
+        as_of: str | None = None,
     ) -> list[dict[str, Any]]:
         """GET /memory/decisions."""
         params: dict[str, Any] = {"min_confidence": min_confidence, "limit": limit}
@@ -1367,13 +1375,20 @@ class RemoteBackend(BackendCapabilities):
             params["domain"] = domain
         if decision_type is not None:
             params["decision_type"] = decision_type
+        if as_of is not None:
+            params["as_of"] = as_of
         result = self._decision_request("GET", "/memory/decisions", params=params)
         return list(result.get("decisions") or [])
 
-    def decision_search(self, topic: str, limit: int = 20) -> list[dict[str, Any]]:
+    def decision_search(
+        self, topic: str, limit: int = 20, as_of: str | None = None
+    ) -> list[dict[str, Any]]:
         """GET /memory/decisions/search."""
+        params: dict[str, Any] = {"topic": topic, "limit": limit}
+        if as_of is not None:
+            params["as_of"] = as_of
         result = self._decision_request(
-            "GET", "/memory/decisions/search", params={"topic": topic, "limit": limit}
+            "GET", "/memory/decisions/search", params=params
         )
         return list(result.get("decisions") or [])
 
@@ -1441,13 +1456,21 @@ class RemoteBackend(BackendCapabilities):
             json={"evidence_id": evidence_id},
         )
 
-    def decision_provenance(self, decision_id: str) -> dict[str, Any] | None:
-        """GET /memory/decisions/{decision_id}/provenance."""
+    def decision_provenance(
+        self, decision_id: str, as_of: str | None = None
+    ) -> dict[str, Any] | None:
+        """GET /memory/decisions/{decision_id}/provenance (``?as_of=`` when set)."""
         return self._decision_request(
             "GET",
             f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/provenance",
             none_on_404=True,
+            **self._as_of_params(as_of),
         )
+
+    @staticmethod
+    def _as_of_params(as_of: str | None) -> dict[str, Any]:
+        """``{"params": {"as_of": ...}}`` for a dated GET, ``{}`` otherwise (the request stays as before)."""
+        return {} if as_of is None else {"params": {"as_of": as_of}}
 
     def decision_find_conflicts(self, decision_id: str) -> dict[str, Any] | None:
         """POST /memory/decisions/{decision_id}/conflicts."""
