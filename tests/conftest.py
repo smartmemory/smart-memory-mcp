@@ -12,6 +12,8 @@ import logging
 import os
 import socket
 
+import pytest
+
 from tests._falkor import ALLOW_SHARED_ENV, SHARED_PORTS, export_endpoint
 
 # Product-built clients (create_server_memory, OntologyGraph) resolve these; unset they dial 9010.
@@ -47,7 +49,9 @@ def _refuse(port: int) -> ConnectionRefusedError:
             port,
             ALLOW_SHARED_ENV,
         )
-    return ConnectionRefusedError(f"test connection to shared database port {port} refused ({ALLOW_SHARED_ENV}=1 allows it)")
+    return ConnectionRefusedError(
+        f"test connection to shared database port {port} refused ({ALLOW_SHARED_ENV}=1 allows it)"
+    )
 
 
 def _guarded_connect(self, address):
@@ -73,3 +77,23 @@ def pytest_configure(config):
 def pytest_unconfigure(config):
     socket.socket.connect = _real_connect
     socket.socket.connect_ex = _real_connect_ex
+
+
+@pytest.fixture(autouse=True)
+def _hosted_mode_off_after_each_test(request):
+    """`build_hosted_server` turns on a process-wide hosted flag (``hosted.identity.set_hosted_mode``) that nothing turns off.
+
+    Left on, every later local-mode tool call on the same xdist worker raises ``HostedAuthError: no identity bound to
+    this call``. Per-file restore fixtures miss harnesses imported into another file (``test_hosted_session_record``
+    builds servers through ``test_hosted_tools_allowlist._Harness`` without that file's autouse fixture), so the reset
+    lives here, once, for every test.
+    """
+    yield
+    from smartmemory_mcp.hosted import identity
+
+    if identity.hosted_mode_enabled():
+        logging.getLogger("smartmemory_mcp.tests.hosted_mode_reset").warning(
+            "hosted mode was left on by %s; turned off for the next test",
+            request.node.nodeid,
+        )
+        identity.set_hosted_mode(False)

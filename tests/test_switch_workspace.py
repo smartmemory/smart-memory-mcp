@@ -1132,8 +1132,9 @@ def _property_names(schema: Any) -> set[str]:
 
 @pytest.mark.parametrize(
     ("server", "listing", "count"),
-    # 2.0 counts (measured, FWD-MERGE-4): PRO+ 97 and hosted 26, after U4.42-FU-TOOLS replaced the ingest tools.
-    [("stdio", _stdio_listing, 97), ("hosted", _hosted_listing, 26)],
+    # 2.0 counts (measured, FWD-MERGE-4): PRO+ 97 and hosted 26, after U4.42-FU-TOOLS replaced the ingest tools;
+    # PRO+ 99 with SM-EVIDENCE-TYPE-1's evidence_record + decision_link_evidence (not on the hosted allowlist).
+    [("stdio", _stdio_listing, 99), ("hosted", _hosted_listing, 26)],
 )
 def test_the_listing_has_no_tenant_selector_and_team_only_on_the_alias(
     server, listing, count
