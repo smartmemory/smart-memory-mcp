@@ -12,6 +12,7 @@ Mechanism tests pin where each fix lives: the Class A managers are built on ``Lo
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import tempfile
 
@@ -73,10 +74,12 @@ def server(monkeypatch, mem):
     mcp.add_middleware(BackendCapabilityMiddleware())
     monkeypatch.setattr(common, "_backend", backend)
     # LocalBackend.search reads through smartmemory_app.storage's own singleton; pin it to this
-    # store so no tool here can reach the user's real ~/.smartmemory.
-    monkeypatch.setattr(
-        "smartmemory_app.storage.get_memory", lambda *args, **kwargs: mem
-    )
+    # store so no tool here can reach the user's real ~/.smartmemory. Without the wrapper installed
+    # (the remote runner image) LocalBackend.search raises ImportError, so no store is reachable.
+    if importlib.util.find_spec("smartmemory_app") is not None:
+        monkeypatch.setattr(
+            "smartmemory_app.storage.get_memory", lambda *args, **kwargs: mem
+        )
     monkeypatch.setattr(server_module, "mcp", mcp)
     monkeypatch.setattr(server_module, "resolve_tier", lambda: Tier.PRO_PLUS)
     monkeypatch.setattr(server_module, "_TRANSCRIPT_TOOLS_REGISTERED", False)
@@ -229,6 +232,8 @@ def test_log_failure_stores_an_agent_failure_and_check_failure_finds_it(server, 
 
 
 def test_dev_load_context_lists_a_decision_without_rationale(server, mem):
+    # dev_load_context finds decisions through LocalBackend.search, which needs the wrapper.
+    pytest.importorskip("smartmemory_app.storage")
     decision = DecisionManager(mem).create(
         content="test_devctx use sqlite for the local cache",
         decision_type="preference",
