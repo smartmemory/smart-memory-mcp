@@ -137,7 +137,7 @@ Code indexing reports clean, partial and failed file counts plus acceptance, sta
 
 Local `code_effects(directory, repo_name=None)` scans Python effects through the shared engine without opening a memory store. Hosted `code_effects(repo, source_snapshot, limit=20, offset=0)` reads uploaded `fa_snapshot` records in the selected workspace. It accepts no filesystem path. Upload the engine's `snapshot_record` payload through existing declared-record ingestion first. Repository rules belong in the scanned checkout's `.smartmemory-effects.json`.
 
-Hosted mode advertises 28 tools, an explicit allowlist rather than a tier:
+Hosted mode advertises 29 tools, an explicit allowlist rather than a tier:
 
 `memory_ingest` `memory_search` `memory_recall` `read_around` `memory_get`
 `memory_explain` `memory_recall_pack` `memory_policy_bundle` `memory_add`
@@ -145,7 +145,7 @@ Hosted mode advertises 28 tools, an explicit allowlist rather than a tier:
 `memory_ingest_conversation` `memory_search_by_metadata` `memory_feedback`
 `code_search` `code_dead_code` `code_dependencies` `code_upload` `code_effects`
 `agent_set_recall_profile` `agent_get_recall_profile` `reasoning_query_traces`
-`whoami` `switch_workspace`
+`whoami` `list_workspaces` `switch_workspace`
 
 Deprecated: `switch_team` (an alias of `switch_workspace`, removed in the next
 release).
@@ -170,10 +170,13 @@ quietly ignoring the request:
   alternative recall path builds a working context through the core activation
   scorer.
 
-`switch_workspace(workspace)` changes the workspace for the current session
-only, by id or name, with no restart. It validates membership against the API
-and never leaks into another user's calls. A refused switch names the workspace
-still in use. Listing your workspaces needs an API key with the `read:teams`
+`list_workspaces()` lists the workspaces you can use (`GET /memory/workspaces`).
+`switch_workspace(workspace)` changes the workspace by id or name, with no
+restart. The switch is saved server-side for you and this MCP client (1.5.24),
+so it survives a reconnect or a restart of the hosted server and lapses after a
+day without writes. It validates membership against the API and never leaks into
+another user's calls. A refused switch names the workspace still in use. Every
+write result ends with the line `Workspace: <name> (<id>), routed by <lever>.` Listing your workspaces needs an API key with the `read:teams`
 scope (a key with only `read:memories` is told so and keeps its workspace).
 `whoami` shows the user, tenant and workspace. The tenant comes from
 your credential and is never a tool argument.

@@ -1,6 +1,18 @@
 # Changelog
 
 ## Unreleased
+
+## 1.5.24 — 2026-11-05
+
+Release summary (DHRUV-CONNECTOR-WORKSPACE-1; user-facing changes since 1.5.23, details in the entries below):
+- **New `list_workspaces` tool** (stdio and hosted) lists the workspaces you can use from `GET /memory/workspaces`, not your Teams.
+- **New `switch_workspace` tool** picks a workspace by id or name. `switch_team` stays as a deprecated alias that warns once. `whoami` shows tenant, workspace and how it was routed.
+- **Hosted switch is saved server-side** (`PUT /memory/routing/session`), so it survives a reconnect or a restart of the hosted server. Each hosted tool call reads it back with one `GET /memory/routing/explain` and fails closed if that read errors.
+- **Every write result says where the write landed:** `Workspace: <name> (<id>), routed by <lever>.`
+- **REST is the stdio default backend** (MCP-PERF-1). The in-process store runs only with `SMARTMEMORY_MCP_MODE=local`. Re-run `sm mcp install <client>` if you relied on the old auto-detect.
+- `X-Workspace-Id` is sent only for a workspace you picked, and `SMARTMEMORY_WORKSPACE_ID` wins over the legacy `SMARTMEMORY_TEAM_ID`.
+
+Details:
 - OPS-SERVICE-PREPUSH-PER-LINE-TARGET-1 (mcp twin; tooling, 2026-11-04; s2-coord mixed push `main`+`2.0`) [review tier: small bounded tooling, batched post-land]: **the cross-repo pre-push hook checks each pushed line against its own target branch.** `main()` used to check every pushed sha against every target branch (a cross product), so a mixed `git push origin <sha>:refs/heads/main <sha2>:refs/heads/2.0` blocked the main sha on 39 symbols that exist only on the sibling's main. New `push_targets()` keeps the line-to-branch pairing and `main()` validates each branch with only its own shas; `target_branches()` stays as a thin wrapper. Fallbacks unchanged (no stdin, non-branch target, unresolvable sha). Two new mixed-push rows.
 
 - OPS-SERVICE-PREPUSH-PUSHED-SHA-1 (tooling, 2026-11-04; s2-coord push_round round 10) [review tier: small bounded tooling, batched post-land]: **the cross-repo pre-push hook checks the commit being pushed, not HEAD, and finds the sibling repos from a linked worktree.** It diffs `<base>..<pushed local sha>` for every stdin line (union, deletes skipped), reads each file's imports at that sha (`git show`, not the working tree), and resolves `../smart-memory-common` and `../smart-memory-core` against the main checkout (`git rev-parse --git-common-dir`). No stdin, or a sha this repo cannot resolve, falls back to HEAD with a WARNING; a missing sibling names the full path tried. Fixes the false block on 39 common symbols when push_round pushed e35ffec2 from the shared checkout on main. mcp twin of the service change.
