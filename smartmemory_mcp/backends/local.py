@@ -190,11 +190,14 @@ class LocalBackend(BackendCapabilities):
             origin="mcp:memory_supersede",
             valid_start_time=start,
         )
-        new_id = self._mem.ingest_superseding(item, supersedes=item_id)
+        # The old item's interval closes at ``start`` inside core's compensated supersession unit.
+        new_id = self._mem.ingest_superseding(
+            item,
+            supersedes=item_id,
+            **({"valid_from": start} if start is not None else {}),
+        )
         if not new_id:
             raise RuntimeError("Supersession could not be established")
-        if start is not None:
-            self._mem.update_properties(item_id, {"valid_end_time": start.isoformat()})
         return {
             "status": "superseded",
             "old_item_id": item_id,

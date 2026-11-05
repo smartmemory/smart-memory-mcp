@@ -108,3 +108,59 @@ def test_memory_ingest_docstring_points_a_changing_reply_at_supersede(tools):
     doc = tools["memory_ingest"].__doc__ or ""
 
     assert "memory_supersede" in doc
+
+
+class _RecordingMem:
+    def __init__(self, fail: bool = False):
+        self.fail = fail
+        self.superseding: list = []
+        self.updates: list = []
+
+    def get(self, item_id):
+        return {"item_id": item_id}
+
+    def ingest_superseding(self, item, *, supersedes, **kwargs):
+        self.superseding.append((item, supersedes, kwargs))
+        return None if self.fail else "new-1"
+
+    def update_properties(self, item_id, properties, *a, **k):
+        self.updates.append((item_id, properties))
+
+
+def _local(mem):
+    from smartmemory_mcp.backends.local import LocalBackend
+
+    backend = object.__new__(LocalBackend)
+    backend._mem = mem
+    return backend
+
+
+def test_local_supersede_closes_the_interval_inside_core_supersession():
+    """Codex pre-land F4: valid_from goes to core's compensated unit; no second write here."""
+    from datetime import datetime, timezone
+
+    mem = _RecordingMem()
+    _local(mem).supersede(
+        "old-1", "Code to lab-confirmed.", "reversal", valid_from="2026-04-20"
+    )
+
+    item, supersedes, kwargs = mem.superseding[0]
+    expected = datetime(2026, 4, 20, tzinfo=timezone.utc)
+    assert supersedes == "old-1" and kwargs == {"valid_from": expected}
+    assert item.valid_start_time == expected
+    assert mem.updates == []
+
+
+def test_local_supersede_failure_writes_nothing_more():
+    mem = _RecordingMem(fail=True)
+    with pytest.raises(RuntimeError):
+        _local(mem).supersede(
+            "old-1", "Code to lab-confirmed.", "reversal", valid_from="2026-04-20"
+        )
+    assert mem.updates == []
+
+
+def test_local_supersede_without_valid_from_passes_no_interval():
+    mem = _RecordingMem()
+    _local(mem).supersede("old-1", "Code to lab-confirmed.", "reversal")
+    assert mem.superseding[0][2] == {} and mem.updates == []
