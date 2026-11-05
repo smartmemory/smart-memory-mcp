@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.5.26 — 2026-11-05
+
 - DHRUV-MCP-SUPERSESSION-LABEL-1: Search and recall text, including hosted results, now labels surfaced successors with `[replaces <first 8 of id>]` from top-level or metadata supersession markers.
 
 ## 1.5.25 — 2026-11-05
