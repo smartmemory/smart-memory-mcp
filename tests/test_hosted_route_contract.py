@@ -40,6 +40,7 @@ TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
     "memory_policy_bundle": ("get", "/memory/policy/bundle"),
     "memory_add": ("post", "/memory/add"),
     "memory_update": ("patch", "/memory/{item_id}"),
+    "memory_supersede": ("post", "/memory/{item_id}/supersede"),
     "memory_delete": ("delete", "/memory/{item_id}"),
     "memory_list": ("get", "/memory/list"),
     "memory_stats": ("get", "/memory/health"),

@@ -479,6 +479,10 @@ def register_free(mcp):
         Use this for facts, events, plans and anything naming people, places,
         organizations or dates. Runs the full extraction pipeline.
 
+        If the new note changes, reverses or replaces an earlier one, do not
+        ingest it alone: call ``memory_supersede`` on that earlier note so the
+        old version is retained and marked replaced.
+
         ``workspace_id``: write to this workspace for this call only (an explicit
         pick); omit it to write where your current selection routes.
         """
@@ -1095,7 +1099,12 @@ def register_pro(mcp):
         properties: Optional[Dict[str, Any]] = None,
         write_mode: Optional[str] = None,
     ) -> str:
-        """Update a memory item's properties (CORE-CRUD-UPDATE-1).
+        """Edit a memory item in place (CORE-CRUD-UPDATE-1). Keeps no history.
+
+        The old text is overwritten and nothing records that it was ever there.
+        To change or reverse a rule, decision or instruction, use
+        ``memory_supersede`` instead: it keeps the old version and closes it.
+        Use this tool only to fix a typo or tweak metadata.
 
         - ``content``/``metadata``: convenience — folded into the properties dict.
         - ``properties``: advanced — direct node-property update. Takes precedence.
@@ -1110,6 +1119,38 @@ def register_pro(mcp):
             write_mode=write_mode,
         )
         return str(result) if result else f"Updated: {item_id}"
+
+    @mcp.tool(
+        title="Supersede a memory",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def memory_supersede(
+        item_id: str,
+        content: str,
+        reason: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        valid_from: Optional[str] = None,
+    ) -> str:
+        """Replace a memory with a new version, keeping the old one as history.
+
+        Use this to change or reverse an existing rule, decision or instruction.
+        The old item stays retrievable, marked replaced; the new one is the live
+        version. ``reason`` says why it changed. ``valid_from`` (ISO date, e.g.
+        2026-04-20) is when the new version takes effect; the old version's
+        validity ends on that date.
+        """
+        backend = get_backend()
+        result = backend.supersede(
+            item_id, content, reason, metadata=metadata, valid_from=valid_from
+        )
+        new_id = (result or {}).get("new_item_id", "unknown")
+        return f"Superseded: {item_id} -> {new_id}"
 
     @mcp.tool(
         title="Delete a memory",

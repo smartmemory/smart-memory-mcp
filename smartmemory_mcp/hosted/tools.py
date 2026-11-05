@@ -30,6 +30,7 @@ MEMORY_TOOLS = (
     "memory_policy_bundle",
     "memory_add",
     "memory_update",
+    "memory_supersede",
     "memory_delete",
     "memory_list",
     "memory_stats",

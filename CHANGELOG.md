@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- DHRUV-CODING-RULE-P0-1 (bug 1, P0, 2026-11-05): **new `memory_supersede(item_id, content, reason, metadata, valid_from)` tool, on the hosted allowlist** (`POST /memory/{id}/supersede`): a reversed rule becomes a new version, the old one is kept and closed on `valid_from`. `memory_update` is documented as an in-place edit that keeps no history, and `memory_ingest` points a reply that changes an earlier note at `memory_supersede`. PRO tools 70 to 71, hosted 29 to 30. Needs the service `valid_from` field to take effect; no version bump here.
+
 ## 1.5.24 — 2026-11-05
 
 Release summary (DHRUV-CONNECTOR-WORKSPACE-1; user-facing changes since 1.5.23, details in the entries below):

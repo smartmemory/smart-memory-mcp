@@ -165,6 +165,42 @@ class LocalBackend(BackendCapabilities):
         """Full provenance answer via the core facade (PLAT-AUDITABLE-MEMORY-1)."""
         return self._mem.explain(memory_id)
 
+    def supersede(
+        self, item_id: str, content: str, reason: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        """Append a replacement via the core supersede primitive; the old item is kept."""
+        from datetime import datetime, timezone
+
+        from smartmemory.models.memory_item import MemoryItem
+
+        old = self._mem.get(item_id)
+        if old is None:
+            raise RuntimeError(f"Not found: {item_id}")
+        meta = {**(kwargs.get("metadata") or {}), "supersession_reason": reason}
+        valid_from = kwargs.get("valid_from")
+        start = None
+        if valid_from:
+            start = datetime.fromisoformat(valid_from)
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+        item = MemoryItem(
+            content=content,
+            memory_type=kwargs.get("memory_type") or "semantic",
+            metadata=meta,
+            origin="mcp:memory_supersede",
+            valid_start_time=start,
+        )
+        new_id = self._mem.ingest_superseding(item, supersedes=item_id)
+        if not new_id:
+            raise RuntimeError("Supersession could not be established")
+        if start is not None:
+            self._mem.update_properties(item_id, {"valid_end_time": start.isoformat()})
+        return {
+            "status": "superseded",
+            "old_item_id": item_id,
+            "new_item_id": new_id,
+        }
+
     def update(
         self,
         item_id: str,

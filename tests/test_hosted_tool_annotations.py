@@ -37,8 +37,8 @@ def test_hosted_tools_have_explicit_directory_annotations() -> None:
 
     assert set(by_name) == set(HOSTED_TOOLS)
     assert (
-        len(by_name) == 29
-    )  # MCP-SWITCH-WORKSPACE-1: + switch_workspace; WS-ROUTING-5: + list_workspaces
+        len(by_name) == 30
+    )  # MCP-SWITCH-WORKSPACE-1: + switch_workspace; WS-ROUTING-5: + list_workspaces; DHRUV-CODING-RULE-P0-1: + memory_supersede
     for name, tool in by_name.items():
         assert tool.title, f"{name} is missing a title"
         assert tool.annotations is not None, f"{name} is missing annotations"

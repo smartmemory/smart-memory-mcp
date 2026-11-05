@@ -277,8 +277,8 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
 
     assert advertised == set(HOSTED_TOOLS)
     assert (
-        len(advertised) == 29
-    )  # MCP-SWITCH-WORKSPACE-1: + switch_workspace; WS-ROUTING-5: + list_workspaces
+        len(advertised) == 30
+    )  # MCP-SWITCH-WORKSPACE-1: + switch_workspace; WS-ROUTING-5: + list_workspaces; DHRUV-CODING-RULE-P0-1: + memory_supersede
 
 
 @pytest.mark.parametrize("name", EXCLUDED_TOOLS)
@@ -337,6 +337,20 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ("memory_get", {"item_id": "mem-1"}),
     ("memory_explain", {"memory_id": "mem-1"}),
     ("memory_update", {"item_id": "mem-1", "content": "changed"}),
+    (
+        "memory_supersede",
+        {"item_id": "mem-1", "content": "new rule", "reason": "reversal"},
+    ),
+    (
+        "memory_supersede",
+        {
+            "item_id": "mem-1",
+            "content": "new rule",
+            "reason": "reversal",
+            "metadata": {"site": "all"},
+            "valid_from": "2026-04-20",
+        },
+    ),
     ("memory_delete", {"item_id": "mem-1"}),
     ("memory_list", {}),
     ("memory_list", {"limit": 3}),

@@ -147,18 +147,18 @@ FREE_TOOLS = sorted(
 )
 
 
-# tier, env overrides, registered count (MCP-SWITCH-WORKSPACE-1 added switch_workspace
+# tier, env overrides, registered count (DHRUV-CODING-RULE-P0-1 added memory_supersede to PRO and up; MCP-SWITCH-WORKSPACE-1 added switch_workspace
 # to every tier; switch_team stays registered as its deprecated alias; WS-ROUTING-5 added list_workspaces).
 TIER_COUNTS = [
     ("FREE", {}, 32),
-    ("PRO", {"SMARTMEMORY_API_KEY": "sk_test_key_123"}, 70),
+    ("PRO", {"SMARTMEMORY_API_KEY": "sk_test_key_123"}, 71),
     (
         "PRO_PLUS",
         {
             "SMARTMEMORY_API_KEY": "sk_test_key_123",
             "SMARTMEMORY_MCP_FULL_TOOLS": "true",
         },
-        101,
+        102,
     ),
 ]
 
