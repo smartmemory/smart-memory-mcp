@@ -1,9 +1,7 @@
 """MCP-SWITCH-WORKSPACE-NAMING-SWEEP-1 items 5 and 8, one row table.
 
-Item 5: a Team id is not a workspace id. On 2.0 only the stdio rows run (FWD-MERGE-4): the
-hosted switch still lists Teams, because the hosted workspace listing and `list_workspaces` came
-with WS-ROUTING-5, which owner shape B keeps off 2.0 (MCP-2.0-SWITCH-WORKSPACE-NAMING-TWIN-1).
-The stdio switch reads only `GET /memory/workspaces`; the fakes here also serve the
+Item 5: a Team id is not a workspace id. The switch (hosted and stdio) and the hosted
+`list_workspaces` read only `GET /memory/workspaces`; the fakes here also serve the
 caller's Teams (`GET /memory/teams`) with a Team that is no workspace (`team-ops`) and
 omit an independent workspace shared to the caller (`ws-shared`), so a listing that
 reads Teams again (the pre-WS-ROUTING-5 `_list_team_rows`) fails rows here.
@@ -26,6 +24,7 @@ import pytest
 from smartmemory_mcp.backends.local import LocalBackend, SaveReturn
 from smartmemory_mcp.tools import portability_tools
 
+from .test_hosted_tools_allowlist import _Harness, _text, fake_svc_api
 from ._tools import tool_fn
 from .test_switch_workspace import (  # noqa: F401  (_isolate is an autouse fixture)
     API,
@@ -41,6 +40,11 @@ TEAMS = [
     {"team_id": "team-personal", "name": "Personal"},
     {"team_id": "team-ops", "name": "Ops"},
 ]
+# The caller's workspaces: `ws-shared` is shared to the caller and no Team of theirs.
+HOSTED_WORKSPACES = [
+    {"workspace_id": "team-personal", "name": "Personal"},
+    {"workspace_id": "ws-shared", "name": "Shared"},
+]
 
 
 def _teams_response(method: str, url: str) -> httpx.Response | None:
@@ -51,6 +55,20 @@ def _teams_response(method: str, url: str) -> httpx.Response | None:
     return None
 
 
+def _svc_with_teams():
+    base = fake_svc_api()
+
+    def handler(method: str, url: str, **kwargs: Any) -> httpx.Response:
+        if (teams := _teams_response(method, url)) is not None:
+            return teams
+        if httpx.URL(url).path == "/memory/workspaces":
+            body = {"workspaces": HOSTED_WORKSPACES}
+            return httpx.Response(200, json=body, request=httpx.Request(method, url))
+        return base(method, url, **kwargs)
+
+    return handler
+
+
 class _StdioServiceWithTeams(FakeService):
     def __call__(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         if (teams := _teams_response(method, url)) is not None:
@@ -59,6 +77,33 @@ class _StdioServiceWithTeams(FakeService):
 
 
 # --- runners: each returns (reply, where the next request went, WARNING lines) ------
+
+
+def _hosted(monkeypatch, caplog, _tmp_path, arg: str):
+    harness = _Harness()
+    headers = []
+    base = _svc_with_teams()
+
+    def svc(method, url, **kwargs):
+        if httpx.URL(url).path == "/memory/search":
+            headers.append((kwargs.get("headers") or {}).get("X-Workspace-Id"))
+        return base(method, url, **kwargs)
+
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", svc)
+
+    async def body(client):
+        session_id = await harness.session(client)
+        if arg == "<list>":
+            return await harness.call(client, session_id, "list_workspaces")
+        result = await harness.call(
+            client, session_id, "switch_workspace", {"workspace": arg}
+        )
+        await harness.call(client, session_id, "memory_search", {"query": "q"})
+        return result
+
+    reply = _text(harness.run(body))
+    lands = headers[0] if headers else None
+    return reply, lands, _warnings(caplog)
 
 
 def _stdio(monkeypatch, caplog, _tmp_path, arg: str):
@@ -160,15 +205,64 @@ def _migrate(monkeypatch, caplog, tmp_path, arg: str):
     return reply, (headers[0] if headers else "local"), _warnings(caplog)
 
 
-RUNNERS = {"stdio": _stdio, "migrate": _migrate}
+RUNNERS = {"hosted": _hosted, "stdio": _stdio, "migrate": _migrate}
 
 # runner, argument, reply contains, reply lacks, where the next request goes (hosted: the workspace svc-api routed
 # it to; stdio/migrate: its X-Workspace-Id, None = no pick header, "local" = the write went to Lite), a WARNING
 # line contains ("" = no WARNING check).
 ROWS = [
-    # item 5, hosted rows NOT on 2.0 (FWD-MERGE-4): 2.0's hosted switch lists Teams (`hosted/server.py`
-    # `_list_team_rows`); the workspace-only listing and `list_workspaces` came with WS-ROUTING-5 (fcf61ad), which owner
-    # shape B keeps off 2.0. MCP-2.0-SWITCH-WORKSPACE-NAMING-TWIN-1 ports them back (main d54734b, rows hosted-*).
+    # item 5, hosted: a workspace shared to the caller is selectable by id and name
+    (
+        "hosted",
+        "ws-shared",
+        ("Switched to workspace: Shared (ws-shared)",),
+        (),
+        "ws-shared",
+        "",
+    ),
+    (
+        "hosted",
+        "shared",
+        ("Switched to workspace: Shared (ws-shared)",),
+        (),
+        "ws-shared",
+        "",
+    ),
+    # item 5, hosted: a Team id (or Team name) is never accepted as a workspace
+    (
+        "hosted",
+        "team-ops",
+        ("Workspace not switched", "You are not a member of workspace 'team-ops'"),
+        ("Switched",),
+        "team-personal",
+        "Workspace switch refused",
+    ),
+    (
+        "hosted",
+        "Ops",
+        ("Workspace not switched",),
+        ("Switched",),
+        "team-personal",
+        "Workspace switch refused",
+    ),
+    # item 5, hosted: a non-member workspace is refused
+    (
+        "hosted",
+        "ws-nobody",
+        ("Workspace not switched",),
+        ("Switched",),
+        "team-personal",
+        "Workspace switch refused",
+    ),
+    # item 5, hosted: the listing offers workspaces only
+    (
+        "hosted",
+        "<list>",
+        ("Shared (ws-shared)", "Personal (team-personal)"),
+        ("team-ops", "Ops"),
+        None,
+        "",
+    ),
     # item 5, stdio: the same split
     ("stdio", "Beta", ("Switched to workspace: Beta (ws-b)",), (), "ws-b", ""),
     # 2.0 has no WS-ROUTING-5 header rule: after a refused switch the next request still names the account default.

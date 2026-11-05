@@ -36,7 +36,7 @@ def test_hosted_tools_have_explicit_directory_annotations() -> None:
     by_name = {tool.name: tool for tool in tools}
 
     assert set(by_name) == set(HOSTED_TOOLS)
-    assert len(by_name) == 26  # MCP-SWITCH-WORKSPACE-1: + switch_workspace
+    assert len(by_name) == 27  # MCP-SWITCH-WORKSPACE-1: + switch_workspace
     for name, tool in by_name.items():
         assert tool.title, f"{name} is missing a title"
         assert tool.annotations is not None, f"{name} is missing annotations"
@@ -53,3 +53,7 @@ def test_hosted_tools_have_explicit_directory_annotations() -> None:
     assert by_name["code_upload"].annotations.destructive_hint is True
     assert by_name["memory_delete"].annotations.destructive_hint is True
     assert by_name["memory_search"].annotations.read_only_hint is True
+
+    assert by_name["list_workspaces"].annotations.read_only_hint is True
+    assert by_name["list_workspaces"].annotations.destructive_hint is False
+    assert by_name["list_workspaces"].annotations.idempotent_hint is True

@@ -283,7 +283,7 @@ def test_the_refusal_names_why_the_workspace_list_failed(
 
 # The hosted sibling (review L1): the same reason-carrying refusal. An API-key hosted
 # caller's key reaches svc-api as is, so a key without read:teams gets the 403 below.
-# Columns: the /memory/teams answer (status, body) -> text the refusal must contain.
+# Columns: the /memory/workspaces answer (status, body) -> text the refusal must contain.
 HOSTED_LISTING_ROWS = [
     pytest.param(
         403,
@@ -307,7 +307,7 @@ def test_the_hosted_refusal_names_why_the_workspace_list_failed(
     base = fake_svc_api()
 
     def svc(method, url, **kwargs):
-        if httpx.URL(url).path == "/memory/teams":
+        if httpx.URL(url).path == "/memory/workspaces":
             return httpx.Response(status, json=body, request=httpx.Request(method, url))
         return base(method, url, **kwargs)
 
@@ -1132,9 +1132,9 @@ def _property_names(schema: Any) -> set[str]:
 
 @pytest.mark.parametrize(
     ("server", "listing", "count"),
-    # 2.0 counts (measured, FWD-MERGE-4): PRO+ 97 and hosted 26, after U4.42-FU-TOOLS replaced the ingest tools;
-    # PRO+ 99 with SM-EVIDENCE-TYPE-1's evidence_record + decision_link_evidence (not on the hosted allowlist).
-    [("stdio", _stdio_listing, 99), ("hosted", _hosted_listing, 26)],
+    # 2.0 tip registers 103 stdio tools (including the pattern CRUD tools).
+    # This hosted-only port adds one tool: hosted 26 -> 27, stdio unchanged.
+    [("stdio", _stdio_listing, 103), ("hosted", _hosted_listing, 27)],
 )
 def test_the_listing_has_no_tenant_selector_and_team_only_on_the_alias(
     server, listing, count
@@ -1159,3 +1159,109 @@ def test_the_listing_has_no_tenant_selector_and_team_only_on_the_alias(
     assert "deprecated" in (alias["title"] + alias["description"]).lower()
     switch = next(t for t in tools if t["name"] == "switch_workspace")
     assert "workspace" in switch["schema"]["properties"]
+
+
+# GAP 1: an independent workspace must be offered and selected even when its id
+# differs from a Team. Exercise the production hosted ASGI app, in memory only.
+def test_hosted_lists_and_switches_only_the_callers_workspace_ids(monkeypatch) -> None:
+    from ._hosted_fixtures import API_KEY
+
+    harness = _Harness()
+    base = fake_svc_api()
+    listing_headers = []
+
+    def svc(method, url, **kwargs):
+        path = httpx.URL(url).path
+        assert path != "/memory/teams", "Team ids are not workspace ids"
+        if path == "/memory/workspaces":
+            listing_headers.append(kwargs.get("headers") or {})
+            return httpx.Response(
+                200,
+                json={
+                    "workspaces": [
+                        {"workspace_id": "team-personal", "name": "Personal"},
+                        {"workspace_id": "ws-independent", "name": "Independent"},
+                    ]
+                },
+                request=httpx.Request(method, url),
+            )
+        return base(method, url, **kwargs)
+
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", svc)
+
+    async def run(client):
+        session = await harness.session(client)
+        listed = await harness.call(client, session, "list_workspaces")
+        switched = await harness.call(
+            client, session, "switch_workspace", {"workspace": "ws-independent"}
+        )
+        before = await harness.call(client, session, "whoami")
+        saved_before = dict(harness.routing.rows)
+        puts_before = [call for call in harness.routing.calls if call[0] == "PUT"]
+        refused = await harness.call(
+            client, session, "switch_workspace", {"workspace": "ws-foreign-tenant"}
+        )
+        # 2.0's switch is read-exempt so it can recover an unreadable pick.
+        # Prove no mutation of the saved pick, rather than infer it from display text.
+        assert harness.routing.rows == saved_before
+        assert [
+            call for call in harness.routing.calls if call[0] == "PUT"
+        ] == puts_before
+        after = await harness.call(client, session, "whoami")
+        listed_after = await harness.call(client, session, "list_workspaces")
+        return listed, switched, before, refused, after, listed_after
+
+    listed, switched, before, refused, after, listed_after = harness.run(run)
+    assert listed.get("isError") is not True
+    assert "* Personal (team-personal)" in _text(listed)
+    assert "Independent (ws-independent)" in _text(listed)
+    assert "ws-foreign-tenant" not in _text(listed)
+    assert switched.get("isError") is not True
+    assert "ws-independent" in _text(before)
+    assert refused.get("isError") is True
+    assert "You are not a member of workspace" in _text(refused)
+    assert _text(after) == _text(before)
+    assert "* Independent (ws-independent)" in _text(listed_after)
+    assert len(listing_headers) == 4
+    for headers in listing_headers:
+        normalized = {k.lower(): v for k, v in headers.items()}
+        assert normalized["authorization"] == f"Bearer {API_KEY}"
+        assert "x-workspace-id" not in normalized
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "fragment"),
+    [
+        (200, {"workspaces": []}, "You have no workspaces."),
+        (200, {"teams": []}, "unexpected response shape"),
+        (503, {"detail": "down"}, "API error 503"),
+        (
+            403,
+            {"detail": "API key missing required scope: read:teams"},
+            "MCP client config",
+        ),
+    ],
+)
+def test_hosted_list_workspaces_reports_empty_and_failures(
+    monkeypatch, status, body, fragment
+) -> None:
+    harness = _Harness()
+    base = fake_svc_api()
+
+    def svc(method, url, **kwargs):
+        if httpx.URL(url).path == "/memory/workspaces":
+            return httpx.Response(status, json=body, request=httpx.Request(method, url))
+        return base(method, url, **kwargs)
+
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", svc)
+
+    async def run(client):
+        session = await harness.session(client)
+        return await harness.call(client, session, "list_workspaces")
+
+    result = harness.run(run)
+    assert fragment in _text(result)
+    assert (result.get("isError") is True) == (
+        status != 200 or "workspaces" not in body
+    )
+    assert harness.cfg.api_url not in _text(result)

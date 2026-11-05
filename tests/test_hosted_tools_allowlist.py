@@ -118,7 +118,7 @@ def fake_svc_api(
     """A minimal but valid svc-api for every route a hosted tool can reach.
 
     `revoked` workspaces answer 403 to any call whose `X-Workspace-Id` names them, as the real scope check does for a
-    removed member (common `scope.py:501`); `team_headers` collects the headers of every `/memory/teams` call.
+    removed member (common `scope.py:501`); `team_headers` collects the headers of every `/memory/workspaces` call.
     """
 
     def handler(method: str, url: str, **kwargs: Any) -> httpx.Response:
@@ -159,17 +159,19 @@ def fake_svc_api(
             return ok({"total_items": 1, "items_by_type": {"semantic": 1}})
         if path == "/memory/result-feedback":
             return ok({"result_used_count": 1, "result_shown_count": 1})
-        if path == "/memory/teams":
+        if path == "/memory/workspaces":
             sent = {k.lower(): v for k, v in (kwargs.get("headers") or {}).items()}
             if team_headers is not None:
                 team_headers.append(sent)
             if sent.get("x-workspace-id") in revoked:
                 return ok({"detail": "insufficient_team_permissions"}, 403)
             return ok(
-                [
-                    {"team_id": "team-personal", "name": "Personal"},
-                    {"team_id": "team-B"},
-                ]
+                {
+                    "workspaces": [
+                        {"workspace_id": "team-personal", "name": "Personal"},
+                        {"workspace_id": "team-B"},
+                    ]
+                }
             )
         if path.startswith("/memory/code/"):
             return ok({"results": [], "total": 0, "files": [], "symbols": []})
@@ -287,7 +289,7 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
     advertised = {tool.name for tool in asyncio.run(mcp.list_tools())}
 
     assert advertised == set(HOSTED_TOOLS)
-    assert len(advertised) == 26  # MCP-SWITCH-WORKSPACE-1: + switch_workspace
+    assert len(advertised) == 27  # MCP-SWITCH-WORKSPACE-1: + switch_workspace
 
 
 @pytest.mark.parametrize("name", EXCLUDED_TOOLS)
@@ -429,6 +431,7 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ),
     ("reasoning_query_traces", {"query": "why"}),
     ("whoami", {}),
+    ("list_workspaces", {}),
     ("switch_workspace", {"workspace": "team-B"}),
     ("switch_team", {"team_id": "team-B"}),  # deprecated alias
 ]
@@ -578,7 +581,7 @@ def test_switch_then_whoami_reflects_the_new_workspace(
     assert "team-B" in _text(switched)
     assert "team-B" in _text(after)
     # The membership check is a real API call, not a local guess.
-    assert ("GET", "/memory/teams") in harness.seen
+    assert ("GET", "/memory/workspaces") in harness.seen
 
 
 @pytest.mark.parametrize(("tool", "param"), SWITCH_TOOLS)

@@ -62,7 +62,11 @@ def _run_snippet(env: dict[str, str]) -> dict:
     )
     # Parse the last line (skip any warnings on stderr)
     output = result.stdout.strip().splitlines()[-1]
-    return json.loads(output)
+    data = json.loads(output)
+    assert (
+        "list_workspaces" not in data["names"]
+    )  # This port adds the hosted variant only.
+    return data
 
 
 # ---------------------------------------------------------------------------

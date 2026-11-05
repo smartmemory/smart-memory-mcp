@@ -4,6 +4,8 @@
 # Changelog
 
 ## Unreleased
+
+- MCP-2.0-HOSTED-LIST-WORKSPACES-TWIN-1: restore hosted `list_workspaces` and validate workspace switches against the caller-authenticated workspace listing, including independent shared workspaces.
 - SM-PATTERN-CRUD-1 tier-pin fix round (2026-11-05; test pins only): the remote PRO and PRO_PLUS listing pins in `tests/test_tier_registration.py` are 72 and 103 on the stacked ASOF + EVIDENCE + PATTERN branch. The set difference from the EVIDENCE base is exactly `pattern_create`, `pattern_update`, `pattern_retire`, `pattern_seed`, registered in `pattern_tools.register` inside the PRO block (`server.py`), so PRO and PRO_PLUS only; FREE stays 33.
 - OPS-SERVICE-PREPUSH-PER-LINE-TARGET-1 (mcp twin; tooling, 2026-11-04; s2-coord mixed push `main`+`2.0`) [review tier: small bounded tooling, batched post-land]: **the cross-repo pre-push hook checks each pushed line against its own target branch.** `main()` used to check every pushed sha against every target branch (a cross product), so a mixed `git push origin <sha>:refs/heads/main <sha2>:refs/heads/2.0` blocked the main sha on 39 symbols that exist only on the sibling's main. New `push_targets()` keeps the line-to-branch pairing and `main()` validates each branch with only its own shas; `target_branches()` stays as a thin wrapper. Fallbacks unchanged (no stdin, non-branch target, unresolvable sha). Two new mixed-push rows.
 
