@@ -69,6 +69,10 @@ class MemoryResult(TypedDict, total=False):
     # set only on as_of_date searches. "unresolved" means present-day content
     # is standing in for a historical belief; an agent must not cite it as history.
     as_of_resolution: Optional[str]
+    # DHRUV-CODING-RULE-P0-1 — "valid_time" | "created_at_fallback" | "unresolved",
+    # set only on valid_at searches. "created_at_fallback" means the item had no
+    # effective date, so its recording date stood in for it.
+    valid_at_resolution: Optional[str]
 
 
 def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
@@ -115,6 +119,8 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         relations=d.get("relations"),
         drift_warnings=d.get("drift_warnings"),
         as_of_resolution=d.get("as_of_resolution"),
+        valid_at_resolution=d.get("valid_at_resolution")
+        or (d.get("metadata") or {}).get("valid_at_resolution"),
     )
 
 

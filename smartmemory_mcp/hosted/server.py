@@ -233,11 +233,16 @@ def _register_hosted_tools(
         cite: bool = False,
         as_of_date: Optional[str] = None,
         as_of_strict: bool = False,
+        valid_at: Optional[str] = None,
         include_superseded: bool = False,
         include_retracted: bool = False,
         include_archived: bool = False,
     ):
         """Search memories using semantic similarity with optional hybrid mode.
+
+        valid_at (ISO-8601) asks what was IN FORCE ON that date ("which rule
+        applied on April 10?"). as_of_date asks what had been RECORDED BY that
+        instant. Both together are an AND.
 
         Hosted note: `cite=True` is not available — citation formatting runs in
         the `smartmemory` core package, which the hosted server does not ship.
@@ -261,6 +266,7 @@ def _register_hosted_tools(
             cite=False,
             as_of_date=as_of_date,
             as_of_strict=as_of_strict,
+            valid_at=valid_at,
             include_superseded=include_superseded,
             include_retracted=include_retracted,
             include_archived=include_archived,

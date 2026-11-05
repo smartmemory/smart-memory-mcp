@@ -122,6 +122,7 @@ _MODEL_ITEM_FIELDS = frozenset(
         "derived_from",
         "reference",
         "as_of_resolution",
+        "valid_at_resolution",
         "score_breakdown",
     }
 )
@@ -525,6 +526,7 @@ def register_free(mcp):
         cite: bool = False,
         as_of_date: Optional[str] = None,
         as_of_strict: bool = False,
+        valid_at: Optional[str] = None,
         include_superseded: bool = False,
         include_retracted: bool = False,
         include_archived: bool = False,
@@ -537,8 +539,17 @@ def register_free(mcp):
         follows best-result entities and one-off bridges; semantic asks an LLM.
         since/until: ISO-8601 or relative (7d, 24h, 30m), echoed as an absolute window.
 
-        as_of_date (ISO-8601) travels transaction time: what the system
-        believed at that instant. include_superseded keeps replaced items
+        Two different dates, do not mix them up:
+        - valid_at (ISO-8601) asks what was IN FORCE ON that date: the rule or
+          fact whose effective period covers it, even if it was written down
+          later. Use it for "which rule applied on April 10?". A result with no
+          effective date of its own counts from the day it was recorded and is
+          labelled valid_at_resolution="created_at_fallback".
+        - as_of_date (ISO-8601) asks what had been RECORDED BY that instant:
+          transaction time, what the system believed then.
+        Both together mean in force on valid_at AND recorded by as_of_date.
+
+        include_superseded keeps replaced items
         visible in results (PLAT-AUDITABLE-MEMORY-1). include_retracted keeps
         WITHDRAWN beliefs visible (CORE-RETRACTED-RECALL-1) — a separate
         lifecycle state with no replacement, not covered by include_superseded.
@@ -574,6 +585,7 @@ def register_free(mcp):
             budget_ms=budget_ms,
             as_of_date=as_of_date,
             as_of_strict=as_of_strict,
+            valid_at=valid_at,
             include_superseded=include_superseded,
             include_retracted=include_retracted,
             include_archived=include_archived,

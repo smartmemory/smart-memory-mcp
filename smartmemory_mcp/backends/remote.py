@@ -1013,6 +1013,8 @@ class RemoteBackend(BackendCapabilities):
             body["as_of_date"] = kwargs["as_of_date"]
         if kwargs.get("as_of_strict"):
             body["as_of_strict"] = True
+        if kwargs.get("valid_at"):
+            body["valid_at"] = kwargs["valid_at"]  # DHRUV-CODING-RULE-P0-1: valid time
         if kwargs.get("include_superseded"):
             body["include_superseded"] = True
         if kwargs.get("include_retracted"):
