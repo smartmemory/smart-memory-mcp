@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.5.25 — 2026-11-05
+
+Release summary (DHRUV-CODING-RULE-P0-1; user-facing changes since 1.5.24, details in the entries below):
+- **New `memory_supersede` tool** (stdio and hosted): change or reverse a rule as a new version; the old one is kept and closed on `valid_from`. `memory_update` is documented as an in-place edit with no history.
+- **`memory_search(valid_at=...)`** answers which rule was IN FORCE on a date, separate from `as_of_date` (what was recorded by then).
+
 - DHRUV-CODING-RULE-P0-1 (bug 1, P0, 2026-11-05): **new `memory_supersede(item_id, content, reason, metadata, valid_from)` tool, on the hosted allowlist** (`POST /memory/{id}/supersede`): a reversed rule becomes a new version, the old one is kept and closed on `valid_from`. `memory_update` is documented as an in-place edit that keeps no history, and `memory_ingest` points a reply that changes an earlier note at `memory_supersede`. PRO tools 70 to 71, hosted 29 to 30. Needs the service `valid_from` field to take effect; no version bump here.
 - DHRUV-CODING-RULE-P0-1 (business P0, main hotfix, 2026-11-05; Dhruv bug 2): `memory_search(valid_at=...)` on stdio and the hosted override asks what was IN FORCE on a date ("which rule applied on April 10?"); the docstring separates it from `as_of_date` (what had been RECORDED BY then). The remote backend sends `valid_at` only when set, and results carry `valid_at_resolution` (`valid_time`, `created_at_fallback`, `unresolved`). Needs the matching service and core change. No version bump. Test: `tests/test_search_valid_at.py`.
 

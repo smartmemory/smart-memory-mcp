@@ -137,15 +137,17 @@ Code indexing reports clean, partial and failed file counts plus acceptance, sta
 
 Local `code_effects(directory, repo_name=None)` scans Python effects through the shared engine without opening a memory store. Hosted `code_effects(repo, source_snapshot, limit=20, offset=0)` reads uploaded `fa_snapshot` records in the selected workspace. It accepts no filesystem path. Upload the engine's `snapshot_record` payload through existing declared-record ingestion first. Repository rules belong in the scanned checkout's `.smartmemory-effects.json`.
 
-Hosted mode advertises 29 tools, an explicit allowlist rather than a tier:
+Hosted mode advertises 30 tools, an explicit allowlist rather than a tier:
 
 `memory_ingest` `memory_search` `memory_recall` `read_around` `memory_get`
 `memory_explain` `memory_recall_pack` `memory_policy_bundle` `memory_add`
-`memory_update` `memory_delete` `memory_list` `memory_stats` `memory_distill`
+`memory_update` `memory_supersede` `memory_delete` `memory_list` `memory_stats` `memory_distill`
 `memory_ingest_conversation` `memory_search_by_metadata` `memory_feedback`
 `code_search` `code_dead_code` `code_dependencies` `code_upload` `code_effects`
 `agent_set_recall_profile` `agent_get_recall_profile` `reasoning_query_traces`
 `whoami` `list_workspaces` `switch_workspace`
+
+`memory_update` edits in place and keeps no history; to change or reverse a rule use `memory_supersede(item_id, content, reason, valid_from=...)`, and ask `memory_search(query, valid_at="2026-04-10")` which rule was in force on a date (1.5.25).
 
 Deprecated: `switch_team` (an alias of `switch_workspace`, removed in the next
 release).
