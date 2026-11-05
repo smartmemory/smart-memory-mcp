@@ -14,6 +14,7 @@ from smartmemory_mcp.backends.models import (
     validated_carrier,
 )
 from smartmemory_mcp.tools.search_window import with_search_window
+from smartmemory_mcp.result_labels import supersession_label
 
 try:
     from smartmemory.refusal_logging import (
@@ -344,6 +345,7 @@ def _build_working_context(
                 "content": content,
                 "memory_type": row.get("memory_type"),
                 "metadata": row.get("metadata") or {},
+                "via_supersession_of": row.get("via_supersession_of"),
                 "score_breakdown": {
                     "activation": activation_score,
                     "relevance": float(row.get("score") or 0.0),
@@ -436,7 +438,9 @@ def _format_catalog(query: str, results: list) -> str:
         stale = meta.get("stale", False)
         stale_str = "  ⚠ stale" if stale else ""
 
-        lines.append(f"{i}. {item_id}  {mtype}{score_str}  {age_str}{stale_str}")
+        lines.append(
+            f"{i}. {item_id}  {mtype}{score_str}  {age_str}{stale_str}{supersession_label(item)}"
+        )
         lines.append(f"   {snippet}")
         if diagnostic := resolution_text(item):
             lines.append(f"   {diagnostic}")
@@ -471,7 +475,7 @@ def _format_recall(
         age_part = f"{age_str} — " if age_str else ""
         content = str(item["content"]).replace("\n", " ↵ ")
         snippet = (content[:300] + "…") if len(content) > 300 else content
-        lines.append(f"[{i}] {age_part}{snippet}")
+        lines.append(f"[{i}]{supersession_label(item)} {age_part}{snippet}")
         lines.append("")
 
     item_ids = ", ".join(str(item["item_id"]) for item in results if item["item_id"])
@@ -708,6 +712,7 @@ def register_free(mcp):
 
             output.append(
                 f"{i}. {stale_prefix}{id_display} ({mtype}){score_str}{conf_str}{lineage_str}{stale_suffix}"
+                f"{supersession_label(item)}"
             )
             output.append(f"   {preview}\n")
             if diagnostic := resolution_text(item):
@@ -1491,7 +1496,7 @@ def register_pro(mcp):
             preview = content[:200] + "..." if len(content) > 200 else content
             item_id = item.item_id
             mtype = item.memory_type
-            output.append(f"{i}. [{item_id}] ({mtype})")
+            output.append(f"{i}. [{item_id}] ({mtype}){supersession_label(item)}")
             output.append(f"   {preview}\n")
 
         return "\n".join(output)
@@ -1548,7 +1553,9 @@ def register_pro(mcp):
                 marker = f" [SUPERSEDED{f' by {replaced_by}' if replaced_by else ''}]"
             else:
                 marker = ""
-            output.append(f"- [{item_id}] ({mtype}){marker}: {preview}")
+            output.append(
+                f"- [{item_id}] ({mtype}){marker}{supersession_label(item)}: {preview}"
+            )
 
         return "\n".join(output)
 

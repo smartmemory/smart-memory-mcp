@@ -48,6 +48,7 @@
 
 ## Unreleased
 
+- DHRUV-MCP-SUPERSESSION-LABEL-1: Search and recall text, including hosted results, now labels surfaced successors with `[replaces <first 8 of id>]` from top-level or metadata supersession markers.
 - SM-RECALL-PROFILES-1 fix round 1: Rebase reader presets and their learned-tools dependency onto current 2.0. Preserve stdio workspace discovery and the memory_recall default of 10. Pin the combined FREE/PRO/PRO+ tool counts at 37/77/108.
 
 - SM-RECALL-PROFILES-1 (G8): add brief, resume, review and pane recall-pack presets with ordered sections and default token budgets, explicit budget overrides, and existing loss diagnostics. Expand reader presets through the existing sections/caps wire shape for local, remote and hosted tools without requiring core in remote installs.

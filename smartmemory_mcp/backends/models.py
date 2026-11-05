@@ -62,6 +62,7 @@ class MemoryResult(TypedDict, total=False):
     # caller could act on knowledge the system already knows is obsolete.
     superseded: bool
     superseded_by: Optional[str]
+    via_supersession_of: Optional[str]
     derived_from: Optional[str]
     origin: Optional[str]
     reference: Optional[bool]
@@ -153,6 +154,8 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         stale=d.get("stale", False),
         superseded=bool(d.get("superseded", False)),
         superseded_by=d.get("superseded_by"),
+        via_supersession_of=d.get("via_supersession_of")
+        or (d.get("metadata") or {}).get("via_supersession_of"),
         derived_from=d.get("derived_from"),
         origin=d.get("origin"),
         reference=d.get("reference"),

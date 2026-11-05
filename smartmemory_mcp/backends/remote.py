@@ -7,6 +7,7 @@ _request() returns error dicts except hosted auth failures and unconfirmed add o
 from __future__ import annotations
 
 from smartmemory_mcp.tools.lexical_contract import validate_channel_weights
+from smartmemory_mcp.result_labels import supersession_label
 
 import json
 import logging
@@ -1048,7 +1049,7 @@ class RemoteBackend(BackendCapabilities):
             conf_marker = "~" if isinstance(conf, (int, float)) and conf < 0.5 else ""
             stale_marker = "" if not item.get("stale") else "!"
             lines.append(
-                f"- {stale_marker}{conf_marker}[{item['memory_type']}] {item['content']}"
+                f"- {stale_marker}{conf_marker}[{item['memory_type']}]{supersession_label(item)} {item['content']}"
             )
         return "\n".join(lines)
 
