@@ -123,6 +123,7 @@ FREE_TOOLS = sorted(
         "memory_import",
         "memory_migrate",
         "memory_auto",  # DIST-AGENT-HOOKS-1
+        "memory_ask",  # DHRUV-HOSTED-MCP-PARITY-1 (a)
         "memory_feedback",  # SELF-IMPROVE-* feedback surface
         "get_working_context",  # CORE-MEMORY-DYNAMICS-1 M1a
         "read_around",  # CORE-RECALL-CENTERED-1 Phase 2
@@ -148,17 +149,17 @@ FREE_TOOLS = sorted(
 
 
 # tier, env overrides, registered count (DHRUV-CODING-RULE-P0-1 added memory_supersede to PRO and up; MCP-SWITCH-WORKSPACE-1 added switch_workspace
-# to every tier; switch_team stays registered as its deprecated alias; WS-ROUTING-5 added list_workspaces).
+# to every tier; switch_team stays registered as its deprecated alias; WS-ROUTING-5 added list_workspaces; DHRUV-HOSTED-MCP-PARITY-1 added memory_ask to every tier).
 TIER_COUNTS = [
-    ("FREE", {}, 32),
-    ("PRO", {"SMARTMEMORY_API_KEY": "sk_test_key_123"}, 71),
+    ("FREE", {}, 33),
+    ("PRO", {"SMARTMEMORY_API_KEY": "sk_test_key_123"}, 72),
     (
         "PRO_PLUS",
         {
             "SMARTMEMORY_API_KEY": "sk_test_key_123",
             "SMARTMEMORY_MCP_FULL_TOOLS": "true",
         },
-        102,
+        103,
     ),
 ]
 
