@@ -17,6 +17,8 @@ from typing import Any, NoReturn
 
 import httpx
 
+from smartmemory_mcp.tools.common import scoped_options
+
 from .interface import BackendCapabilities, EvidenceRefused
 from .local import SaveReturn
 from .models import CodeIngestResult, MemoryResult, normalize_item, normalize_items
@@ -827,6 +829,12 @@ class RemoteBackend(BackendCapabilities):
                 if kwargs.get(k) is not None
             }
         )
+        body.update(
+            scoped_options(
+                business_scope=kwargs.get("business_scope"),
+                valid_at=kwargs.get("valid_at"),
+            )
+        )
         body = self._search_request_body(body)
         # SELF-IMPROVE-6: capture X-Search-Session-Id header from response
         self._last_search_session_id: str | None = None
@@ -1346,19 +1354,24 @@ class RemoteBackend(BackendCapabilities):
             value = kwargs.get(key)
             if value is not None:
                 body[key] = value
+        body.update(scoped_options(scope_go_lives=kwargs.get("scope_go_lives")))
         return self._strip_scope(
             self._decision_request("POST", "/memory/decisions/create", json=body)
         )
 
     def decision_get(
-        self, decision_id: str, as_of: str | None = None
+        self,
+        decision_id: str,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
     ) -> dict[str, Any] | None:
         """GET /memory/decisions/{decision_id} (``?as_of=`` when set)."""
         return self._decision_request(
             "GET",
             f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}",
             none_on_404=True,
-            **self._as_of_params(as_of),
+            **self._validity_params(as_of, business_scope, valid_at),
         )
 
     def decision_list(
@@ -1368,6 +1381,8 @@ class RemoteBackend(BackendCapabilities):
         min_confidence: float = 0.0,
         limit: int = 50,
         as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
     ) -> list[dict[str, Any]]:
         """GET /memory/decisions."""
         params: dict[str, Any] = {"min_confidence": min_confidence, "limit": limit}
@@ -1377,16 +1392,27 @@ class RemoteBackend(BackendCapabilities):
             params["decision_type"] = decision_type
         if as_of is not None:
             params["as_of"] = as_of
+        params.update(
+            self._validity_params(as_of, business_scope, valid_at).get("params", {})
+        )
         result = self._decision_request("GET", "/memory/decisions", params=params)
         return list(result.get("decisions") or [])
 
     def decision_search(
-        self, topic: str, limit: int = 20, as_of: str | None = None
+        self,
+        topic: str,
+        limit: int = 20,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
     ) -> list[dict[str, Any]]:
         """GET /memory/decisions/search."""
         params: dict[str, Any] = {"topic": topic, "limit": limit}
         if as_of is not None:
             params["as_of"] = as_of
+        params.update(
+            self._validity_params(as_of, business_scope, valid_at).get("params", {})
+        )
         result = self._decision_request(
             "GET", "/memory/decisions/search", params=params
         )
@@ -1402,6 +1428,8 @@ class RemoteBackend(BackendCapabilities):
         rejected_alternatives: list[str] | None = None,
         rationale: str | None = None,
         constraints: list[str] | None = None,
+        scope_go_lives: list[dict[str, Any]] | None = None,
+        valid_from: str | None = None,
     ) -> dict[str, Any] | None:
         """POST /memory/decisions/{decision_id}/supersede."""
         body: dict[str, Any] = {
@@ -1416,6 +1444,9 @@ class RemoteBackend(BackendCapabilities):
             body["rationale"] = rationale
         if constraints is not None:
             body["constraints"] = constraints
+        body.update(
+            scoped_options(scope_go_lives=scope_go_lives, valid_from=valid_from)
+        )
         result = self._decision_request(
             "POST",
             f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/supersede",
@@ -1488,15 +1519,30 @@ class RemoteBackend(BackendCapabilities):
         )
 
     def decision_provenance(
-        self, decision_id: str, as_of: str | None = None
+        self,
+        decision_id: str,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
     ) -> dict[str, Any] | None:
         """GET /memory/decisions/{decision_id}/provenance (``?as_of=`` when set)."""
         return self._decision_request(
             "GET",
             f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/provenance",
             none_on_404=True,
-            **self._as_of_params(as_of),
+            **self._validity_params(as_of, business_scope, valid_at),
         )
+
+    @staticmethod
+    def _validity_params(as_of, business_scope, valid_at):
+        params = scoped_options(business_scope=business_scope, valid_at=valid_at)
+        if "business_scope" in params:
+            params["business_scope"] = json.dumps(
+                params["business_scope"], separators=(",", ":")
+            )
+        if as_of is not None:
+            params["as_of"] = as_of
+        return {"params": params} if params else {}
 
     @staticmethod
     def _as_of_params(as_of: str | None) -> dict[str, Any]:

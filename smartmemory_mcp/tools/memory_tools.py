@@ -27,7 +27,15 @@ except ImportError:  # remote-only install: no core, no logged mark
     _HAS_CORE = False
 
 
-from .common import checked_as_of, dated, get_backend, graceful
+from .common import (
+    checked_as_of,
+    dated,
+    get_backend,
+    graceful,
+    scoped_options,
+    refuse_scoped_options,
+    resolution_text,
+)
 from .lexical_contract import validate_channel_weights
 
 logger = logging.getLogger(__name__)
@@ -168,6 +176,8 @@ def model_item(item: Dict[str, Any]) -> Dict[str, Any]:
             del out["read_status"]
         else:
             out["read_status"] = status
+    if resolution := (item.get("metadata") or {}).get("scoped_validity_resolution"):
+        out["scoped_validity_resolution"] = resolution
     return out
 
 
@@ -426,6 +436,8 @@ def _format_catalog(query: str, results: list) -> str:
 
         lines.append(f"{i}. {item_id}  {mtype}{score_str}  {age_str}{stale_str}")
         lines.append(f"   {snippet}")
+        if diagnostic := resolution_text(item):
+            lines.append(f"   {diagnostic}")
         lines.append("")
 
     lines.append("─" * 43)
@@ -528,12 +540,18 @@ def register_free(mcp):
         include_archived: bool = False,
         since: Optional[str] = None,
         until: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ):
         """Search memories using semantic similarity with optional hybrid mode.
 
         hop_strategy: consensus follows entities several top results agree on; relevance
         follows best-result entities and one-off bridges; semantic asks an LLM.
         since/until: ISO-8601 or relative (7d, 24h, 30m), echoed as an absolute window.
+
+        business_scope selects an exact site and valid_at selects business validity.
+        Activated exact site entries win, otherwise use sponsor fallback. The backend
+        resolves an omitted valid_at once at request start.
 
         as_of_date (ISO-8601) travels transaction time: what the system
         believed at that instant. include_superseded keeps replaced items
@@ -553,6 +571,7 @@ def register_free(mcp):
         believed then. Set as_of_strict to refuse a partial history outright
         rather than receive labelled results (gap #2).
         """
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
         # Search failures must become MCP errors, including connection failures.
         validate_channel_weights(channel_weights)
         backend = get_backend()
@@ -561,6 +580,7 @@ def register_free(mcp):
         # The old 3x inflated shown_ids for feedback, diluting selection_rate.
         results = backend.search(
             query,
+            **options,
             top_k=top_k,
             memory_type=memory_type,
             enable_hybrid=enable_hybrid,
@@ -646,11 +666,11 @@ def register_free(mcp):
 
         output = [f"Found {len(results)} results for '{query}':\n"]
         for i, item in enumerate(results, 1):
-            # The facade returns MemoryItems, not dicts.
-            content = str(item.content)
+            # Backends return normalized memory dictionaries.
+            content = str(item["content"])
             preview = content[:200] + "..." if len(content) > 200 else content
-            item_id = item.item_id
-            mtype = item.memory_type
+            item_id = item["item_id"]
+            mtype = item["memory_type"]
             score = item.get("score")
             score_str = f" (score: {score:.3f})" if score is not None else ""
 
@@ -678,6 +698,8 @@ def register_free(mcp):
                 f"{i}. {stale_prefix}{id_display} ({mtype}){score_str}{conf_str}{lineage_str}{stale_suffix}"
             )
             output.append(f"   {preview}\n")
+            if diagnostic := resolution_text(item):
+                output.append(diagnostic)
 
         if partial:
             output.append(partial_note(partial))
@@ -696,7 +718,12 @@ def register_free(mcp):
     )
     @graceful
     def memory_recall(
-        query: str, session_id: Optional[str] = None, top_k: int = 5, cite: bool = False
+        query: str,
+        session_id: Optional[str] = None,
+        top_k: int = 5,
+        cite: bool = False,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ):
         """**Deprecated:** Use ``get_working_context``.
 
@@ -705,6 +732,7 @@ def register_free(mcp):
         post-filters cross-type results through ``_LEGACY_RECALL_TYPE_SCOPE``
         to preserve the pre-shim ``memory_type="working"`` scope.
         """
+        refuse_scoped_options(business_scope, valid_at)
         global _RECALL_DEPRECATION_WARNED
         if not _RECALL_DEPRECATION_WARNED:
             logger.warning(
@@ -991,6 +1019,8 @@ def register_free(mcp):
         sections: Optional[list] = None,
         preset: Optional[str] = None,
         as_of: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ) -> dict:
         """Assemble the most useful context that fits in a token budget.
 
@@ -1010,6 +1040,7 @@ def register_free(mcp):
         out and named in ``manifest.dropped_sections``.
         Returns ``{block, manifest}``.
         """
+        refuse_scoped_options(business_scope, valid_at)
         as_of = checked_as_of(as_of)
         if not isinstance(budget_tokens, int) or budget_tokens < 1:
             return {"error": "`budget_tokens` must be an integer >= 1."}
@@ -1050,6 +1081,8 @@ def register_free(mcp):
         workflow: Optional[str] = None,
         domain: Optional[str] = None,
         as_of: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ) -> dict:
         """Compile active workspace decisions into a Stratum policy bundle.
 
@@ -1059,6 +1092,7 @@ def register_free(mcp):
         JSON is the policy-exchange contract bundle and is identical for local
         and hosted backends.
         """
+        refuse_scoped_options(business_scope, valid_at)
         as_of = checked_as_of(as_of)
         return get_backend().policy_bundle(
             workflow=workflow, domain=domain, **dated(as_of)
@@ -1352,9 +1386,14 @@ def register_pro(mcp):
     )
     @graceful
     def memory_search_advanced(
-        query: str, algorithm: str = "query_traversal", max_results: int = 15
+        query: str,
+        algorithm: str = "query_traversal",
+        max_results: int = 15,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ) -> str:
         """Advanced search using Similarity Graph Traversal (SSG) algorithms."""
+        refuse_scoped_options(business_scope, valid_at)
         backend = get_backend()
         mem = getattr(backend, "_mem", None)
         if mem is None:
@@ -1401,8 +1440,11 @@ def register_pro(mcp):
         top_k: int = 10,
         since: Optional[str] = None,
         until: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ) -> str:
         """Search memories by exact metadata key-value match."""
+        refuse_scoped_options(business_scope, valid_at)
         backend = get_backend()
         results = backend.search_by_metadata(
             metadata_key,

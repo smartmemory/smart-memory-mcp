@@ -302,7 +302,11 @@ class MemoryBackend(Protocol):
         ...
 
     def decision_get(
-        self, decision_id: str, as_of: str | None = None
+        self,
+        decision_id: str,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
     ) -> dict[str, Any] | None:
         """Full `Decision.to_dict()`, or None when the decision does not exist (at `as_of` when set)."""
         ...
@@ -314,12 +318,19 @@ class MemoryBackend(Protocol):
         min_confidence: float = 0.0,
         limit: int = 50,
         as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
     ) -> list[dict[str, Any]]:
         """Active decisions, filtered (active at `as_of` when set, SM-ASOF-DECISIONS-1)."""
         ...
 
     def decision_search(
-        self, topic: str, limit: int = 20, as_of: str | None = None
+        self,
+        topic: str,
+        limit: int = 20,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
     ) -> list[dict[str, Any]]:
         """Active decisions related to a topic (active at `as_of` when set)."""
         ...
@@ -334,6 +345,8 @@ class MemoryBackend(Protocol):
         rejected_alternatives: list[str] | None = None,
         rationale: str | None = None,
         constraints: list[str] | None = None,
+        scope_go_lives: list[dict[str, Any]] | None = None,
+        valid_from: str | None = None,
     ) -> dict[str, Any] | None:
         """{old_decision_id, new_decision_id, status}, or None when absent."""
         ...
@@ -365,7 +378,11 @@ class MemoryBackend(Protocol):
         ...
 
     def decision_provenance(
-        self, decision_id: str, as_of: str | None = None
+        self,
+        decision_id: str,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
     ) -> dict[str, Any] | None:
         """{decision, reasoning_trace, evidence, superseded, superseded_by}, or None when absent (at `as_of`)."""
         ...

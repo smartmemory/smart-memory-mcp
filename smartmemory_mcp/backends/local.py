@@ -10,6 +10,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, NoReturn
 
+from smartmemory_mcp.tools.common import scoped_options
+
 from .interface import LOCAL_BROKEN_TOOLS, BackendCapabilities, EvidenceRefused
 from .models import MemoryResult, normalize_item, normalize_items
 from smartmemory_mcp.workspace_select import SwitchResult, refuse
@@ -1089,15 +1091,21 @@ class LocalBackend(BackendCapabilities):
             rejected_alternatives=kwargs.get("rejected_alternatives") or [],
             rationale=kwargs.get("rationale"),
             constraints=kwargs.get("constraints") or [],
+            **scoped_options(scope_go_lives=kwargs.get("scope_go_lives")),
         )
         return _decision_dict(decision)
 
     def decision_get(
-        self, decision_id: str, as_of: str | None = None
+        self,
+        decision_id: str,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
     ) -> dict[str, Any] | None:
-        if as_of is not None:
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
+        if as_of is not None or options:
             # SM-ASOF-DECISIONS-1: a dated read is history access; the facade binds its history read gate.
-            decision = self._mem.get_decision(decision_id, as_of=as_of)
+            decision = self._mem.get_decision(decision_id, as_of=as_of, **options)
         else:
             decision = self._decision_manager().get_decision(decision_id)
         return _decision_dict(decision) if decision else None
@@ -1109,14 +1117,18 @@ class LocalBackend(BackendCapabilities):
         min_confidence: float = 0.0,
         limit: int = 50,
         as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
     ) -> list[dict[str, Any]]:
-        if as_of is not None:
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
+        if as_of is not None or options:
             decisions = self._mem.get_active_decisions(
                 domain=domain,
                 decision_type=decision_type,
                 min_confidence=min_confidence,
                 limit=limit,
                 as_of=as_of,
+                **options,
             )
         else:
             decisions = self._decision_queries().get_active_decisions(
@@ -1128,11 +1140,17 @@ class LocalBackend(BackendCapabilities):
         return [_decision_dict(d) for d in decisions]
 
     def decision_search(
-        self, topic: str, limit: int = 20, as_of: str | None = None
+        self,
+        topic: str,
+        limit: int = 20,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
     ) -> list[dict[str, Any]]:
-        if as_of is not None:
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
+        if as_of is not None or options:
             decisions = self._mem.get_decisions_about(
-                topic=topic, limit=limit, as_of=as_of
+                topic=topic, limit=limit, as_of=as_of, **options
             )
         else:
             decisions = self._decision_queries().get_decisions_about(
@@ -1150,9 +1168,12 @@ class LocalBackend(BackendCapabilities):
         rejected_alternatives: list[str] | None = None,
         rationale: str | None = None,
         constraints: list[str] | None = None,
+        scope_go_lives: list[dict[str, Any]] | None = None,
+        valid_from: str | None = None,
     ) -> dict[str, Any] | None:
         from smartmemory.models.decision import Decision
 
+        options = scoped_options(scope_go_lives=scope_go_lives, valid_from=valid_from)
         new_decision = Decision(
             content=new_content,
             decision_type=new_decision_type,
@@ -1166,11 +1187,26 @@ class LocalBackend(BackendCapabilities):
                 rejected_alternatives=rejected_alternatives,
                 rationale=rationale,
                 constraints=constraints,
+                **options,
             )
-        except ValueError:
-            # Core raises ValueError for "no such decision"; the service answers
-            # 404 for the same case. Both arms report absence as None.
-            return None
+        except ValueError as error:
+            # Only actual missing IDs are absence. Typed schedule/conflict errors escape.
+            if type(error) is ValueError and str(error).startswith(
+                "Decision not found:"
+            ):
+                return None
+            raise
+        schedule = getattr(result, "scope_go_lives", None)
+        if schedule is not None:
+            from datetime import datetime, timezone
+
+            return {
+                "status": "scheduled",
+                "old_item_id": decision_id,
+                "new_item_id": result.decision_id,
+                "scope_go_lives": schedule.to_list(),
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+            }
         return {
             "old_decision_id": decision_id,
             "new_decision_id": result.decision_id,
@@ -1240,10 +1276,17 @@ class LocalBackend(BackendCapabilities):
         return _evidence_dict(evidence)
 
     def decision_provenance(
-        self, decision_id: str, as_of: str | None = None
+        self,
+        decision_id: str,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
     ) -> dict[str, Any] | None:
-        if as_of is not None:
-            provenance = self._mem.get_decision_provenance(decision_id, as_of=as_of)
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
+        if as_of is not None or options:
+            provenance = self._mem.get_decision_provenance(
+                decision_id, as_of=as_of, **options
+            )
         else:
             provenance = self._decision_queries().get_decision_provenance(decision_id)
         if not provenance or provenance.get("decision") is None:

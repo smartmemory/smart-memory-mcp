@@ -115,3 +115,22 @@ def test_advertised_document_tool_executes(
             )
 
     asyncio.run(check())
+
+
+@pytest.mark.parametrize(
+    "backend_class", [LocalBackend, RemoteBackend, HostedRemoteBackend]
+)
+def test_scoped_validity_backend_signatures(backend_class):
+    """U12 public kwargs must be accepted on each explicitly supported read/write."""
+    import inspect
+
+    for name in (
+        "decision_get",
+        "decision_list",
+        "decision_search",
+        "decision_provenance",
+    ):
+        parameters = inspect.signature(getattr(backend_class, name)).parameters
+        assert {"as_of", "business_scope", "valid_at"} <= parameters.keys()
+    parameters = inspect.signature(backend_class.decision_supersede).parameters
+    assert {"scope_go_lives", "valid_from"} <= parameters.keys()

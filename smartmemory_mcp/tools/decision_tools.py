@@ -15,7 +15,14 @@ from typing import Any, Dict, List, Optional
 from mcp.types import ToolAnnotations
 
 from smartmemory_mcp.backends.interface import EvidenceRefused
-from .common import checked_as_of, dated, get_backend, graceful
+from .common import (
+    checked_as_of,
+    dated,
+    get_backend,
+    graceful,
+    scoped_options,
+    resolution_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +63,7 @@ def _summary_line(decision: Any) -> str:
     return (
         f"- [{_field(decision, 'decision_id')}] "
         f"({_field(decision, 'decision_type')}, conf={confidence:.2f}): "
-        f"{str(_field(decision, 'content', ''))[:100]}{_uncertainty_marker(decision)}"
+        f"{str(_field(decision, 'content', ''))[:100]}{_uncertainty_marker(decision)}{(' ' + resolution_text(decision)) if resolution_text(decision) else ''}"
     )
 
 
@@ -84,15 +91,19 @@ def register(mcp):
         rejected_alternatives: Optional[List[str]] = None,
         rationale: Optional[str] = None,
         constraints: Optional[List[str]] = None,
+        scope_go_lives: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """Record a decision the user stated, with provenance.
 
         Use this when the user states a decision: "I decided X", "we chose X over
         Y", "we're going with X". Put the decision in `content` as one sentence and
-        pass `rejected_alternatives` and `rationale` when the user gave them. A
+        pass `rejected_alternatives` and `rationale` when the user gave them.
+        scope_go_lives supplies explicit sponsor (scope=null) or exact site activation
+        dates. A site falls back to the sponsor until an exact entry activates. A
         decision stored this way can later be reinforced, superseded or checked for
         conflicts; one stored with memory_save may not be.
         """
+        options = scoped_options(scope_go_lives=scope_go_lives)
         # CORE-EXPERTISE-1 Phase 1: rejected_alternatives, rationale, constraints
         # capture the "why" structure that makes decisions usable expertise.
         try:
@@ -108,6 +119,7 @@ def register(mcp):
                 rejected_alternatives=rejected_alternatives or [],
                 rationale=rationale,
                 constraints=constraints or [],
+                **options,
             )
 
             lines = [
@@ -138,16 +150,28 @@ def register(mcp):
         ),
     )
     @graceful
-    def decision_get(decision_id: str, as_of: Optional[str] = None) -> str:
-        """Retrieve a decision by ID.
+    def decision_get(
+        decision_id: str,
+        as_of: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
+    ) -> str:
+        """Business validity uses business_scope (exact site) and valid_at.
+
+        Exact activated site entries take precedence, otherwise use sponsor fallback.
+        Omitted valid_at is resolved once at request start. as_of is independent
+        transaction-time history.
+
+        Retrieve a decision by ID.
 
         ``as_of`` (ISO 8601; omit for now): the decision as it stood then, its status
         from the supersession chain and version history; "not found" if it did not
         exist yet."""
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
         as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
-            decision = backend.decision_get(decision_id, **dated(as_of))
+            decision = backend.decision_get(decision_id, **dated(as_of), **options)
 
             if not decision:
                 return f"Decision not found: {decision_id}"
@@ -173,12 +197,21 @@ def register(mcp):
         min_confidence: float = 0.0,
         limit: int = 50,
         as_of: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ) -> str:
-        """List active decisions with optional filtering.
+        """Business validity uses business_scope (exact site) and valid_at.
+
+        Exact activated site entries take precedence, otherwise use sponsor fallback.
+        Omitted valid_at is resolved once at request start. as_of is independent
+        transaction-time history.
+
+        List active decisions with optional filtering.
 
         ``as_of`` (ISO 8601; omit for now) lists the decisions that were active at
         that instant: a decision superseded or retracted since is listed, one
         created later is not."""
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
         as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
@@ -188,6 +221,7 @@ def register(mcp):
                 min_confidence=min_confidence,
                 limit=limit,
                 **dated(as_of),
+                **options,
             )
 
             when = "" if as_of is None else f" as of {as_of}"
@@ -212,16 +246,27 @@ def register(mcp):
     )
     @graceful
     def decision_search(
-        topic: str, limit: int = 20, as_of: Optional[str] = None
+        topic: str,
+        limit: int = 20,
+        as_of: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ) -> str:
-        """Search for active decisions related to a topic.
+        """Business validity uses business_scope (exact site) and valid_at.
+
+        Exact activated site entries take precedence, otherwise use sponsor fallback.
+        Omitted valid_at is resolved once at request start. as_of is independent
+        transaction-time history.
+
+        Search for active decisions related to a topic.
 
         ``as_of`` (ISO 8601; omit for now): the decisions active at that instant."""
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
         as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
             decisions = backend.decision_search(
-                topic=topic, limit=limit, **dated(as_of)
+                topic=topic, limit=limit, **dated(as_of), **options
             )
 
             if not decisions:
@@ -253,8 +298,16 @@ def register(mcp):
         rejected_alternatives: Optional[List[str]] = None,
         rationale: Optional[str] = None,
         constraints: Optional[List[str]] = None,
+        scope_go_lives: Optional[List[Dict[str, Any]]] = None,
+        valid_from: Optional[str] = None,
     ) -> str:
-        """Replace a decision, preserving its rationale, alternatives and constraints."""
+        """Replace a decision, preserving its rationale, alternatives and constraints.
+
+        scope_go_lives schedules exact site activation with sponsor fallback. A
+        site-only amendment leaves the sponsor and other sites on their prior rule.
+        valid_from is the legacy global date and cannot accompany scope_go_lives.
+        """
+        options = scoped_options(scope_go_lives=scope_go_lives, valid_from=valid_from)
         try:
             backend = get_backend()
             result = backend.decision_supersede(
@@ -266,10 +319,17 @@ def register(mcp):
                 rejected_alternatives=rejected_alternatives,
                 rationale=rationale,
                 constraints=constraints,
+                **options,
             )
             if result is None:
                 return f"Decision not found: {decision_id}"
 
+            if result.get("status") == "scheduled":
+                return (
+                    f"Amendment scheduled for decision {decision_id}.\n"
+                    f"New decision: {result['new_item_id']}\n"
+                    f"scope_go_lives: {result['scope_go_lives']}"
+                )
             return (
                 f"Decision {decision_id} superseded.\n"
                 f"New decision: {result.get('new_decision_id')}"
@@ -428,21 +488,40 @@ def register(mcp):
         ),
     )
     @graceful
-    def decision_provenance(decision_id: str, as_of: Optional[str] = None) -> str:
-        """Get full provenance chain for a decision.
+    def decision_provenance(
+        decision_id: str,
+        as_of: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
+    ) -> str:
+        """Business validity uses business_scope (exact site) and valid_at.
+
+        Exact activated site entries take precedence, otherwise use sponsor fallback.
+        Omitted valid_at is resolved once at request start. as_of is independent
+        transaction-time history.
+
+        Get full provenance chain for a decision.
 
         ``as_of`` (ISO 8601; omit for now): the provenance as it stood then; a
         successor that came later is not listed."""
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
         as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
-            provenance = backend.decision_provenance(decision_id, **dated(as_of))
+            provenance = backend.decision_provenance(
+                decision_id, **dated(as_of), **options
+            )
 
             if not provenance or provenance.get("decision") is None:
                 return f"Decision not found: {decision_id}"
 
             parts = [f"Provenance for {decision_id}:"]
             parts.append(f"Decision: {_field(provenance['decision'], 'content')}")
+            parts.append(
+                f"Selected decision: {_field(provenance['decision'], 'decision_id')}"
+            )
+            if diagnostic := resolution_text(provenance["decision"]):
+                parts.append(diagnostic)
             if provenance.get("reasoning_trace"):
                 parts.append(f"Reasoning trace: {provenance['reasoning_trace']}")
             if provenance.get("evidence"):

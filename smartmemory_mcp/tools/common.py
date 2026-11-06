@@ -110,6 +110,15 @@ def graceful(func):
                 f"Detail: {e}"
             )
         except Exception as e:
+            code = getattr(e, "code", None)
+            if code in {
+                "invalid_scoped_validity",
+                "scoped_validity_conflict",
+                "scoped_history_unavailable",
+            }:
+                from fastmcp.exceptions import ToolError
+
+                raise ToolError(f"{code}: {e}") from e
             if _is_connection_error(e):
                 return (
                     "SmartMemory backend not reachable. Check that:\n"
@@ -119,3 +128,106 @@ def graceful(func):
             raise
 
     return wrapper
+
+
+def scoped_options(
+    *, business_scope=None, valid_at=None, scope_go_lives=None, valid_from=None
+):
+    """Validate U01 inputs without core installed, copy them and omit absent options.
+
+    History conflicts and request-start defaults belong to core/service. This shared
+    boundary validates only the portable wire values, never ownership or history.
+    """
+    from copy import deepcopy
+    from datetime import datetime, timezone
+
+    from fastmcp.exceptions import ToolError
+
+    def refuse(message):
+        raise ToolError(f"invalid_scoped_validity: {message}")
+
+    def scope(value):
+        if not isinstance(value, dict) or set(value) != {"site"}:
+            refuse("business_scope requires only site")
+        site = value["site"]
+        if (
+            not isinstance(site, str)
+            or not site.strip()
+            or len(site) > 128
+            or "*" in site
+            or "?" in site
+        ):
+            refuse("invalid exact site")
+        return dict(value)
+
+    def instant(value):
+        try:
+            if isinstance(value, datetime):
+                parsed = value
+            else:
+                if not isinstance(value, str) or not any(
+                    c in value for c in ("T", " ")
+                ):
+                    refuse("validity date needs a datetime")
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if isinstance(value, str):
+                return value  # validated, backend owns UTC normalization
+            return (
+                parsed.replace(tzinfo=timezone.utc).isoformat()
+                if parsed.tzinfo is None
+                else parsed.astimezone(timezone.utc).isoformat()
+            )
+        except (ValueError, TypeError) as exc:
+            raise ToolError(
+                "invalid_scoped_validity: invalid validity datetime"
+            ) from exc
+
+    options = {}
+    if business_scope is not None:
+        options["business_scope"] = scope(business_scope)
+    if valid_at is not None:
+        options["valid_at"] = instant(valid_at)
+    if valid_from is not None:
+        options["valid_from"] = instant(valid_from)
+    if scope_go_lives is not None:
+        if valid_from is not None:
+            refuse("valid_from and scope_go_lives are incompatible")
+        if not isinstance(scope_go_lives, list) or not 1 <= len(scope_go_lives) <= 256:
+            refuse("scope_go_lives requires 1 to 256 entries")
+        entries, seen = [], set()
+        for entry in scope_go_lives:
+            if not isinstance(entry, dict) or set(entry) != {"scope", "valid_from"}:
+                refuse("schedule entries require scope and valid_from only")
+            qualifier = None if entry["scope"] is None else scope(entry["scope"])
+            key = None if qualifier is None else qualifier["site"]
+            if key in seen:
+                refuse("duplicate schedule scope")
+            seen.add(key)
+            entries.append(
+                {"scope": qualifier, "valid_from": instant(entry["valid_from"])}
+            )
+        options["scope_go_lives"] = entries
+    return deepcopy(options)
+
+
+def refuse_scoped_options(business_scope, valid_at):
+    """Unsupported read surfaces must reject supplied qualifiers before backend work."""
+    if business_scope is not None or valid_at is not None:
+        from fastmcp.exceptions import ToolError
+
+        raise ToolError(
+            "invalid_scoped_validity: business_scope and valid_at are unsupported on this tool"
+        )
+
+
+def resolution_text(value):
+    """Render only response diagnostics, identically for all backends."""
+    if not isinstance(value, dict):
+        return ""
+    resolution = value.get("scoped_validity_resolution") or (
+        value.get("metadata") or {}
+    ).get("scoped_validity_resolution")
+    if resolution is not None:
+        return f"scoped_validity_resolution: {resolution}"
+    label = value.get("as_of_resolution")
+    return "" if label is None else f"as_of_resolution: {label}"
