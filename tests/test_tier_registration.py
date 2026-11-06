@@ -109,6 +109,12 @@ class TestResolveTier:
 
 FREE_TOOLS = sorted(
     [
+        "procedure_create",
+        "procedure_get",
+        "procedure_list",
+        "procedure_promote",
+        "procedure_dismiss",
+        "procedure_record_outcome",
         "login",
         "whoami",
         "list_workspaces",
@@ -155,8 +161,8 @@ class TestToolRegistration:
         """FREE tier registers exactly 35 tools (18 + the 15 decision-suite tools; MCP-SWITCH-WORKSPACE-1 added switch_workspace; SM-EVIDENCE-TYPE-1 added decision_link_evidence + evidence_record)."""
         env = _clean_env()
         data = _run_snippet(env)
-        assert data["count"] == 35, (
-            f"Expected 35 FREE tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 41, (
+            f"Expected 41 FREE tools, got {data['count']}: {data['names']}"
         )
         assert data["names"] == FREE_TOOLS
 
@@ -164,8 +170,8 @@ class TestToolRegistration:
         """PRO tier registers exactly 75 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed)."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
         data = _run_snippet(env)
-        assert data["count"] == 75, (
-            f"Expected 75 remote PRO tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 81, (
+            f"Expected 81 remote PRO tools, got {data['count']}: {data['names']}"
         )
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]
@@ -182,8 +188,8 @@ class TestToolRegistration:
             SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true"
         )
         data = _run_snippet(env)
-        assert data["count"] == 106, (
-            f"Expected 106 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 112, (
+            f"Expected 112 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
         )
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]

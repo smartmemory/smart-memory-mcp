@@ -251,3 +251,20 @@ Keep your existing local `smartmemory` connection. Add `claude mcp add --transpo
 `memory_supersede` accepts `scope_go_lives` or the legacy `valid_from`. A scheduled amendment returns its accepted receipt, including `status`, `scope_go_lives` and `recorded_at`, as defined in `SM-SCOPED-VALIDITY-1/scoped-validity-contract.json`. Undated replacements retain the existing confirmation.
 
 If an add loses its response after submission, `WriteOutcomeUnknown` means the memory may have been saved. Check `memory_search` or `memory_list` before retrying to avoid duplicates. The client does not retry the write. Recall uses the full query budget and returns full evidence content.
+
+## Human procedure tools
+
+SM-PROCEDURE-TYPE-1 and SM-PROCEDURE-MCP-1 add six stdio tools in every tier:
+
+- `procedure_create(name, steps, expected_outcome, description="", preconditions=None, candidate=False)`
+- `procedure_list(task=None, status="active", limit=20)`
+- `procedure_get(procedure_id)`
+- `procedure_promote(procedure_id)`
+- `procedure_dismiss(procedure_id, reason="")`
+- `procedure_record_outcome(procedure_id, success, note="")`
+
+Both local and remote stdio modes need a matching `smartmemory-core` installation containing `smartmemory.procedures.human`. These paired post-cut branches must be used together until released. Hosted exposure awaits its explicit surface audit.
+
+Procedures are structured human runbooks with ordered steps, preconditions and expected outcomes. Create active runbooks or candidates, explicitly promote candidates and dismiss obsolete procedures. Task filtering matches active runbooks by token overlap. Recorded successes reinforce confidence and failures weaken it, with the latest 20 outcomes returned. These candidate IDs name saved human runbooks. Ingestion recipe cluster IDs belong to the existing REST recipe workflow.
+
+The backend supplies workspace authority. The tools accept no workspace, tenant or user override. Remote mode reuses existing scoped REST CRUD with direct add, preserving the procedure body. No steps are executed by these tools.

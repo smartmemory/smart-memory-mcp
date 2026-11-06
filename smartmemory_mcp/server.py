@@ -263,6 +263,7 @@ def _register_tools():
     # FREE tier (always registered)
     from smartmemory_mcp.tools import (
         decision_tools,
+        procedure_tools,
         memory_tools,
         portability_tools,
         lifecycle_tools,
@@ -278,6 +279,7 @@ def _register_tools():
     # Python SDK where add_decision needs no key. Only this suite moved; the rest of
     # the PRO block below is unchanged.
     decision_tools.register(mcp)
+    procedure_tools.register(mcp)
 
     # PRO tier
     if tier >= Tier.PRO:
