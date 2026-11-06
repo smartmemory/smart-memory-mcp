@@ -409,9 +409,11 @@ class LocalBackend(BackendCapabilities):
         if old is None:
             raise RuntimeError(f"Not found: {item_id}")
         meta = {**(kwargs.get("metadata") or {}), "supersession_reason": reason}
-        valid_from = scoped_options(valid_from=kwargs.get("valid_from")).get(
-            "valid_from"
+        options = scoped_options(
+            scope_go_lives=kwargs.get("scope_go_lives"),
+            valid_from=kwargs.get("valid_from"),
         )
+        valid_from = options.get("valid_from")
         start = None
         if valid_from:
             start = datetime.fromisoformat(valid_from)
@@ -429,9 +431,38 @@ class LocalBackend(BackendCapabilities):
             item,
             supersedes=item_id,
             **({"valid_from": start} if start is not None else {}),
+            **(
+                {"scope_go_lives": options["scope_go_lives"]}
+                if "scope_go_lives" in options
+                else {}
+            ),
         )
         if not new_id:
             raise RuntimeError("Supersession could not be established")
+        replacement = self._mem.get(new_id)
+        schedule = options.get("scope_go_lives")
+        if schedule is None and replacement is not None:
+            from smartmemory.temporal.scoped_validity import ScopeGoLives
+
+            metadata = (
+                replacement
+                if isinstance(replacement, dict)
+                else (replacement.metadata or {})
+            )
+            raw = getattr(replacement, "scope_go_lives", None) or metadata.get(
+                "scope_go_lives"
+            )
+            schedule = (
+                ScopeGoLives.from_value(raw).to_list() if raw is not None else None
+            )
+        if schedule is not None:
+            return {
+                "status": "scheduled",
+                "old_item_id": item_id,
+                "new_item_id": new_id,
+                "scope_go_lives": schedule,
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+            }
         return {
             "status": "superseded",
             "old_item_id": item_id,
@@ -477,6 +508,12 @@ class LocalBackend(BackendCapabilities):
         raises ValueError on a git error (the tool maps it to a graceful string).
         """
         return self._mem.blame_code(**kwargs)
+
+    def ask(
+        self, question: str, limit: int = 5, *, reasoning: bool = True
+    ) -> dict[str, Any]:
+        """Delegate to the existing core answer implementation."""
+        return self._mem.ask(question, limit=limit, reasoning=reasoning)
 
     def recall_pack(self, **kwargs: Any) -> dict[str, Any]:
         """Budgeted context assembly passthrough (CORE-RECALL-BUDGET-1).

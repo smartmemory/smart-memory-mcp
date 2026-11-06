@@ -144,11 +144,11 @@ Code indexing reports clean, partial and failed file counts plus acceptance, sta
 
 Local `code_effects(directory, repo_name=None)` scans Python effects through the shared engine without opening a memory store. Hosted `code_effects(repo, source_snapshot, limit=20, offset=0)` reads uploaded `fa_snapshot` records in the selected workspace. It accepts no filesystem path. Upload the engine's `snapshot_record` payload through existing declared-record ingestion first. Repository rules belong in the scanned checkout's `.smartmemory-effects.json`.
 
-Hosted mode advertises 33 tools, an explicit allowlist rather than a tier:
+Hosted mode advertises 35 tools, an explicit allowlist rather than a tier:
 
 `memory_save` `memory_search` `memory_recall` `read_around` `memory_get`
-`memory_explain` `memory_recall_pack` `memory_policy_bundle`
-`memory_update` `memory_delete` `memory_list` `memory_stats`
+`memory_explain` `memory_ask` `memory_recall_pack` `memory_policy_bundle`
+`memory_update` `memory_supersede` `memory_delete` `memory_list` `memory_stats`
 `memory_save_conversation` `memory_search_by_metadata` `memory_feedback`
 `code_search` `code_dead_code` `code_dependencies` `code_upload` `code_effects`
 `agent_set_recall_profile` `agent_get_recall_profile` `reasoning_query_traces`
@@ -243,3 +243,9 @@ Quiesce old writers before first-open indexing. Verify the engine capability pin
 ### Company project alongside local memory
 
 Keep your existing local `smartmemory` connection. Add `claude mcp add --transport http smartmemory-company https://mcp.smartmemory.ai/mcp` and authenticate with your own company-org login. Check `whoami` for the expected tenant, use `switch_workspace` with the project's paired Workspace ID, then check again. Recheck after reconnect because selection is session-scoped. The owner and Kyle authenticate separately. No local-memory upload or local backend switch is needed. Hosted Team responses use `team_id`. Independent Workspace selection is outside this change. Live OAuth and two-user access acceptance remain required.
+
+`memory_ask(question, limit=5, reasoning=True)` answers through the selected backend. Remote and hosted calls use the authenticated `/memory/ask` route with the active workspace. The published response follows `DIST-LITE-9/ask-contract.json`.
+
+`memory_supersede` accepts `scope_go_lives` or the legacy `valid_from`. A scheduled amendment returns its accepted receipt, including `status`, `scope_go_lives` and `recorded_at`, as defined in `SM-SCOPED-VALIDITY-1/scoped-validity-contract.json`. Undated replacements retain the existing confirmation.
+
+If an add loses its response after submission, `WriteOutcomeUnknown` means the memory may have been saved. Check `memory_search` or `memory_list` before retrying to avoid duplicates. The client does not retry the write. Recall uses the full query budget and returns full evidence content.

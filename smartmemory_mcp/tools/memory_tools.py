@@ -992,6 +992,24 @@ def register_free(mcp):
             return f"Memory item not found: {memory_id}"
         return result
 
+    @mcp.tool(
+        title="Answer a question from memory",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def memory_ask(question: str, limit: int = 5, reasoning: bool = True) -> dict:
+        """Answer from workspace memories, with evidence and relations.
+
+        Uses the same answer route as the web app. ``limit`` is the evidence
+        budget (1-50). Provider failures are returned as errors, never answers.
+        """
+        return get_backend().ask(question, limit=limit, reasoning=reasoning)
+
     # CORE-RECALL-BUDGET-1: known section names, mirrored from
     # smartmemory.recall_pack.KNOWN_SECTIONS. Validated here so a typo fails fast with a
     # usable message instead of travelling to core (local) or over HTTP (remote).
@@ -1165,7 +1183,8 @@ def register_pro(mcp):
         reason: str,
         metadata: Optional[Dict[str, Any]] = None,
         valid_from: Optional[str] = None,
-    ) -> str:
+        scope_go_lives: Optional[list[dict[str, Any]]] = None,
+    ) -> str | dict[str, Any]:
         """Replace a memory with a new version, keeping the old one as history.
 
         Use this to change or reverse an existing rule, decision or instruction.
@@ -1173,13 +1192,16 @@ def register_pro(mcp):
         follows the normal search gates. ``reason`` says why it changed.
         ``valid_from`` (ISO datetime, e.g.
         2026-04-20T00:00:00Z) is when the new version takes effect. The old version's
-        validity ends on that date.
+        validity ends on that date. ``scope_go_lives`` schedules a scoped amendment
+        and returns the accepted schedule and recording time.
         """
-        options = scoped_options(valid_from=valid_from)
+        options = scoped_options(scope_go_lives=scope_go_lives, valid_from=valid_from)
         backend = get_backend()
         result = backend.supersede(
             item_id, content, reason, metadata=metadata, **options
         )
+        if result and result.get("status") == "scheduled":
+            return result
         new_id = (result or {}).get("new_item_id", "unknown")
         return f"Superseded: {item_id} -> {new_id}"
 

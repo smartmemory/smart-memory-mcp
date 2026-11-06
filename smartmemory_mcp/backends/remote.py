@@ -1,7 +1,7 @@
 """RemoteBackend — httpx client to the SmartMemory hosted API.
 
 Extracted from server.py. Session state is instance-level (not module globals).
-_request() never raises — returns error dicts on all failure modes.
+_request() returns error dicts except hosted auth failures and unconfirmed add outcomes.
 """
 
 from __future__ import annotations
@@ -101,6 +101,17 @@ def is_missing_scope(result: Any) -> bool:
     )
 
 
+class WriteOutcomeUnknown(RuntimeError):
+    """The add may have committed before the transport lost its receipt."""
+
+    def __init__(self):
+        super().__init__(
+            "SmartMemory write outcome is unconfirmed: the connection ended before a receipt arrived. "
+            "The memory may have been saved. Check memory_search or memory_list before retrying "
+            "to avoid a duplicate."
+        )
+
+
 class RemoteBackend(BackendCapabilities):
     """HTTP client implementing MemoryBackend protocol for the hosted SmartMemory API."""
 
@@ -170,7 +181,7 @@ class RemoteBackend(BackendCapabilities):
         timeout: int = 30,
         **kwargs: Any,
     ) -> Any:
-        """Execute an API request. Never raises — returns error dict on any failure."""
+        """Execute a request. Unconfirmed adds and hosted auth failures raise explicitly."""
         try:
             headers = kwargs.pop("headers", None) or self._headers(workspace_id)
             r = httpx.request(
@@ -182,6 +193,20 @@ class RemoteBackend(BackendCapabilities):
             )
             r.raise_for_status()
             return r.json() if r.status_code != 204 else None
+        except (
+            httpx.ReadTimeout,
+            httpx.WriteTimeout,
+            httpx.ReadError,
+            httpx.WriteError,
+            httpx.RemoteProtocolError,
+        ) as exc:
+            if method.upper() == "POST" and path == "/memory/add":
+                logger.warning(
+                    "Add receipt lost (outcome=unconfirmed, error=%s)",
+                    type(exc).__name__,
+                )
+                raise WriteOutcomeUnknown() from None
+            return {"error": f"Request failed: {exc}"}
         except httpx.ConnectError:
             return {
                 "error": f"SmartMemory API unreachable at {self._api_url}. Check SMARTMEMORY_API_URL."
@@ -676,7 +701,7 @@ class RemoteBackend(BackendCapabilities):
             )
         if kwargs.get("use_pipeline"):
             body["use_pipeline"] = True
-        result = self._request("POST", "/memory/add", json=body) or {}
+        result = self._request("POST", "/memory/add", json=body, timeout=120) or {}
         if isinstance(result, dict):
             if "schema_version" in result:
                 return read_wire_save(result, op="add")
@@ -758,7 +783,12 @@ class RemoteBackend(BackendCapabilities):
         }
         if metadata := kwargs.get("metadata"):
             body["metadata"] = metadata
-        body.update(scoped_options(valid_from=kwargs.get("valid_from")))
+        body.update(
+            scoped_options(
+                scope_go_lives=kwargs.get("scope_go_lives"),
+                valid_from=kwargs.get("valid_from"),
+            )
+        )
         result = (
             self._request(
                 "POST",
@@ -781,6 +811,18 @@ class RemoteBackend(BackendCapabilities):
         if isinstance(result, dict) and self._fmt_error(result):
             return False
         return True
+
+    def ask(
+        self, question: str, limit: int = 5, *, reasoning: bool = True
+    ) -> dict[str, Any]:
+        """POST /memory/ask through the existing authenticated workspace path."""
+        body: dict[str, Any] = {"question": question, "limit": limit}
+        if reasoning is not True:
+            body["reasoning"] = reasoning
+        result = self._request("POST", "/memory/ask", json=body, timeout=120)
+        if err := self._fmt_error(result):
+            raise RuntimeError(err)
+        return result
 
     def recall_pack(self, budget_tokens: int, **kwargs: Any) -> dict[str, Any]:
         """POST /memory/recall/pack (CORE-RECALL-BUDGET-1).
@@ -951,15 +993,11 @@ class RemoteBackend(BackendCapabilities):
     def recall(self, cwd: str | None = None, top_k: int = 10, **kwargs: Any) -> str:
         """Client-side recall — no /memory/recall endpoint in the hosted API."""
         requested = max(1, top_k)
-        recent_k = max(1, (requested + 1) // 2)
-        semantic_k = max(0, requested - recent_k)
-        recent = self.search("", top_k=recent_k)
-        semantic = (
-            self.search(cwd or "", top_k=semantic_k) if cwd and semantic_k else []
-        )
+        # Preserve service ranking and the entire evidence budget in one query.
+        results = self.search(cwd or "", top_k=requested)
         seen: set[str] = set()
         items: list[MemoryResult] = []
-        for r in recent + semantic:
+        for r in results:
             iid = r["item_id"]
             if iid and iid not in seen:
                 seen.add(iid)
@@ -980,7 +1018,7 @@ class RemoteBackend(BackendCapabilities):
             conf_marker = "~" if isinstance(conf, (int, float)) and conf < 0.5 else ""
             stale_marker = "" if not item.get("stale") else "!"
             lines.append(
-                f"- {stale_marker}{conf_marker}[{item['memory_type']}] {item['content'][:200]}"
+                f"- {stale_marker}{conf_marker}[{item['memory_type']}] {item['content']}"
             )
         return "\n".join(lines)
 

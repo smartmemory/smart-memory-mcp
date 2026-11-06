@@ -286,7 +286,7 @@ def _register_hosted_tools(
     def hosted_memory_recall(
         query: str,
         session_id: Optional[str] = None,
-        top_k: int = 5,
+        top_k: int = 10,
         cite: bool = False,
     ):
         """Recall recent and relevant memories for the current context.

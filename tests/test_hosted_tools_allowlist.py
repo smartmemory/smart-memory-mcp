@@ -153,6 +153,15 @@ def fake_svc_api(
             return ok({"decision": decision, "evidence": []})
         if path == "/memory/decisions/dec-1":
             return ok(decision)
+        if path == "/memory/ask":
+            return ok(
+                {
+                    "answer": "Known answer",
+                    "reasoning": "",
+                    "evidence": [],
+                    "relations": [],
+                }
+            )
         if path == "/memory/search":
             return httpx.Response(
                 200,
@@ -312,7 +321,9 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
     advertised = {tool.name for tool in asyncio.run(mcp.list_tools())}
 
     assert advertised == set(HOSTED_TOOLS)
-    assert len(advertised) == 34  # SM-SCOPED-VALIDITY-1 six remote decision tools + DRIFT-V3-DHRUV-BOUNDARIES-1 memory_supersede
+    assert (
+        len(advertised) == 35
+    )  # SM-SCOPED-VALIDITY-1 six remote decision tools + DRIFT-V3-DHRUV-BOUNDARIES-1 memory_supersede
 
 
 @pytest.mark.parametrize("name", EXCLUDED_TOOLS)
@@ -372,6 +383,7 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ("memory_search", {"query": "runbook", "top_k": 3, "decompose": True}),
     ("memory_search", {"query": "runbook", "multi_hop": True, "max_hops": 2}),
     ("memory_search", {"query": "runbook", "as_of_date": "2026-01-01"}),
+    ("memory_ask", {"question": "Where is the runbook?"}),
     ("memory_recall", {"query": "runbook"}),
     ("memory_recall", {"query": "runbook", "top_k": 3}),
     ("memory_save", {"content": "a note"}),

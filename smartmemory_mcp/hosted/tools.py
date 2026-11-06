@@ -23,6 +23,7 @@ MEMORY_TOOLS = (
     "memory_save",
     "memory_search",
     "memory_recall",
+    "memory_ask",
     "read_around",
     "memory_get",
     "memory_explain",

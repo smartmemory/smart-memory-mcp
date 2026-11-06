@@ -92,6 +92,12 @@ class MemoryBackend(Protocol):
         """Full provenance answer for one memory (PLAT-AUDITABLE-MEMORY-1 explain contract)."""
         ...
 
+    def ask(
+        self, question: str, limit: int = 5, *, reasoning: bool = True
+    ) -> dict[str, Any]:
+        """Answer with workspace evidence (DIST-LITE-9 ask-contract.json)."""
+        ...
+
     def recall(self, cwd: str | None = None, top_k: int = 10, **kwargs: Any) -> str:
         """Recall recent and relevant memories, formatted as markdown."""
         ...
