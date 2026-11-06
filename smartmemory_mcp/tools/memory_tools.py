@@ -701,7 +701,7 @@ def register_free(mcp):
     )
     @graceful
     def memory_recall(
-        query: str, session_id: Optional[str] = None, top_k: int = 5, cite: bool = False
+        query: str, session_id: Optional[str] = None, top_k: int = 10, cite: bool = False
     ):
         """**Deprecated:** Use ``get_working_context``.
 

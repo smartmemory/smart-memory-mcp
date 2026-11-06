@@ -1134,15 +1134,13 @@ class RemoteBackend(BackendCapabilities):
     def recall(self, cwd: str | None = None, top_k: int = 10, **kwargs: Any) -> str:
         """Client-side recall — no /memory/recall endpoint in the hosted API."""
         requested = max(1, top_k)
-        recent_k = max(1, (requested + 1) // 2)
-        semantic_k = max(0, requested - recent_k)
-        recent = self.search("", top_k=recent_k)
-        semantic = (
-            self.search(cwd or "", top_k=semantic_k) if cwd and semantic_k else []
-        )
+        # Use the web search route's ranking and full evidence budget. Splitting
+        # recent/semantic searches both underfilled after deduplication and
+        # displaced relevant decisions with unrelated recent notes.
+        results = self.search(cwd or "", top_k=requested)
         seen: set[str] = set()
         items: list[MemoryResult] = []
-        for r in recent + semantic:
+        for r in results:
             iid = r["item_id"]
             if iid and iid not in seen:
                 seen.add(iid)
@@ -1163,7 +1161,7 @@ class RemoteBackend(BackendCapabilities):
             conf_marker = "~" if isinstance(conf, (int, float)) and conf < 0.5 else ""
             stale_marker = "" if not item.get("stale") else "!"
             lines.append(
-                f"- {stale_marker}{conf_marker}[{item['memory_type']}]{supersession_label(item)} {item['content'][:200]}"
+                f"- {stale_marker}{conf_marker}[{item['memory_type']}]{supersession_label(item)} {item['content']}"
             )
         return "\n".join(lines)
 

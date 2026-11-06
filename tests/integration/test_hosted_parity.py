@@ -28,6 +28,7 @@ def parity_stack(monkeypatch):
     import redis
     import uvicorn
     from memory_service.api.routes import ask as route
+    from memory_service.api.routes import crud
     from service_common.auth.models import ServiceUser, TenantRole
     from service_common.repositories.scopes import RequestScope
     from service_common.security.scope_provider import MemoryScopeProvider
@@ -47,6 +48,9 @@ def parity_stack(monkeypatch):
                        tenant_role=TenantRole.OWNER)
     scope = MemoryScopeProvider(user, RequestScope(workspace_id='test_dhruv_ws', user_id=user.id,
                                                   tenant_id=user.tenant_id))
+    graph_client = redis.Redis(host='127.0.0.1', port=int(ports[0]))
+    graphs_before = set(graph_client.execute_command('GRAPH.LIST'))
+    graph_client.close()
     memory = create_server_memory(graph_name=graph, host='127.0.0.1', port=int(ports[0]),
                                   redis_url=f'redis://127.0.0.1:{ports[1]}/0', scope_provider=scope,
                                   pipeline_profile=PipelineConfig.costless(), observability=False,
@@ -57,10 +61,10 @@ def parity_stack(monkeypatch):
     try:
         secure = SecureSmartMemory(None, user, smart_memory=memory, scope_provider=scope)
         texts = [
-            ('procedural', 'Deviation rule v1.0: record all deviations. Superseded on 2026-06-01.'),
-            ('procedural', 'Deviation rule v1.1 effective 2026-06-01: record major deviations.'),
-            ('decision', 'Site 03 paused recruitment, then pause lifted April 13.'),
-            ('decision', 'Enrollment cap 30 per site, raised at sites 01 and 04.'),
+            ('procedural', 'Top-dose review: deviation rule v1.0: record all deviations. Superseded on 2026-06-01.'),
+            ('procedural', 'Top-dose review: deviation rule v1.1 effective 2026-06-01: record major deviations.'),
+            ('decision', 'Top-dose review: site 03 paused recruitment, then pause lifted April 13.'),
+            ('decision', 'Top-dose review: enrollment cap 30 per site, raised at sites 01 and 04.'),
             ('decision', 'Top-dose decision: ' + 'The review board reviewed dose safety evidence. ' * 8 +
              'DECISION: top dose is 80 mg, approved by the review board.'),
             ('episodic', 'Top-dose SAE record 1: reviewed patient safety.'),
@@ -74,7 +78,10 @@ def parity_stack(monkeypatch):
         monkeypatch.setattr(llm, 'call_llm', deterministic_llm)
         monkeypatch.setattr(route, 'create_secure_smart_memory', lambda supplied: secure)
         monkeypatch.setattr(route, 'caller_llm_key_scope', lambda *a, **kw: nullcontext())
+        monkeypatch.setattr(crud, 'create_secure_smart_memory', lambda supplied: secure)
+        monkeypatch.setattr(crud, 'caller_llm_key_scope', lambda *a, **kw: nullcontext())
         app = FastAPI()
+        app.add_api_route('/memory/search', crud.search_memory, methods=['POST'])
         app.include_router(route.router, prefix='/memory')
         for dep in route.router.dependencies:
             app.dependency_overrides[dep.dependency] = lambda: None
@@ -116,9 +123,9 @@ def parity_stack(monkeypatch):
         client = redis.Redis(host='127.0.0.1', port=int(ports[0]))
         try:
             for name in client.execute_command('GRAPH.LIST'):
-                if name.decode().startswith(graph):
+                if name not in graphs_before:
                     client.execute_command('GRAPH.DELETE', name)
-            assert not any(name.decode().startswith(graph) for name in client.execute_command('GRAPH.LIST'))
+            assert set(client.execute_command('GRAPH.LIST')) == graphs_before
         finally:
             client.close()
 
@@ -138,3 +145,26 @@ def test_a_answer_matches_web_route(parity_stack):
                for row in answer['evidence'])
     assert answer == backend.request('POST', '/memory/ask', json={'question': 'What is the top-dose decision?', 'limit': 5})
     print(answer)
+
+
+def test_b_recall_preserves_web_ranking_and_full_decision(parity_stack):
+    from fastmcp import Client
+    mcp, backend, secure, ids = parity_stack
+    query = 'What is the top-dose decision?'
+    web_hits = backend.search(query, top_k=10)
+    assert len(web_hits) >= 5
+    assert any(item['item_id'] == ids[4] for item in web_hits)
+    async def run():
+        async with Client(mcp) as client:
+            tools = {tool.name: tool for tool in await client.list_tools()}
+            assert tools['memory_recall'].inputSchema['properties']['top_k']['default'] == 10
+            result = await client.call_tool('memory_recall', {'query': query})
+            return '\n'.join(block.text for block in result.content if block.type == 'text')
+    recalled = asyncio.run(run())
+    print('web hits:', [(row['item_id'], row['memory_type']) for row in web_hits])
+    print('recall:', recalled)
+    assert 'DECISION: top dose is 80 mg' in recalled
+    assert recalled.count('\n- ') >= 5
+    contents = [row['content'] for row in web_hits]
+    assert all(text in recalled for text in contents)
+    assert [recalled.index(text) for text in contents] == sorted(recalled.index(text) for text in contents)
