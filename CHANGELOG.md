@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- MCP-CODE-DEAD-CODE-BACKEND-DISPATCH-1 (2026-11-06, Urgency: hygiene): `code_dead_code` now dispatches through `backend.code_dead_code` for local, remote and hosted backends. Remote request parameters and error text are preserved. An unsupported backend logs one WARNING and reports that dead-code analysis is unavailable. Conformance tests assert the backend method is reached and sends exactly one request.
+
 - MCP-2.0-STDIO-LIST-WORKSPACES-TWIN-1: restore read-only stdio `list_workspaces` in every tier, with the current workspace marked, actionable lookup failures and the same Lite refusal as main. Keep 2.0 workspace headers unchanged. Stdio FREE/PRO/PRO+ counts are 35/75/106.
 - MCP-2.0-RECALL-TOPK-1 (2026-11-06; port of main c69ee3e, the missed hunk): stdio `memory_recall` defaults `top_k` to 10 (was 5), matching 1.x and the hosted tool. Test: `tests/test_get_working_context_standalone.py::test_memory_recall_default_top_k_is_10`.
 

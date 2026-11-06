@@ -1,6 +1,6 @@
 """CODE-INDEXER-HARDEN-1 U6: ``code_dead_code`` options ``include_exported`` and ``production_only``.
 
-The local arm runs the real Lite store through the tool. The request arm asserts the REST parameters: options are
+The local arm runs the real Lite store through the tool. The remote backend path asserts the REST parameters: options are
 sent only when set, so a default call issues the same request as before U6.
 """
 
@@ -118,20 +118,6 @@ def test_local_lite_store_honours_all_four_combinations(tmp_path, monkeypatch):
         shutil.rmtree(data, ignore_errors=True)
 
 
-class _RequestBackend:
-    """A request-capable backend that records the REST call the tool makes."""
-
-    def __init__(self):
-        self.calls = []
-
-    def supports(self, method: str) -> bool:
-        return method == "request"
-
-    def request(self, method, path, **kwargs):
-        self.calls.append((method, path, kwargs))
-        return {"repo": "r", "dead_functions": [], "count": 0}
-
-
 @pytest.mark.parametrize(
     ("arguments", "params"),
     [
@@ -161,10 +147,17 @@ class _RequestBackend:
     ],
 )
 def test_request_path_sends_options_only_when_set(monkeypatch, arguments, params):
-    backend = _RequestBackend()
+    calls = []
+    backend = RemoteBackend.__new__(RemoteBackend)
+    monkeypatch.setattr(
+        backend,
+        "_request",
+        lambda method, path, **kwargs: calls.append((method, path, kwargs))
+        or {"repo": "r", "dead_functions": [], "count": 0},
+    )
     tool = _register(monkeypatch, backend)
     tool("r", **arguments)
-    assert backend.calls == [("GET", "/memory/code/dead-code", {"params": params})]
+    assert calls == [("GET", "/memory/code/dead-code", {"params": params})]
 
 
 def test_remote_backend_method_sends_options_only_when_set(monkeypatch):

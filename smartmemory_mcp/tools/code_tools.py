@@ -470,24 +470,21 @@ def register(mcp):
             if value
         }
 
-        if backend.supports("request"):
-            params: dict[str, Any] = {"repo": repo, "limit": limit}
-            if exclude_decorators:
-                params["exclude_decorators"] = exclude_decorators
-            params.update({key: "true" for key in options})
-            result = backend.request("GET", "/memory/code/dead-code", params=params)
-            if isinstance(result, dict) and "error" in result:
-                return f"Error: {result['error']}"
-            if not isinstance(result, dict):
-                return "Unexpected response from API"
-            dead = result.get("dead_functions", [])
-            count = result.get("count", len(dead))
-        else:
-            result = backend.code_dead_code(
-                repo=repo, exclude_decorators=exclude_decorators, limit=limit, **options
+        if not backend.supports("code_dead_code"):
+            logger.warning(
+                "code_dead_code: %s has no dead-code analysis, nothing was analyzed",
+                type(backend).__name__,
             )
-            dead = result.get("dead_functions", [])
-            count = result.get("count", len(dead))
+            return "Dead-code analysis is unavailable on this backend."
+        result = backend.code_dead_code(
+            repo=repo, exclude_decorators=exclude_decorators, limit=limit, **options
+        )
+        if isinstance(result, dict) and "error" in result:
+            return f"Error: {result['error']}"
+        if not isinstance(result, dict):
+            return "Unexpected response from API"
+        dead = result.get("dead_functions", [])
+        count = result.get("count", len(dead))
 
         note = f" (options: {', '.join(sorted(options))})" if options else ""
         if not dead:
