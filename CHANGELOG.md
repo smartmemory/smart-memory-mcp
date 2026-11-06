@@ -6,6 +6,7 @@
 ## Unreleased
 
 - MCP-2.0-STDIO-LIST-WORKSPACES-TWIN-1: restore read-only stdio `list_workspaces` in every tier, with the current workspace marked, actionable lookup failures and the same Lite refusal as main. Keep 2.0 workspace headers unchanged. Stdio FREE/PRO/PRO+ counts are 35/75/106.
+- MCP-2.0-RECALL-TOPK-1 (2026-11-06; port of main c69ee3e, the missed hunk): stdio `memory_recall` defaults `top_k` to 10 (was 5), matching 1.x and the hosted tool. Test: `tests/test_get_working_context_standalone.py::test_memory_recall_default_top_k_is_10`.
 
 - MCP-2.0-READINESS-FU-1: preserve scheduled supersede receipts in local, remote and hosted modes, restore the published memory_ask tool through authenticated workspace routing, retain the full recall budget and content, and raise WriteOutcomeUnknown without retrying a lost add response. Hosted tool count is 35.
 

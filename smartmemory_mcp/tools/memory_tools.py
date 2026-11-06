@@ -726,7 +726,7 @@ def register_free(mcp):
     def memory_recall(
         query: str,
         session_id: Optional[str] = None,
-        top_k: int = 5,
+        top_k: int = 10,
         cite: bool = False,
         business_scope: Optional[Dict[str, Any]] = None,
         valid_at: Optional[str] = None,
