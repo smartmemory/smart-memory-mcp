@@ -90,6 +90,7 @@ def remote_tools(tmp_path, monkeypatch):
                 host="127.0.0.1",
                 port=19078,
             )
+            owned_backends.append(backend)
             graph = SmartGraph(
                 backend=backend, scope_provider=scope, enable_caching=False
             )
