@@ -235,7 +235,7 @@ def register(mcp):
         rule_type: str = "feedback",
         memory_dir: Optional[str] = None,
     ) -> Union[List[dict], str]:
-        """Return the ``## Detection patterns`` catalog from local rule files.
+        """Return compiled ``## Detection patterns`` from local rule files.
 
         Distinct from ``pattern_query``/``pattern_get``/``pattern_list`` (which
         read the graph-backed Pattern *catalog*): this reads the per-rule
@@ -244,6 +244,10 @@ def register(mcp):
         Claude Code, Cursor) fetch this once per session and run their own
         pre-response check — scan a candidate response against ``patterns``,
         suppress when a recent user turn matches a ``suppression_signal``.
+        Invalid regexes and unusable rules log WARNING by rule name. The
+        existing list record shape is preserved. Rule files must be regular
+        files in the selected directory, with a literal rule_type prefix.
+        This filesystem capability is unavailable in hosted mode.
 
         Args:
             rule_id: if given, return only the rule whose ``name`` matches.
@@ -255,10 +259,27 @@ def register(mcp):
             A list of ``RulePatterns`` dicts, or an explanatory string when no
             ``memory_dir`` can be resolved (never a silently-empty list).
         """
-        from smartmemory.adherence import load_rule_patterns
+        from smartmemory_mcp.hosted.identity import current_identity, hosted_mode_enabled
+
+        if hosted_mode_enabled() or current_identity.get() is not None:
+            logger.warning(
+                "memory_get_violation_patterns refused in hosted mode; local rule detection coverage unavailable"
+            )
+            return "Refused: local rule files are unavailable in hosted mode."
+
+        try:
+            from smartmemory.adherence import load_rule_patterns
+        except ImportError:
+            logger.warning(
+                "memory_get_violation_patterns: core compiler unavailable; detection coverage unavailable"
+            )
+            raise
 
         resolved = memory_dir or os.environ.get("SMARTMEMORY_RULES_DIR")
         if not resolved:
+            logger.warning(
+                "memory_get_violation_patterns: no memory_dir; session rule detection coverage unavailable"
+            )
             return (
                 "No memory_dir resolved. Pass memory_dir=<path to your rule "
                 "files> or set the SMARTMEMORY_RULES_DIR environment variable."
@@ -269,10 +290,18 @@ def register(mcp):
         try:
             results = load_rule_patterns(resolved, rule_type=rule_type)
         except FileNotFoundError:
+            logger.warning(
+                "memory_get_violation_patterns: selected rule directory missing; detection coverage unavailable"
+            )
             return (
                 f"Rule directory not found: {resolved}. Pass a valid memory_dir "
                 "or set SMARTMEMORY_RULES_DIR to your rule-files directory."
             )
+        except ValueError:
+            logger.warning(
+                "memory_get_violation_patterns: invalid rule_type; detection coverage unavailable"
+            )
+            return "Refused: rule_type must be a literal filename prefix."
 
         if rule_id is not None:
             results = [rp for rp in results if rp.name == rule_id]

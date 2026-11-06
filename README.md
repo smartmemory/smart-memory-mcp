@@ -63,6 +63,22 @@ The `smartmemory` CLI config's `mode = "local"` is not an opt-in for the MCP; it
 logged once. The transcript tools (`transcript_search` and friends) read a local
 store, so they still open it in-process on first use, with a WARNING.
 
+## Local session rule checks
+
+`memory_get_violation_patterns(memory_dir=..., rule_type="feedback")` compiles
+local `feedback_*.md` Detection patterns with core's adherence compiler. It
+returns the existing record list and logs each unusable rule by name. Invalid
+regexes and discarded entries produce coverage warnings. Files must be regular
+files in the selected directory. `rule_type` is a literal filename prefix.
+The tool is unavailable in hosted mode.
+
+For the orient hook, set `SMARTMEMORY_RULES_DIR` to the session's local rule
+directory. The hook loads the catalog once and asks the session to check each
+draft. A deterministic advisory check is available with
+`python -m smartmemory.adherence.session --check`, reading JSON with `response`
+and `recent_user_turns` from stdin. It does not call a service or write a store.
+The checker ships in core's `smartmemory.adherence.session` module.
+
 ## Hosted mode
 
 `--hosted` serves the multi-tenant, OAuth-protected endpoint that runs at

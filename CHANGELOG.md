@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- SM-POLICY-COMPILER-1 (G9): the existing memory_get_violation_patterns tool returns validated detection records and logs named coverage loss. Refuse hosted filesystem access and nonliteral rule prefixes.
+
 - SM-RECALL-PROFILES-1 (G8): add brief, resume, review and pane recall-pack presets with ordered sections and default token budgets, explicit budget overrides, and existing loss diagnostics. Expand reader presets through the existing sections/caps wire shape for local, remote and hosted tools without requiring core in remote installs.
 
 - MCP-2.0-READINESS-FU-1: preserve scheduled supersede receipts in local, remote and hosted modes, restore the published memory_ask tool through authenticated workspace routing, retain the full recall budget and content, and raise WriteOutcomeUnknown without retrying a lost add response. Hosted tool count is 35.
