@@ -144,7 +144,7 @@ Code indexing reports clean, partial and failed file counts plus acceptance, sta
 
 Local `code_effects(directory, repo_name=None)` scans Python effects through the shared engine without opening a memory store. Hosted `code_effects(repo, source_snapshot, limit=20, offset=0)` reads uploaded `fa_snapshot` records in the selected workspace. It accepts no filesystem path. Upload the engine's `snapshot_record` payload through existing declared-record ingestion first. Repository rules belong in the scanned checkout's `.smartmemory-effects.json`.
 
-Hosted mode advertises 26 tools, an explicit allowlist rather than a tier:
+Hosted mode advertises 33 tools, an explicit allowlist rather than a tier:
 
 `memory_save` `memory_search` `memory_recall` `read_around` `memory_get`
 `memory_explain` `memory_recall_pack` `memory_policy_bundle`
@@ -152,7 +152,13 @@ Hosted mode advertises 26 tools, an explicit allowlist rather than a tier:
 `memory_save_conversation` `memory_search_by_metadata` `memory_feedback`
 `code_search` `code_dead_code` `code_dependencies` `code_upload` `code_effects`
 `agent_set_recall_profile` `agent_get_recall_profile` `reasoning_query_traces`
-`whoami` `switch_workspace`
+`decision_create` `decision_supersede` `decision_get` `decision_list`
+`decision_search` `decision_provenance`
+`whoami` `list_workspaces` `switch_workspace` `switch_team`
+
+Hosted search and decision reads accept `business_scope` and `valid_at`.
+Omitting both selects the sponsor rule effective now. `scope_go_lives` on
+creation or supersession schedules sponsor or exact-site activation dates.
 
 Deprecated: `switch_team` (an alias of `switch_workspace`, removed in the next
 release).

@@ -1103,11 +1103,8 @@ class LocalBackend(BackendCapabilities):
         valid_at: str | None = None,
     ) -> dict[str, Any] | None:
         options = scoped_options(business_scope=business_scope, valid_at=valid_at)
-        if as_of is not None or options:
-            # SM-ASOF-DECISIONS-1: a dated read is history access; the facade binds its history read gate.
-            decision = self._mem.get_decision(decision_id, as_of=as_of, **options)
-        else:
-            decision = self._decision_manager().get_decision(decision_id)
+        # The facade also resolves scheduled history when both qualifiers are omitted.
+        decision = self._mem.get_decision(decision_id, as_of=as_of, **options)
         return _decision_dict(decision) if decision else None
 
     def decision_list(
@@ -1121,22 +1118,14 @@ class LocalBackend(BackendCapabilities):
         valid_at: str | None = None,
     ) -> list[dict[str, Any]]:
         options = scoped_options(business_scope=business_scope, valid_at=valid_at)
-        if as_of is not None or options:
-            decisions = self._mem.get_active_decisions(
-                domain=domain,
-                decision_type=decision_type,
-                min_confidence=min_confidence,
-                limit=limit,
-                as_of=as_of,
-                **options,
-            )
-        else:
-            decisions = self._decision_queries().get_active_decisions(
-                domain=domain,
-                decision_type=decision_type,
-                min_confidence=min_confidence,
-                limit=limit,
-            )
+        decisions = self._mem.get_active_decisions(
+            domain=domain,
+            decision_type=decision_type,
+            min_confidence=min_confidence,
+            limit=limit,
+            as_of=as_of,
+            **options,
+        )
         return [_decision_dict(d) for d in decisions]
 
     def decision_search(

@@ -36,7 +36,7 @@ def test_hosted_tools_have_explicit_directory_annotations() -> None:
     by_name = {tool.name: tool for tool in tools}
 
     assert set(by_name) == set(HOSTED_TOOLS)
-    assert len(by_name) == 27  # MCP-SWITCH-WORKSPACE-1: + switch_workspace
+    assert len(by_name) == 33  # SM-SCOPED-VALIDITY-1: six remote decision tools
     for name, tool in by_name.items():
         assert tool.title, f"{name} is missing a title"
         assert tool.annotations is not None, f"{name} is missing annotations"
@@ -57,3 +57,14 @@ def test_hosted_tools_have_explicit_directory_annotations() -> None:
     assert by_name["list_workspaces"].annotations.read_only_hint is True
     assert by_name["list_workspaces"].annotations.destructive_hint is False
     assert by_name["list_workspaces"].annotations.idempotent_hint is True
+
+    assert by_name["decision_create"].annotations.read_only_hint is False
+    assert by_name["decision_supersede"].annotations.destructive_hint is True
+    for name in (
+        "decision_get",
+        "decision_list",
+        "decision_search",
+        "decision_provenance",
+    ):
+        assert by_name[name].annotations.read_only_hint is True
+        assert by_name[name].annotations.destructive_hint is False

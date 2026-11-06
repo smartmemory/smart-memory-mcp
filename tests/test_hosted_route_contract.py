@@ -62,6 +62,12 @@ TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
         "/memory/workspaces",
     ),  # deprecated alias of switch_workspace
     "list_workspaces": ("get", "/memory/workspaces"),
+    "decision_create": ("post", "/memory/decisions/create"),
+    "decision_supersede": ("post", "/memory/decisions/{decision_id}/supersede"),
+    "decision_get": ("get", "/memory/decisions/{decision_id}"),
+    "decision_list": ("get", "/memory/decisions"),
+    "decision_search": ("get", "/memory/decisions/search"),
+    "decision_provenance": ("get", "/memory/decisions/{decision_id}/provenance"),
     "whoami": None,  # session state only
 }
 

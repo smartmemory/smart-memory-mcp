@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- SM-SCOPED-VALIDITY-1 fix R1 (2026-11-06): default local decision get/list use the admitted core facade, including sponsor selection when both qualifiers are omitted. The production hosted builder now advertises the six scoped decision tools and forwards `business_scope` and `valid_at` on search. Hosted identity, speculative-result exclusion and stdio tier registration remain pinned by tests.
+
+
 - SM-SCOPED-VALIDITY-1 U12: add exact-site `business_scope` and business-time `valid_at` to memory search and decision reads in local, remote and hosted MCP modes. Forward `scope_go_lives` on decision creation and replacement, and `valid_from` on legacy replacement. Preserve independent transaction history, sponsor fallback, selected identity and resolution diagnostics. Validate shared wire inputs before backend resolution, refuse qualifiers on unsupported reads, surface typed schedule/history errors, and describe site-only replacements as scheduled amendments. Golden tests use registered tools with real Lite storage and an authenticated local service.
 
 - MCP-2.0-HOSTED-LIST-WORKSPACES-TWIN-1: restore hosted `list_workspaces` and validate workspace switches against the caller-authenticated workspace listing, including independent shared workspaces.

@@ -61,12 +61,18 @@ def test_servers_send_their_routing_instructions(_restore_hosted_mode):
 
 
 def test_hosted_instructions_name_only_hosted_tools():
-    # The hosted allowlist has no decision tools; steering a hosted model to one would
-    # send it to a tool it cannot call.
+    # Every instruction must name a registered tool, including the scoped decision suite.
     mentioned = _mentioned_tools(HOSTED_INSTRUCTIONS)
     assert mentioned, "hosted instructions name no tools"
     assert mentioned <= HOSTED_TOOLS, mentioned - HOSTED_TOOLS
-    assert "decision_create" not in HOSTED_TOOLS
+    assert {
+        "decision_create",
+        "decision_supersede",
+        "decision_get",
+        "decision_list",
+        "decision_search",
+        "decision_provenance",
+    } <= HOSTED_TOOLS
 
 
 def test_local_instructions_route_decisions_and_dates():

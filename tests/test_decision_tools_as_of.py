@@ -3,7 +3,7 @@
 - Remote: each tool sends ``as_of`` on the exact route the service declares (query param on the GETs, body field on
   ``POST /memory/recall/pack``), and sends nothing new without it.
 - Local: a dated read goes through the SmartMemory facade (which binds its history read gate), never a bare
-  ``DecisionQueries``/``DecisionManager``; an undated read is the call shipped before.
+  ``DecisionQueries``/``DecisionManager``; default get/list also use that admitted facade for sponsor selection.
 - An unparseable ``as_of`` is a ``ToolError`` naming the value before any backend call.
 - Local mode on a real Lite store answers the D1 -> D2 -> retract headline the way the service does
   (``smart-memory-service/tests/integration/api/test_decisions_as_of.py``).

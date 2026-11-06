@@ -232,6 +232,8 @@ def _register_hosted_tools(
         include_superseded: bool = False,
         include_retracted: bool = False,
         include_archived: bool = False,
+        business_scope: Optional[dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ):
         """Search memories using semantic similarity with optional hybrid mode.
 
@@ -260,6 +262,8 @@ def _register_hosted_tools(
             include_superseded=include_superseded,
             include_retracted=include_retracted,
             include_archived=include_archived,
+            business_scope=business_scope,
+            valid_at=valid_at,
         )
 
     original_recall = originals["memory_recall"]
