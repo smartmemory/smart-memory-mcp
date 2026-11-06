@@ -1,5 +1,7 @@
 ## Unreleased - SM-PROCEDURE-TYPE-1 + SM-PROCEDURE-MCP-1 (2026-11-06)
 
+- Allow the real procedure fixture to select its disposable Mongo port with SMARTMEMORY_PROCEDURE_TEST_MONGO_PORT when the original test stack is unavailable.
+
 - Register caller-owned FalkorDB backends in the real procedure test fixture so teardown closes resolver workers before deleting the test graph.
 
 - Add procedure_create, procedure_list, procedure_get, procedure_promote, procedure_dismiss and procedure_record_outcome in all stdio tiers. Local and remote calls reuse the paired core human-procedure manager and scoped CRUD. Remote writes preserve structured bodies through direct add. Hosted exposure awaits its surface audit.

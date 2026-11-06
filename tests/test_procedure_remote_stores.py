@@ -4,6 +4,7 @@ Only the transport and request authentication are injected. No storage backend i
 mocked. Uses the brief's reusable throwaway servers and deletes exact owned state.
 """
 
+import os
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -38,7 +39,8 @@ def remote_tools(tmp_path, monkeypatch):
 
     prefix = "test_sm_procedure_" + uuid4().hex
     graph_name = prefix + "_graph"
-    mongo = MongoClient("mongodb://127.0.0.1:19080", serverSelectionTimeoutMS=3000)
+    mongo_port = int(os.environ.get("SMARTMEMORY_PROCEDURE_TEST_MONGO_PORT", "19080"))
+    mongo = MongoClient(f"mongodb://127.0.0.1:{mongo_port}", serverSelectionTimeoutMS=3000)
     db = mongo[prefix]
     repo = create_workspace_repository(db=db)
     monkeypatch.setattr(
