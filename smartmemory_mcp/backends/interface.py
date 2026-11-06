@@ -66,6 +66,12 @@ class MemoryBackend(Protocol):
         """Update a memory item."""
         ...
 
+    def supersede(
+        self, item_id: str, content: str, reason: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        """Replace a memory with a new version; the old one is kept and closed."""
+        ...
+
     def delete(self, item_id: str, **kwargs: Any) -> dict[str, Any]:
         """Delete a memory item."""
         ...

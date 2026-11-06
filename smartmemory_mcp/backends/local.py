@@ -397,6 +397,47 @@ class LocalBackend(BackendCapabilities):
         self._mem.update_properties(item_id, props, write_mode=write_mode)
         return f"Updated: {item_id}"
 
+    def supersede(
+        self, item_id: str, content: str, reason: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        """Append a replacement via the core supersede primitive; the old item is kept."""
+        from datetime import datetime, timezone
+
+        from smartmemory.models.memory_item import MemoryItem
+
+        old = self._mem.get(item_id)
+        if old is None:
+            raise RuntimeError(f"Not found: {item_id}")
+        meta = {**(kwargs.get("metadata") or {}), "supersession_reason": reason}
+        valid_from = scoped_options(valid_from=kwargs.get("valid_from")).get(
+            "valid_from"
+        )
+        start = None
+        if valid_from:
+            start = datetime.fromisoformat(valid_from)
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+        item = MemoryItem(
+            content=content,
+            memory_type=kwargs.get("memory_type") or "semantic",
+            metadata=meta,
+            origin="mcp:memory_supersede",
+            valid_start_time=start,
+        )
+        # The old item's interval closes at ``start`` inside core's compensated supersession unit.
+        new_id = self._mem.ingest_superseding(
+            item,
+            supersedes=item_id,
+            **({"valid_from": start} if start is not None else {}),
+        )
+        if not new_id:
+            raise RuntimeError("Supersession could not be established")
+        return {
+            "status": "superseded",
+            "old_item_id": item_id,
+            "new_item_id": new_id,
+        }
+
     def delete(self, item_id: str, **kwargs: Any) -> bool:
         """Delete a memory by ID."""
         return self._mem.delete(item_id)

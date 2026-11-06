@@ -229,11 +229,17 @@ def _register_hosted_tools(
         cite: bool = False,
         as_of_date: Optional[str] = None,
         as_of_strict: bool = False,
+        valid_at: Optional[str] = None,
+        business_scope: Optional[dict] = None,
         include_superseded: bool = False,
         include_retracted: bool = False,
         include_archived: bool = False,
     ):
         """Search memories using semantic similarity with optional hybrid mode.
+
+        valid_at (ISO datetime) asks what was in force on that date.
+        as_of_date asks what had been recorded by then. Both together are an AND.
+        business_scope selects an exact site with sponsor fallback.
 
         Hosted note: `cite=True` is not available — citation formatting runs in
         the `smartmemory` core package, which the hosted server does not ship.
@@ -257,6 +263,8 @@ def _register_hosted_tools(
             cite=False,
             as_of_date=as_of_date,
             as_of_strict=as_of_strict,
+            valid_at=valid_at,
+            business_scope=business_scope,
             include_superseded=include_superseded,
             include_retracted=include_retracted,
             include_archived=include_archived,

@@ -72,6 +72,8 @@ class MemoryResult(TypedDict, total=False):
     # set only on as_of_date searches. "unresolved" means present-day content
     # is standing in for a historical belief; an agent must not cite it as history.
     as_of_resolution: Optional[str]
+    # Business-time resolution, distinct from transaction history.
+    valid_at_resolution: Optional[str]
     # U5.22: response-only extraction status ({extraction_state, processing_stage,
     # execution_state, outcome, revision}) core attaches on the visibility-gate-ON
     # arm. Present only when the source carries it; absent on the legacy arm.
@@ -157,6 +159,8 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         relations=d.get("relations"),
         drift_warnings=d.get("drift_warnings"),
         as_of_resolution=d.get("as_of_resolution"),
+        valid_at_resolution=d.get("valid_at_resolution")
+        or (d.get("metadata") or {}).get("valid_at_resolution"),
     )
     status = validated_carrier(d.get("read_status"), result["item_id"])
     if status is not None:

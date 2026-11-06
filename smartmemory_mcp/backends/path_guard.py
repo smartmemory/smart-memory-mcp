@@ -33,8 +33,8 @@ RESERVED_SEGMENTS: dict[str, frozenset[str]] = {
         ingest launch licensing link list lite locks logs maintenance okf ontology
         opinions patterns personalize pipeline plans platform plugins policy procedures
         progress read-around reasoning recall reflect result-feedback routing schemas search
-        sequences sleep subscriptions summary sync teams telemetry temporal token-usage
-        validate worker workspaces zettel
+        sequences sleep subscriptions summary support sync teams telemetry temporal token-usage
+        validate vector worker workspaces zettel
         """.split()
     ),
     "/memory/decisions/": frozenset({"create", "pending", "search"}),

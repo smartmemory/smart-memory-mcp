@@ -289,7 +289,7 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
     advertised = {tool.name for tool in asyncio.run(mcp.list_tools())}
 
     assert advertised == set(HOSTED_TOOLS)
-    assert len(advertised) == 27  # MCP-SWITCH-WORKSPACE-1: + switch_workspace
+    assert len(advertised) == 28  # MCP-SWITCH-WORKSPACE-1: + switch_workspace
 
 
 @pytest.mark.parametrize("name", EXCLUDED_TOOLS)
@@ -348,6 +348,20 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ("memory_get", {"item_id": "mem-1"}),
     ("memory_explain", {"memory_id": "mem-1"}),
     ("memory_update", {"item_id": "mem-1", "content": "changed"}),
+    (
+        "memory_supersede",
+        {"item_id": "mem-1", "content": "new rule", "reason": "reversal"},
+    ),
+    (
+        "memory_supersede",
+        {
+            "item_id": "mem-1",
+            "content": "new rule",
+            "reason": "reversal",
+            "metadata": {"site": "all"},
+            "valid_from": "2026-04-20T00:00:00Z",
+        },
+    ),
     ("memory_delete", {"item_id": "mem-1"}),
     ("memory_list", {}),
     ("memory_list", {"limit": 3}),

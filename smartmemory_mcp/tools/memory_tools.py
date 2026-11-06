@@ -156,6 +156,7 @@ _MODEL_ITEM_FIELDS = frozenset(
         "derived_from",
         "reference",
         "as_of_resolution",
+        "valid_at_resolution",
         "score_breakdown",
         # U5.22: extraction status of a pending/merged hit (gate-ON arm only).
         "read_status",
@@ -548,6 +549,11 @@ def register_free(mcp):
         hop_strategy: consensus follows entities several top results agree on; relevance
         follows best-result entities and one-off bridges; semantic asks an LLM.
         since/until: ISO-8601 or relative (7d, 24h, 30m), echoed as an absolute window.
+
+        valid_at (ISO datetime) asks what was in force on that date.
+        as_of_date asks what had been recorded by that instant. Both together
+        are an AND. A missing effective date may be labelled
+        valid_at_resolution="created_at_fallback".
 
         business_scope selects an exact site and valid_at selects business validity.
         Activated exact site entries win, otherwise use sponsor fallback. The backend
@@ -1124,7 +1130,10 @@ def register_pro(mcp):
         properties: Optional[Dict[str, Any]] = None,
         write_mode: Optional[str] = None,
     ) -> str:
-        """Update a memory item's properties (CORE-CRUD-UPDATE-1).
+        """Edit a memory item in place (CORE-CRUD-UPDATE-1). Keeps no history.
+
+        To change or reverse a rule, use ``memory_supersede`` so the old version
+        is retained. Use this tool for typo fixes or metadata edits.
 
         - ``content``/``metadata``: convenience — folded into the properties dict.
         - ``properties``: advanced — direct node-property update. Takes precedence.
@@ -1139,6 +1148,40 @@ def register_pro(mcp):
             write_mode=write_mode,
         )
         return str(result) if result else f"Updated: {item_id}"
+
+    @mcp.tool(
+        title="Supersede a memory",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def memory_supersede(
+        item_id: str,
+        content: str,
+        reason: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        valid_from: Optional[str] = None,
+    ) -> str:
+        """Replace a memory with a new version, keeping the old one as history.
+
+        Use this to change or reverse an existing rule, decision or instruction.
+        The old version is retained as replaced history. History visibility
+        follows the normal search gates. ``reason`` says why it changed.
+        ``valid_from`` (ISO datetime, e.g.
+        2026-04-20T00:00:00Z) is when the new version takes effect; the old version's
+        validity ends on that date.
+        """
+        options = scoped_options(valid_from=valid_from)
+        backend = get_backend()
+        result = backend.supersede(
+            item_id, content, reason, metadata=metadata, **options
+        )
+        new_id = (result or {}).get("new_item_id", "unknown")
+        return f"Superseded: {item_id} -> {new_id}"
 
     @mcp.tool(
         title="Delete a memory",

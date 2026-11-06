@@ -188,6 +188,13 @@ ROWS = [
         "/memory/{item_id}",
         lambda b, i: b.update(i, content="x"),
     ),
+    (
+        "supersede",
+        REMOTE,
+        "POST",
+        "/memory/{item_id}/supersede",
+        lambda b, i: b.supersede(i, "x", "r"),
+    ),
     ("delete", REMOTE, "DELETE", "/memory/{item_id}", lambda b, i: b.delete(i)),
     (
         "decision_get",

@@ -214,6 +214,9 @@ def register_free(mcp):
     ) -> ToolResult:
         """Save one memory: free text in ``content``, or a structured record in ``data``.
 
+        If this note changes or reverses an earlier one, call ``memory_supersede``
+        on that note so the old version is retained as history.
+
         Free text goes through the full extraction pipeline, whatever its type, except ``memory_type="pending"``,
         which is stored as is. For ``data``, ``memory_type`` names the registered schema (required) and ``content`` is
         not allowed. Returns the saved id, plus the save receipt and a one-line summary when core produced one;

@@ -743,6 +743,34 @@ class RemoteBackend(BackendCapabilities):
             or {}
         )
 
+    def supersede(
+        self, item_id: str, content: str, reason: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        """POST /memory/{item_id}/supersede: a new version, the old one retained.
+
+        ``valid_from`` (ISO date) is the date the new version takes effect; it is
+        sent only when given, so the service keeps its default otherwise.
+        """
+        body: dict[str, Any] = {
+            "content": content,
+            "memory_type": kwargs.get("memory_type") or "semantic",
+            "reason": reason,
+        }
+        if metadata := kwargs.get("metadata"):
+            body["metadata"] = metadata
+        body.update(scoped_options(valid_from=kwargs.get("valid_from")))
+        result = (
+            self._request(
+                "POST",
+                f"/memory/{path_id(item_id, under='/memory/')}/supersede",
+                json=body,
+            )
+            or {}
+        )
+        if err := self._fmt_error(result):
+            raise RuntimeError(err)
+        return result
+
     def delete(self, item_id: str, **kwargs: Any) -> bool:
         """DELETE /memory/{item_id}. Returns True on success."""
         result = self._request(

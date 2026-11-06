@@ -29,6 +29,7 @@ MEMORY_TOOLS = (
     "memory_recall_pack",
     "memory_policy_bundle",
     "memory_update",
+    "memory_supersede",
     "memory_delete",
     "memory_list",
     "memory_stats",
