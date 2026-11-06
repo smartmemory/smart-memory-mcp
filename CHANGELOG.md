@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- CORE-2.0-CODEINDEX-LINK-CONTAIN-1 (2026-11-06): confine the standalone Python indexer to the selected checkout,
+  validate regular files at collection and read time, and bound source reads to 2 MiB. Escaping file or directory
+  links, special files and oversized sources produce path-naming warnings and caller-visible errors. An incomplete
+  checkout is refused before upload, retaining the prior index. In-root file links remain supported.
+
 - MCP-2.0-STDIO-LIST-WORKSPACES-TWIN-1: restore read-only stdio `list_workspaces` in every tier, with the current workspace marked, actionable lookup failures and the same Lite refusal as main. Keep 2.0 workspace headers unchanged. Stdio FREE/PRO/PRO+ counts are 35/75/106.
 - MCP-2.0-RECALL-TOPK-1 (2026-11-06; port of main c69ee3e, the missed hunk): stdio `memory_recall` defaults `top_k` to 10 (was 5), matching 1.x and the hosted tool. Test: `tests/test_get_working_context_standalone.py::test_memory_recall_default_top_k_is_10`.
 
