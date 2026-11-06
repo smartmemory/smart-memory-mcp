@@ -144,6 +144,8 @@ Code indexing reports clean, partial and failed file counts plus acceptance, sta
 
 Local `code_effects(directory, repo_name=None)` scans Python effects through the shared engine without opening a memory store. Hosted `code_effects(repo, source_snapshot, limit=20, offset=0)` reads uploaded `fa_snapshot` records in the selected workspace. It accepts no filesystem path. Upload the engine's `snapshot_record` payload through existing declared-record ingestion first. Repository rules belong in the scanned checkout's `.smartmemory-effects.json`.
 
+Stdio advertises 35 tools in FREE, 75 in PRO and 106 in PRO+. `list_workspaces` is available in every tier.
+
 Hosted mode advertises 35 tools, an explicit allowlist rather than a tier:
 
 `memory_save` `memory_search` `memory_recall` `read_around` `memory_get`

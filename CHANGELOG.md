@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- MCP-2.0-STDIO-LIST-WORKSPACES-TWIN-1: restore read-only stdio `list_workspaces` in every tier, with the current workspace marked, actionable lookup failures and the same Lite refusal as main. Keep 2.0 workspace headers unchanged. Stdio FREE/PRO/PRO+ counts are 35/75/106.
+
 - MCP-2.0-READINESS-FU-1: preserve scheduled supersede receipts in local, remote and hosted modes, restore the published memory_ask tool through authenticated workspace routing, retain the full recall budget and content, and raise WriteOutcomeUnknown without retrying a lost add response. Hosted tool count is 35.
 
 - DRIFT-V3-DHRUV-BOUNDARIES-1: use separate sentences for the customer-facing supersede effective-date guidance.

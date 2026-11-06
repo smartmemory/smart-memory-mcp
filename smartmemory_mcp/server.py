@@ -1,9 +1,9 @@
 """SmartMemory Unified MCP Server.
 
 Tiered tool registration:
-  FREE  (31 tools) — no login required, includes the decision suite
-  PRO   (66 tools) — after smartmemory login
-  PRO+  (97 tools) — PRO + SMARTMEMORY_MCP_FULL_TOOLS=true
+  FREE  (35 tools) — no login required, includes the decision suite
+  PRO   (75 tools) — after smartmemory login
+  PRO+  (106 tools) — PRO + SMARTMEMORY_MCP_FULL_TOOLS=true
 (Counts are cumulative registered tools, asserted by tests/test_tier_registration.py.)
 
 Backend is independent of tier:
@@ -211,6 +211,33 @@ def switch_workspace(workspace: str, save_as_default: bool = False) -> str:
     `save_as_default` to also use it for new sessions.
     """
     return _switch_workspace(workspace, save_as_default)
+
+
+@mcp.tool(
+    title="List workspaces",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+@graceful
+def list_workspaces() -> str:
+    """List the workspaces you can switch to; the current one is marked."""
+    from smartmemory_mcp.backends.local import LocalBackend
+    from smartmemory_mcp.workspace_select import format_workspace_rows
+
+    backend = get_backend()
+    if isinstance(backend, LocalBackend):
+        return (
+            "Lite (local mode) has no workspaces: everything is in one local store. "
+            "Use remote mode (smartmemory setup --mode remote) for workspaces."
+        )
+    rows, why = backend._fetch_workspaces()
+    if rows is None:
+        return f"Could not list your workspaces: {why}"
+    return format_workspace_rows(rows, backend.active_workspace_id)
 
 
 @mcp.tool(title="Switch team (deprecated)", annotations=_SWITCH_ANNOTATIONS)
