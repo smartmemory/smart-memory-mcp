@@ -137,9 +137,9 @@ Code indexing reports clean, partial and failed file counts plus acceptance, sta
 
 Local `code_effects(directory, repo_name=None)` scans Python effects through the shared engine without opening a memory store. Hosted `code_effects(repo, source_snapshot, limit=20, offset=0)` reads uploaded `fa_snapshot` records in the selected workspace. It accepts no filesystem path. Upload the engine's `snapshot_record` payload through existing declared-record ingestion first. Repository rules belong in the scanned checkout's `.smartmemory-effects.json`.
 
-Hosted mode advertises 30 tools, an explicit allowlist rather than a tier:
+Hosted mode advertises 31 tools, an explicit allowlist rather than a tier:
 
-`memory_ingest` `memory_search` `memory_recall` `read_around` `memory_get`
+`memory_ingest` `memory_search` `memory_recall` `memory_ask` `read_around` `memory_get`
 `memory_explain` `memory_recall_pack` `memory_policy_bundle` `memory_add`
 `memory_update` `memory_supersede` `memory_delete` `memory_list` `memory_stats` `memory_distill`
 `memory_ingest_conversation` `memory_search_by_metadata` `memory_feedback`
@@ -234,3 +234,5 @@ Quiesce old writers before first-open indexing. Verify the engine capability pin
 ### Company project alongside local memory
 
 Keep your existing local `smartmemory` connection. Add `claude mcp add --transport http smartmemory-company https://mcp.smartmemory.ai/mcp` and authenticate with your own company-org login. Check `whoami` for the expected tenant, use `switch_workspace` with the project's paired Workspace ID, then check again. Recheck after reconnect because selection is session-scoped. The owner and Kyle authenticate separately. No local-memory upload or local backend switch is needed. Hosted Team responses use `team_id`. Independent Workspace selection is outside this change. Live OAuth and two-user access acceptance remain required.
+
+`memory_ask(question, limit=5, reasoning=True)` uses the web app's Answer mode and returns the answer, evidence, reasoning, and relations.

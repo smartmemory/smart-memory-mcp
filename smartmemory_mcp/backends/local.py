@@ -283,6 +283,10 @@ class LocalBackend(BackendCapabilities):
         """
         return self._mem.blame_code(**kwargs)
 
+    def ask(self, question: str, limit: int = 5, *, reasoning: bool = True) -> dict[str, Any]:
+        """Use core's existing answer implementation in local mode."""
+        return self._mem.ask(question, limit=limit, reasoning=reasoning)
+
     def recall_pack(self, **kwargs: Any) -> dict[str, Any]:
         """Budgeted context assembly passthrough (CORE-RECALL-BUDGET-1).
 

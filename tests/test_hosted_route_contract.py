@@ -33,6 +33,7 @@ TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
     "memory_search": ("post", "/memory/search"),
     # The hosted variant always takes RemoteBackend.recall, which is search.
     "memory_recall": ("post", "/memory/search"),
+    "memory_ask": ("post", "/memory/ask"),
     "read_around": ("post", "/memory/read-around"),
     "memory_get": ("get", "/memory/{item_id}"),
     "memory_explain": ("get", "/memory/{memory_id}/explain"),

@@ -961,6 +961,16 @@ class RemoteBackend(BackendCapabilities):
             return False
         return True
 
+    def ask(self, question: str, limit: int = 5, *, reasoning: bool = True) -> dict[str, Any]:
+        """POST /memory/ask, the existing web Answer-mode contract (DIST-LITE-9)."""
+        body: dict[str, Any] = {"question": question, "limit": limit}
+        if reasoning is not True:
+            body["reasoning"] = reasoning
+        result = self._request("POST", "/memory/ask", json=body, timeout=120)
+        if err := self._fmt_error(result):
+            raise RuntimeError(err)
+        return result
+
     def recall_pack(self, budget_tokens: int, **kwargs: Any) -> dict[str, Any]:
         """POST /memory/recall/pack (CORE-RECALL-BUDGET-1).
 

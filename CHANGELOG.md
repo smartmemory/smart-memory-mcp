@@ -1,5 +1,7 @@
 # Changelog
 
+- DHRUV-HOSTED-MCP-PARITY-1 (a): expose `memory_ask` on hosted and standalone MCP using the existing web Answer route and core implementation. Preserve full evidence and provider errors.
+
 ## Unreleased
 
 ## 1.5.26 — 2026-11-05

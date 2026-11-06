@@ -952,6 +952,21 @@ def register_free(mcp):
             return f"Memory item not found: {memory_id}"
         return result
 
+    @mcp.tool(
+        title="Answer a question from memory",
+        annotations=ToolAnnotations(
+            readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False,
+        ),
+    )
+    @graceful
+    def memory_ask(question: str, limit: int = 5, reasoning: bool = True) -> dict:
+        """Answer from workspace memories, with evidence and relations.
+
+        Uses the same answer route as the web app. ``limit`` is the evidence
+        budget (1-50). Provider failures are returned as errors, never answers.
+        """
+        return get_backend().ask(question, limit=limit, reasoning=reasoning)
+
     # CORE-RECALL-BUDGET-1: known section names, mirrored from
     # smartmemory.recall_pack.KNOWN_SECTIONS. Validated here so a typo fails fast with a
     # usable message instead of travelling to core (local) or over HTTP (remote).

@@ -119,6 +119,8 @@ def fake_svc_api(seen: list[tuple[str, str]] | None = None):
         def ok(body: Any, status: int = 200) -> httpx.Response:
             return httpx.Response(status, json=body, request=request)
 
+        if path == "/memory/ask":
+            return ok({"answer": "A decision.", "reasoning": "", "evidence": [], "relations": []})
         if path == "/memory/search":
             return httpx.Response(
                 200,
@@ -277,7 +279,7 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
 
     assert advertised == set(HOSTED_TOOLS)
     assert (
-        len(advertised) == 30
+        len(advertised) == 31
     )  # MCP-SWITCH-WORKSPACE-1: + switch_workspace; WS-ROUTING-5: + list_workspaces; DHRUV-CODING-RULE-P0-1: + memory_supersede
 
 
@@ -365,6 +367,8 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
         {"turns": [{"role": "user", "content": "hi"}]},
     ),
     ("memory_search_by_metadata", {"metadata_key": "source", "metadata_value": "test"}),
+    ("memory_ask", {"question": "What was decided?"}),
+    ("memory_ask", {"question": "What was decided?", "limit": 7, "reasoning": False}),
     ("memory_recall_pack", {"budget_tokens": 500}),
     ("memory_recall_pack", {"budget_tokens": 500, "query": "runbook"}),
     ("memory_policy_bundle", {}),
