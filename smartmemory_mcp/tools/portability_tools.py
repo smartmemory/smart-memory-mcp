@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import logging
 import shutil
+import stat
 import tarfile
 import tempfile
 import zlib
@@ -341,11 +342,33 @@ def _extract_bundle(archive_path: Path, destination: Path) -> Path:
     return indexes[0].parent
 
 
+def _export_destination(path: Path) -> Path:
+    """Preserve the selected spelling and refuse redirection before any writer runs."""
+    path = path.expanduser().absolute()
+    for entry in (path, *path.parents):
+        if entry.is_symlink():
+            logger.warning(
+                "Refused export destination %s: symbolic link at %s", path, entry
+            )
+            raise ValueError(
+                f"Refused export destination {path}: symbolic link at {entry}"
+            )
+    if path.exists():
+        mode = path.stat().st_mode
+        if not (stat.S_ISREG(mode) if _is_archive(path) else stat.S_ISDIR(mode)):
+            logger.warning("Refused export destination %s: unsupported file type", path)
+            raise ValueError(
+                f"Refused export destination {path}: unsupported file type"
+            )
+    return path
+
+
 def _export_okf(backend: Any, output_path: Path, workspace_id: Any = LIVE_PICK) -> int:
     """Route an OKF export and return the number of item pages written.
 
     ``workspace_id`` pins a remote export to a captured pick (see ``RemoteBackend.export_okf``).
     """
+    output_path = _export_destination(output_path)
     if _is_remote_backend(backend):
         pin = {} if workspace_id is LIVE_PICK else {"workspace_id": workspace_id}
         if _is_archive(output_path):
@@ -414,7 +437,7 @@ def register(mcp: Any) -> None:
     def memory_export(path: str) -> str:
         """Export all memories as an OKF bundle directory or tar.gz archive."""
         backend = get_backend()
-        export_path = Path(path).expanduser().resolve()
+        export_path = _export_destination(Path(path))
         count = _export_okf(backend, export_path)
         if count == 0:
             return "No memories to export."
