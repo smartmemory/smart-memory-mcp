@@ -7,7 +7,7 @@
 
 - DRIFT-V3-DHRUV-BOUNDARIES-1: use separate sentences for the customer-facing supersede effective-date guidance.
 
-- DRIFT-V3-DHRUV-BOUNDARIES-1: port `memory_supersede` to local, remote and hosted tools with compensated `valid_from` forwarding. Explain dated replacement through `memory_save`, preserve `valid_at` resolution labels, and expose existing scoped search selectors on the hosted override. Reuse scoped-validity ISO datetime validation. PRO tools increase from 72 to 73, PRO_PLUS from 103 to 104, hosted from 27 to 28.
+- DRIFT-V3-DHRUV-BOUNDARIES-1: port `memory_supersede` to local, remote and hosted tools with compensated `valid_from` forwarding. Explain dated replacement through `memory_save`, preserve `valid_at` resolution labels, and expose existing scoped search selectors on the hosted override. Reuse scoped-validity ISO datetime validation. PRO tools increase from 72 to 73, PRO_PLUS from 103 to 104, hosted from 27 to 28 (34 on 2.0 with SM-SCOPED-VALIDITY-1's six decision tools). After the 2.0 merge the hosted `memory_search` override declares `valid_at` and `business_scope` once, in the 2.0 position.
 - SM-SCOPED-VALIDITY-1 fix R1 (2026-11-06): default local decision get/list use the admitted core facade, including sponsor selection when both qualifiers are omitted. The production hosted builder now advertises the six scoped decision tools and forwards `business_scope` and `valid_at` on search. Hosted identity, speculative-result exclusion and stdio tier registration remain pinned by tests.
 
 
