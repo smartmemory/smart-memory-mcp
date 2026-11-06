@@ -64,6 +64,42 @@ def test_registered_schema_exposes_frozen_fields(monkeypatch):
     asyncio.run(check())
 
 
+def test_real_hosted_builder_exposes_scoped_validity():
+    from smartmemory_mcp.hosted.exchange import ExchangeCache
+    from smartmemory_mcp.hosted.server import build_hosted_server
+    from smartmemory_mcp.hosted.tools import HOSTED_TOOLS
+    from tests._hosted_fixtures import hosted_config, memory_store
+
+    server = build_hosted_server(
+        hosted_config(), redis_store=memory_store(), exchange_cache=ExchangeCache()
+    )
+    tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
+    promised = {
+        "decision_create",
+        "decision_supersede",
+        "decision_get",
+        "decision_list",
+        "decision_search",
+        "decision_provenance",
+    }
+    assert promised <= HOSTED_TOOLS
+    assert promised <= tools.keys()
+    for name in {
+        "memory_search",
+        "decision_get",
+        "decision_list",
+        "decision_search",
+        "decision_provenance",
+    }:
+        assert {"business_scope", "valid_at"} <= tools[name].parameters[
+            "properties"
+        ].keys(), name
+    assert "scope_go_lives" in tools["decision_create"].parameters["properties"]
+    assert {"valid_from", "scope_go_lives"} <= tools["decision_supersede"].parameters[
+        "properties"
+    ].keys()
+
+
 @pytest.mark.parametrize("backend_class", [RemoteBackend, HostedRemoteBackend])
 def test_decision_wire_axes_schedules_and_omission(monkeypatch, backend_class):
     # Only the serializer is isolated here, never a golden transport.

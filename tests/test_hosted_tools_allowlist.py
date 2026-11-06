@@ -71,7 +71,6 @@ EXCLUDED_TOOLS = (
     "pattern_create",  # catalog write, not yet audited for hosted (SM-PATTERN-CRUD-1)
     "pattern_retire",  # catalog write, not yet audited for hosted (SM-PATTERN-CRUD-1)
     "pattern_seed",  # reads the client's MEMORY.md directory (filesystem path)
-    "decision_create",  # requires _mem
     "peer_chat",  # parked remotely
     "transcript_search",  # local transcript store
     "memory_save_document",  # path-taking, not audited for hosted
@@ -130,6 +129,30 @@ def fake_svc_api(
         def ok(body: Any, status: int = 200) -> httpx.Response:
             return httpx.Response(status, json=body, request=request)
 
+        decision = {
+            "decision_id": "dec-1",
+            "content": "deploy decision",
+            "decision_type": "inference",
+            "confidence": 0.8,
+        }
+        if path == "/memory/decisions/create":
+            return ok(decision)
+        if path == "/memory/decisions":
+            return ok({"decisions": [decision]})
+        if path == "/memory/decisions/search":
+            return ok({"decisions": [decision]})
+        if path == "/memory/decisions/dec-1/supersede":
+            return ok(
+                {
+                    "old_decision_id": "dec-1",
+                    "new_decision_id": "dec-2",
+                    "reason": "amend",
+                }
+            )
+        if path == "/memory/decisions/dec-1/provenance":
+            return ok({"decision": decision, "evidence": []})
+        if path == "/memory/decisions/dec-1":
+            return ok(decision)
         if path == "/memory/search":
             return httpx.Response(
                 200,
@@ -289,7 +312,7 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
     advertised = {tool.name for tool in asyncio.run(mcp.list_tools())}
 
     assert advertised == set(HOSTED_TOOLS)
-    assert len(advertised) == 28  # MCP-SWITCH-WORKSPACE-1: + switch_workspace
+    assert len(advertised) == 34  # SM-SCOPED-VALIDITY-1 six remote decision tools + DRIFT-V3-DHRUV-BOUNDARIES-1 memory_supersede
 
 
 @pytest.mark.parametrize("name", EXCLUDED_TOOLS)
@@ -334,6 +357,15 @@ def test_no_hosted_tool_takes_a_filesystem_path() -> None:
 # --- 3. every advertised tool actually works --------------------------------------
 
 SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
+    ("decision_create", {"content": "deploy decision"}),
+    ("decision_get", {"decision_id": "dec-1"}),
+    ("decision_list", {}),
+    ("decision_search", {"topic": "deploy"}),
+    (
+        "decision_supersede",
+        {"decision_id": "dec-1", "new_content": "new decision", "reason": "amend"},
+    ),
+    ("decision_provenance", {"decision_id": "dec-1"}),
     ("memory_search", {"query": "runbook"}),
     ("memory_search", {"query": "runbook", "memory_type": "semantic"}),
     ("memory_search", {"query": "runbook", "channel_weights": {"semantic": 1.0}}),

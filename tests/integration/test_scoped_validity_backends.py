@@ -298,3 +298,179 @@ def test_G01_G08_G11_G12_G14_G16_registered_parity(runtime):
                 await call("decision_get", decision_id=old, **at_a)
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("runtime", ["local"], indirect=True)
+def test_local_default_decision_tools_select_sponsor(runtime):
+    mode, backend, memory, server, owners, url = runtime
+
+    async def run():
+        async with Client(server) as client:
+
+            async def call(name, **kwargs):
+                result = await client.call_tool(name, kwargs)
+                return "\n".join(
+                    block.text for block in result.content if hasattr(block, "text")
+                )
+
+            created = await call(
+                "decision_create",
+                content="test_scoped_r1 sponsor original",
+                scope_go_lives=[{"scope": None, "valid_from": "2020-01-01T00:00:00Z"}],
+            )
+            old = created.splitlines()[0].split(": ", 1)[1]
+            replaced = await call(
+                "decision_supersede",
+                decision_id=old,
+                new_content="test_scoped_r1 site amendment",
+                reason="site only",
+                scope_go_lives=[
+                    {"scope": {"site": "A"}, "valid_from": "2020-01-01T00:00:00Z"}
+                ],
+            )
+            new = replaced.split("New decision: ")[1].splitlines()[0]
+            selected = ast.literal_eval(await call("decision_get", decision_id=new))
+            assert selected["decision_id"] == old
+            listed = await call("decision_list")
+            assert old in listed and "test_scoped_r1 sponsor original" in listed
+            assert new not in listed
+
+    asyncio.run(run())
+
+
+def test_real_hosted_builder_scoped_tools_use_authenticated_identity():
+    owners = json.loads(os.environ["SCOPED_VALIDITY_TEST_OWNERS"])
+    url = os.environ["SCOPED_VALIDITY_SERVICE_URL"]
+
+    from smartmemory_mcp.hosted.exchange import ExchangeCache
+    from smartmemory_mcp.hosted.server import hosted_asgi_app
+    from tests._hosted_fixtures import (
+        INITIALIZE_BODY,
+        hosted_config,
+        mcp_headers,
+        memory_store,
+    )
+    from tests.test_hosted_tools_allowlist import _decode
+
+    with httpx.Client(base_url=url) as http:
+        minted = http.post(
+            "/memory/api-keys",
+            headers=owners[0]["headers"],
+            json={
+                "name": "test_scoped_r1_hosted_" + uuid4().hex,
+                "scopes": ["read:memories", "write:memories", "read:teams"],
+            },
+        )
+        assert minted.status_code == 201, minted.text
+        key = minted.json()
+
+    async def run():
+        app = hosted_asgi_app(
+            hosted_config(api_url=url),
+            redis_store=memory_store(),
+            exchange_cache=ExchangeCache(),
+        )
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="https://mcp.test"
+            ) as client,
+        ):
+            headers = mcp_headers(key["key"])
+            started = await client.post("/mcp", headers=headers, json=INITIALIZE_BODY)
+            assert started.status_code == 200, started.text
+            headers["mcp-session-id"] = started.headers["mcp-session-id"]
+            await client.post(
+                "/mcp",
+                headers=headers,
+                json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+            )
+
+            async def call(name, **arguments):
+                response = await client.post(
+                    "/mcp",
+                    headers=headers,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 7,
+                        "method": "tools/call",
+                        "params": {"name": name, "arguments": arguments},
+                    },
+                )
+                assert response.status_code == 200, response.text
+                result = _decode(response)["result"]
+                assert not result.get("isError"), result
+                # The hosted middleware adds a first-run hint as a separate block.
+                return result["content"][0]["text"]
+
+            identity = await call("whoami")
+            assert owners[0]["workspace_id"] in identity
+            assert owners[1]["workspace_id"] not in identity
+            marker = "test_scoped_r1_hosted_" + uuid4().hex
+            created = await call(
+                "decision_create",
+                content=marker + " sponsor original",
+                scope_go_lives=[{"scope": None, "valid_from": "2020-01-01T00:00:00Z"}],
+            )
+            old = created.splitlines()[0].split(": ", 1)[1]
+            replaced = await call(
+                "decision_supersede",
+                decision_id=old,
+                new_content=marker + " site amendment",
+                reason="site only",
+                scope_go_lives=[
+                    {"scope": {"site": "A"}, "valid_from": "2020-01-01T00:00:00Z"}
+                ],
+            )
+            new = replaced.split("New decision: ")[1].splitlines()[0]
+            options = {
+                "business_scope": {"site": "A"},
+                "valid_at": "2026-02-08T00:00:00Z",
+            }
+            selected = ast.literal_eval(
+                await call("decision_get", decision_id=old, **options)
+            )
+            assert selected["decision_id"] == new
+            for tool, args in [
+                ("decision_list", {}),
+                ("decision_search", {"topic": marker}),
+                ("decision_provenance", {"decision_id": old}),
+            ]:
+                text = await call(tool, **args, **options)
+                assert new in text and marker + " site amendment" in text
+            from smartmemory.search.channels import CHANNEL_DEFAULTS
+
+            text = await call(
+                "memory_search",
+                # Search indexed content words, not the fixture's underscore-delimited ownership marker.
+                query="site amendment",
+                memory_type="decision",
+                top_k=1,
+                enable_hybrid=False,
+                channel_weights={
+                    name: float(name == "lexical") for name in CHANNEL_DEFAULTS
+                },
+                **options,
+            )
+            assert new in text and marker + " site amendment" in text
+            foreign = RemoteBackend(
+                api_url=url,
+                api_key=owners[1]["access_token"],
+                team_id=owners[1]["workspace_id"],
+            )
+            assert foreign.decision_get(new, **options) is None
+            refused = await client.post(
+                "/mcp",
+                headers=mcp_headers("sm_test_" + "invalid" * 4),
+                json=INITIALIZE_BODY,
+            )
+            assert refused.status_code == 401
+
+    try:
+        asyncio.run(run())
+    finally:
+        with httpx.Client(base_url=url) as http:
+            deleted = http.delete(
+                "/memory/api-keys/" + key["key_id"], headers=owners[0]["headers"]
+            )
+            assert deleted.status_code in (200, 204), deleted.text

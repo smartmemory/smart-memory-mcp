@@ -46,13 +46,27 @@ CODE_TOOLS = (
 )
 AGENT_TOOLS = ("agent_set_recall_profile", "agent_get_recall_profile")
 REASONING_TOOLS = ("reasoning_query_traces",)
+# These six decision tools dispatch exclusively through the authenticated backend.
+DECISION_TOOLS = (
+    "decision_create",
+    "decision_supersede",
+    "decision_list",
+    "decision_search",
+    "decision_get",
+    "decision_provenance",
+)
 # Registered by the hosted server itself; session-scoped, no backend route of
 # their own beyond the workspace listing lookup. `switch_team` is the
 # deprecated alias of `switch_workspace` (MCP-SWITCH-WORKSPACE-1, one release).
 HOSTED_ONLY_TOOLS = ("whoami", "list_workspaces", "switch_workspace", "switch_team")
 
 HOSTED_TOOLS: frozenset[str] = frozenset(
-    MEMORY_TOOLS + CODE_TOOLS + AGENT_TOOLS + REASONING_TOOLS + HOSTED_ONLY_TOOLS
+    MEMORY_TOOLS
+    + CODE_TOOLS
+    + AGENT_TOOLS
+    + REASONING_TOOLS
+    + DECISION_TOOLS
+    + HOSTED_ONLY_TOOLS
 )
 
 # Any parameter whose name reads like a filesystem location. The hosted
@@ -195,6 +209,7 @@ def register_module_tools(mcp: Any) -> dict[str, CapturedTool]:
     from smartmemory_mcp.tools import (
         agent_tools,
         code_tools,
+        decision_tools,
         memory_tools,
         reasoning_tools,
         save_tools,
@@ -213,6 +228,7 @@ def register_module_tools(mcp: Any) -> dict[str, CapturedTool]:
     effects.register(registrar)
     agent_tools.register(registrar)
     reasoning_tools.register(registrar)
+    decision_tools.register(registrar)
     return registrar.captured
 
 
