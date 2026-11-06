@@ -1401,6 +1401,46 @@ class RemoteBackend(BackendCapabilities):
         """
         return {k: v for k, v in payload.items() if k not in cls._DECISION_CTX_KEYS}
 
+    def add_learning(
+        self,
+        content: str,
+        *,
+        category: str | None = None,
+        incident_link: str | None = None,
+        learned_scope: str | None = None,
+    ) -> dict[str, Any]:
+        """POST /memory/learned (SM-LEARNED-TOOLS-1). The workspace comes from the session, never the body."""
+        fields = {
+            "category": category,
+            "incident_link": incident_link,
+            "learned_scope": learned_scope,
+        }
+        body = {
+            "content": content,
+            **{k: v for k, v in fields.items() if v is not None},
+        }
+        return self._strip_scope(
+            self._decision_request("POST", "/memory/learned", json=body)
+        )
+
+    def add_constraint(
+        self,
+        content: str,
+        *,
+        domain: str | None = None,
+        source: str | None = None,
+        expires_at: str | None = None,
+    ) -> dict[str, Any]:
+        """POST /memory/constraints (SM-LEARNED-TOOLS-1). The workspace comes from the session, never the body."""
+        fields = {"domain": domain, "source": source, "expires_at": expires_at}
+        body = {
+            "content": content,
+            **{k: v for k, v in fields.items() if v is not None},
+        }
+        return self._strip_scope(
+            self._decision_request("POST", "/memory/constraints", json=body)
+        )
+
     def decision_create(self, content: str, **kwargs: Any) -> dict[str, Any]:
         """POST /memory/decisions/create."""
         body: dict[str, Any] = {
