@@ -40,7 +40,9 @@ def remote_tools(tmp_path, monkeypatch):
     prefix = "test_sm_procedure_" + uuid4().hex
     graph_name = prefix + "_graph"
     mongo_port = int(os.environ.get("SMARTMEMORY_PROCEDURE_TEST_MONGO_PORT", "19080"))
-    mongo = MongoClient(f"mongodb://127.0.0.1:{mongo_port}", serverSelectionTimeoutMS=3000)
+    mongo = MongoClient(
+        f"mongodb://127.0.0.1:{mongo_port}", serverSelectionTimeoutMS=3000
+    )
     db = mongo[prefix]
     repo = create_workspace_repository(db=db)
     monkeypatch.setattr(

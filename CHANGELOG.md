@@ -1,5 +1,7 @@
 ## Unreleased - SM-PROCEDURE-TYPE-1 + SM-PROCEDURE-MCP-1 (2026-11-06)
 
+- Format the configurable Mongo fixture construction consistently with the repository formatter.
+
 - Allow the real procedure fixture to select its disposable Mongo port with SMARTMEMORY_PROCEDURE_TEST_MONGO_PORT when the original test stack is unavailable.
 
 - Register caller-owned FalkorDB backends in the real procedure test fixture so teardown closes resolver workers before deleting the test graph.
