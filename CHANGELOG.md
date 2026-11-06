@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- DRIFT-V3-DHRUV-BOUNDARIES-1: use separate sentences for the customer-facing supersede effective-date guidance.
+
 - DRIFT-V3-DHRUV-BOUNDARIES-1: port `memory_supersede` to local, remote and hosted tools with compensated `valid_from` forwarding. Explain dated replacement through `memory_save`, preserve `valid_at` resolution labels, and expose existing scoped search selectors on the hosted override. Reuse scoped-validity ISO datetime validation. PRO tools increase from 72 to 73, PRO_PLUS from 103 to 104, hosted from 27 to 28.
 
 - SM-SCOPED-VALIDITY-1 U12: add exact-site `business_scope` and business-time `valid_at` to memory search and decision reads in local, remote and hosted MCP modes. Forward `scope_go_lives` on decision creation and replacement, and `valid_from` on legacy replacement. Preserve independent transaction history, sponsor fallback, selected identity and resolution diagnostics. Validate shared wire inputs before backend resolution, refuse qualifiers on unsupported reads, surface typed schedule/history errors, and describe site-only replacements as scheduled amendments. Golden tests use registered tools with real Lite storage and an authenticated local service.

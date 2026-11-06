@@ -1172,7 +1172,7 @@ def register_pro(mcp):
         The old version is retained as replaced history. History visibility
         follows the normal search gates. ``reason`` says why it changed.
         ``valid_from`` (ISO datetime, e.g.
-        2026-04-20T00:00:00Z) is when the new version takes effect; the old version's
+        2026-04-20T00:00:00Z) is when the new version takes effect. The old version's
         validity ends on that date.
         """
         options = scoped_options(valid_from=valid_from)
