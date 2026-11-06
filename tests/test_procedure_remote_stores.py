@@ -53,7 +53,8 @@ def remote_tools(tmp_path, monkeypatch):
         "memory_service.services.retrieval_policy.get_shared_mongo_db", lambda: db
     )
     scopes, facades, memories, owned_backends = {}, {}, [], []
-    graph_db = FalkorDB(host="127.0.0.1", port=19078)
+    graph_port = int(os.environ.get("FALKORDB_PORT", "1"))
+    graph_db = FalkorDB(host="127.0.0.1", port=graph_port)
     graph_before = set(graph_db.list_graphs())
     databases_before = set(mongo.list_database_names())
     try:
@@ -92,7 +93,7 @@ def remote_tools(tmp_path, monkeypatch):
                 graph_name=graph_name,
                 scope_provider=scope,
                 host="127.0.0.1",
-                port=19078,
+                port=graph_port,
             )
             owned_backends.append(backend)
             graph = SmartGraph(

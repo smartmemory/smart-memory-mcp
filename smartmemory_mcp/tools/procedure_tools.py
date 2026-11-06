@@ -27,6 +27,11 @@ class RemoteProcedureStore:
 
     def __init__(self, backend: Any) -> None:
         self.backend = backend
+        # Bind authority before the first request. A parallel switch affects only
+        # later operations, never this operation's writes, pages or readback.
+        self.workspace_id = backend.active_workspace_id
+        if not self.workspace_id or not self.workspace_id.strip():
+            raise RuntimeError("Procedure operation refused: no active workspace")
         self._cursors: dict[tuple[str, str], tuple[int, str | None]] = {}
 
     def add(self, content: str, memory_type: str, metadata: dict) -> str:
@@ -35,6 +40,7 @@ class RemoteProcedureStore:
         result = self.backend.request(
             "POST",
             "/memory/add",
+            workspace_id=self.workspace_id,
             json={
                 "content": content,
                 "memory_type": memory_type,
@@ -60,10 +66,12 @@ class RemoteProcedureStore:
         return item_id
 
     def get(self, item_id: str) -> dict | None:
-        return self.backend.get(item_id)
+        return self.backend.get(item_id, workspace_id=self.workspace_id)
 
     def update(self, item_id: str, *, metadata: dict) -> Any:
-        result = self.backend.update(item_id, metadata=metadata)
+        result = self.backend.update(
+            item_id, metadata=metadata, workspace_id=self.workspace_id
+        )
         if isinstance(result, dict) and result.get("error"):
             raise RuntimeError("Procedure update refused by service")
         return result
@@ -88,7 +96,9 @@ class RemoteProcedureStore:
         }
         if cursor is not None:
             params["cursor"] = cursor
-        result = self.backend.request("GET", "/memory/list", params=params)
+        result = self.backend.request(
+            "GET", "/memory/list", params=params, workspace_id=self.workspace_id
+        )
         if (
             not isinstance(result, dict)
             or result.get("error")
