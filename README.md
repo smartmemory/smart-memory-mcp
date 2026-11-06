@@ -236,3 +236,5 @@ Quiesce old writers before first-open indexing. Verify the engine capability pin
 Keep your existing local `smartmemory` connection. Add `claude mcp add --transport http smartmemory-company https://mcp.smartmemory.ai/mcp` and authenticate with your own company-org login. Check `whoami` for the expected tenant, use `switch_workspace` with the project's paired Workspace ID, then check again. Recheck after reconnect because selection is session-scoped. The owner and Kyle authenticate separately. No local-memory upload or local backend switch is needed. Hosted Team responses use `team_id`. Independent Workspace selection is outside this change. Live OAuth and two-user access acceptance remain required.
 
 `memory_ask(question, limit=5, reasoning=True)` uses the web app's Answer mode and returns the answer, evidence, reasoning, and relations.
+
+A lost add receipt reports an unconfirmed write outcome. The memory may already exist. Check search or the memory list before retrying. Adds allow 120 seconds for the extraction pipeline, matching ingestion.

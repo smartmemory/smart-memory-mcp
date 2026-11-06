@@ -1,7 +1,7 @@
 """RemoteBackend — httpx client to the SmartMemory hosted API.
 
 Extracted from server.py. Session state is instance-level (not module globals).
-_request() never raises — returns error dicts on all failure modes.
+_request() returns error dicts except hosted auth failures and unconfirmed add outcomes.
 """
 
 from __future__ import annotations
@@ -197,6 +197,17 @@ def is_missing_scope(result: Any) -> bool:
     )
 
 
+class WriteOutcomeUnknown(RuntimeError):
+    """The add may have committed before the transport lost its receipt."""
+
+    def __init__(self):
+        super().__init__(
+            "SmartMemory write outcome is unconfirmed: the connection ended before a receipt arrived. "
+            "The memory may have been saved. Check memory_search or memory_list before retrying "
+            "to avoid a duplicate."
+        )
+
+
 class RemoteBackend(BackendCapabilities):
     # POST /memory/add defaults use_pipeline=True service-side, so add() runs extraction.
     add_runs_extraction = True
@@ -354,7 +365,7 @@ class RemoteBackend(BackendCapabilities):
         timeout: int = 30,
         **kwargs: Any,
     ) -> Any:
-        """Execute an API request. Never raises — returns error dict on any failure."""
+        """Execute a request. Unconfirmed adds and hosted auth failures raise explicitly."""
         try:
             headers = kwargs.pop("headers", None) or self._headers(workspace_id)
             r = self._send(
@@ -366,6 +377,14 @@ class RemoteBackend(BackendCapabilities):
             )
             r.raise_for_status()
             return r.json() if r.status_code != 204 else None
+        except (httpx.ReadTimeout, httpx.WriteTimeout, httpx.ReadError,
+                httpx.WriteError, httpx.RemoteProtocolError) as exc:
+            if method.upper() == "POST" and path == "/memory/add":
+                # A lost response is not proof of a failed write. Never retry or
+                # turn this into the generic "backend not reachable" diagnosis.
+                logger.warning("Add receipt lost (outcome=unconfirmed, error=%s)", type(exc).__name__)
+                raise WriteOutcomeUnknown() from None
+            return {"error": f"Request failed: {exc}"}
         except httpx.ConnectError:
             return {
                 "error": f"SmartMemory API unreachable at {self._api_url}. Check SMARTMEMORY_API_URL."
@@ -854,6 +873,7 @@ class RemoteBackend(BackendCapabilities):
                 "/memory/add",
                 workspace_id=kwargs.get("workspace_id") or None,
                 json=body,
+                timeout=120,
             )
             or {}
         )

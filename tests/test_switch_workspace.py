@@ -1134,7 +1134,7 @@ def _property_names(schema: Any) -> set[str]:
 @pytest.mark.parametrize(
     ("server", "listing", "count"),
     # WS-ROUTING-5: + list_workspaces on both servers; DHRUV-CODING-RULE-P0-1: + memory_supersede.
-    [("stdio", _stdio_listing, 102), ("hosted", _hosted_listing, 30)],
+    [("stdio", _stdio_listing, 103), ("hosted", _hosted_listing, 31)],
 )
 def test_the_listing_has_no_tenant_selector_and_team_only_on_the_alias(
     server, listing, count

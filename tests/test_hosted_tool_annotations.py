@@ -37,7 +37,7 @@ def test_hosted_tools_have_explicit_directory_annotations() -> None:
 
     assert set(by_name) == set(HOSTED_TOOLS)
     assert (
-        len(by_name) == 30
+        len(by_name) == 31
     )  # MCP-SWITCH-WORKSPACE-1: + switch_workspace; WS-ROUTING-5: + list_workspaces; DHRUV-CODING-RULE-P0-1: + memory_supersede
     for name, tool in by_name.items():
         assert tool.title, f"{name} is missing a title"
@@ -55,3 +55,4 @@ def test_hosted_tools_have_explicit_directory_annotations() -> None:
     assert by_name["code_upload"].annotations.destructive_hint is True
     assert by_name["memory_delete"].annotations.destructive_hint is True
     assert by_name["memory_search"].annotations.read_only_hint is True
+    assert by_name["memory_ask"].annotations.read_only_hint is True

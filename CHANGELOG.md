@@ -1,5 +1,7 @@
 # Changelog
 
+- DHRUV-HOSTED-MCP-PARITY-1 (c-e): regressions cover real stored conflicts and persisted workspace switching. Add now shares ingestion's 120-second pipeline deadline. A lost add receipt reports an unconfirmed outcome and possible saved memory instead of claiming the backend was unreachable, with no automatic retry.
+
 - DHRUV-HOSTED-MCP-PARITY-1 (b): recall uses the web search route ranking with a default budget of 10 and full memory text. Remove the recent/semantic split that underfilled results and displaced relevant decisions.
 
 - DHRUV-HOSTED-MCP-PARITY-1 (a): expose `memory_ask` on hosted and standalone MCP using the existing web Answer route and core implementation. Preserve full evidence and provider errors.
