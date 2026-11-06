@@ -1,5 +1,9 @@
 - SM-ASOF-DECISIONS-1 (feat, 2026-11-04; pairs with core, common and service on `wk/SM-ASOF-DECISIONS-1`): `as_of: Optional[str]` (ISO 8601; omit for now) on `decision_get`, `decision_list`, `decision_search`, `decision_provenance`, `memory_policy_bundle` and `memory_recall_pack`, through both backends. New `tools/common.checked_as_of` refuses an unparseable value with a `ToolError` naming it before any backend call, never a silent "now". RemoteBackend sends `as_of` as a query param on the GET routes and a body field on `POST /memory/recall/pack`, only when set (the undated requests are unchanged). LocalBackend sends a dated read through the SmartMemory facade (`get_decision`, `get_active_decisions`, `get_decisions_about`, `get_decision_provenance`, `compile_policy_bundle(as_of=)`), which binds its history read gate; an undated read is the call shipped before. Local-mode `memory_policy_bundle` on a real Lite store still needs SM-LOCAL-TOOLS-1 (the Lite workspace scope). Tests: new `tests/test_decision_tools_as_of.py` (remote request shapes with and without `as_of`, ToolError per tool, local routing through the facade, and the D1 -> D2 -> retract headline on a real Lite store through LocalBackend).
 
+## Unreleased - RECALL-CONFLICT-FLAG-1 continuation
+
+- Preserve conflict evidence across output modes and forward strict local, remote and hosted reads.
+
 
 # Changelog
 
