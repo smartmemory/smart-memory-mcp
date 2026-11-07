@@ -1,3 +1,7 @@
+## Unreleased - RECALL-CONFLICT-FLAG-1 D-0139 dependency repair
+
+- Revalidate the restored adapter against its fixed core dependency and retain its typed conflict evidence boundary.
+
 ## Unreleased - D-0139 gate rollback: SM-RECALL-PROFILES-1 (2026-11-07)
 
 - Exclude the side-branch merge after its paired gate introduced a failure. Earlier entries remain as history. See REL-2.0-MERGE-D0139-1/gates/smart-memory-mcp-bisection.json.
