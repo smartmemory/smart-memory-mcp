@@ -267,3 +267,43 @@ Keep your existing local `smartmemory` connection. Add `claude mcp add --transpo
 `memory_supersede` accepts `scope_go_lives` or the legacy `valid_from`. A scheduled amendment returns its accepted receipt, including `status`, `scope_go_lives` and `recorded_at`, as defined in `SM-SCOPED-VALIDITY-1/scoped-validity-contract.json`. Undated replacements retain the existing confirmation.
 
 If an add loses its response after submission, `WriteOutcomeUnknown` means the memory may have been saved. Check `memory_search` or `memory_list` before retrying to avoid duplicates. The client does not retry the write. Recall uses the full query budget and returns full evidence content.
+
+
+### Reader recall presets (SM-RECALL-PROFILES-1)
+
+Use `recall_pack(preset="brief")` in core or `memory_recall_pack(preset="brief")`
+over MCP. A reader preset selects ordered sections and a default token budget.
+Pass `budget_tokens` to override the default.
+
+| Preset | Default tokens | Sections in priority order |
+|---|---:|---|
+| `brief` | 2000 | constraints, active_plan, anchors, learned, tier1_user |
+| `resume` | 3000 | active_plan, anchors, last_session, snapshot, constraints, learned |
+| `review` | 4000 | constraints, learned, tier1_user, notes |
+| `pane` | 600 | constraints, active_plan, anchors, last_session |
+
+`preset` and explicit `sections` are mutually exclusive. Calls without a reader
+preset, including `wakeup`, still require an explicit budget. The manifest names
+the preset, resolved budget and section caps. Budget loss and sections unavailable
+for `as_of` reads retain their WARNING logs and manifest accounting. Search agent
+recall profiles continue to control memory-type weights independently.
+
+MCP expands the four reader presets into the existing `sections` and `cap_tokens`
+request fields for local, remote and hosted calls. Remote and hosted use requires
+the SM-LEARNED-TOOLS-1 service dependency for learned and constraint sections.
+## Human procedure tools
+
+SM-PROCEDURE-TYPE-1 and SM-PROCEDURE-MCP-1 add six stdio tools in every tier:
+
+- `procedure_create(name, steps, expected_outcome, description="", preconditions=None, candidate=False)`
+- `procedure_list(task=None, status="active", limit=20)`
+- `procedure_get(procedure_id)`
+- `procedure_promote(procedure_id)`
+- `procedure_dismiss(procedure_id, reason="")`
+- `procedure_record_outcome(procedure_id, success, note="")`
+
+Both local and remote stdio modes need a matching `smartmemory-core` installation containing `smartmemory.procedures.human`. These paired post-cut branches must be used together until released. Hosted exposure awaits its explicit surface audit.
+
+Procedures are structured human runbooks with ordered steps, preconditions and expected outcomes. Create active runbooks or candidates, explicitly promote candidates and dismiss obsolete procedures. Task filtering matches active runbooks by token overlap. Recorded successes reinforce confidence and failures weaken it, with the latest 20 outcomes returned. These candidate IDs name saved human runbooks. Ingestion recipe cluster IDs belong to the existing REST recipe workflow.
+
+The backend supplies workspace authority. The tools accept no workspace, tenant or user override. Remote mode reuses existing scoped REST CRUD with direct add, preserving the procedure body. No steps are executed by these tools.

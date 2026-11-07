@@ -109,6 +109,12 @@ class TestResolveTier:
 
 FREE_TOOLS = sorted(
     [
+        "procedure_create",
+        "procedure_get",
+        "procedure_list",
+        "procedure_promote",
+        "procedure_dismiss",
+        "procedure_record_outcome",
         "login",
         "whoami",
         "list_workspaces",
