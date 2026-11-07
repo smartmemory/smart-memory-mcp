@@ -71,6 +71,7 @@ class MemoryResult(TypedDict, total=False):
     # PLAT-AUDITABLE-MEMORY-1 gap #2 — "resolved" | "unresolved" | "no_chain",
     # set only on as_of_date searches. "unresolved" means present-day content
     # is standing in for a historical belief; an agent must not cite it as history.
+    conflict: Optional[dict]
     as_of_resolution: Optional[str]
     # Business-time resolution, distinct from transaction history.
     valid_at_resolution: Optional[str]
@@ -158,6 +159,7 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         entities=d.get("entities"),
         relations=d.get("relations"),
         drift_warnings=d.get("drift_warnings"),
+        conflict=d.get("conflict"),
         as_of_resolution=d.get("as_of_resolution"),
         valid_at_resolution=d.get("valid_at_resolution")
         or (d.get("metadata") or {}).get("valid_at_resolution"),
