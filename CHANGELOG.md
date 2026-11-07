@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- SM-RECALL-PROFILES-1 fix round 1: Rebase reader presets and their learned-tools dependency onto current 2.0. Preserve stdio workspace discovery and the memory_recall default of 10. Pin the combined FREE/PRO/PRO+ tool counts at 37/77/108.
+
+- SM-RECALL-PROFILES-1 (G8): add brief, resume, review and pane recall-pack presets with ordered sections and default token budgets, explicit budget overrides, and existing loss diagnostics. Expand reader presets through the existing sections/caps wire shape for local, remote and hosted tools without requiring core in remote installs.
+
+
+- SM-LEARNED-TOOLS-1 (G7, 2026-11-04; pairs with core, common, service, client, sdk-js and docs on `wk/SM-LEARNED-TOOLS-1`): **new tools `memory_learn(content, category?, incident_link?, learned_scope?)` and `memory_constrain(content, domain?, source?, expires_at?)` record a lesson and a hard limit, in local mode and on the hosted server.** Both are FREE tier like the decision tools and are on the hosted allowlist (hosted now advertises 28 tools; `memory_save`, `memory_update` and `memory_delete` were already hosted writes). `memory_recall_pack` accepts the two new opt-in sections `learned` and `constraints` (an expired constraint is left out). `LocalBackend.add_learning` / `add_constraint` run on `self._mem` (the real SmartMemory, never the wrapper); `RemoteBackend` posts to `POST /memory/learned` and `POST /memory/constraints`. Both backends take explicit fields only, so a root `scope` or `workspace_id` is a TypeError and never reaches a node. Tests: `tests/test_learned_tools.py` (real Lite store + remote body rows), hosted allowlist, annotation, tier and route-contract rows. Needs the service routes and core `learned_scope` from the same unit.
+
 - MCP-2.0-STDIO-LIST-WORKSPACES-TWIN-1: restore read-only stdio `list_workspaces` in every tier, with the current workspace marked, actionable lookup failures and the same Lite refusal as main. Keep 2.0 workspace headers unchanged. Stdio FREE/PRO/PRO+ counts are 35/75/106.
 - MCP-2.0-RECALL-TOPK-1 (2026-11-06; port of main c69ee3e, the missed hunk): stdio `memory_recall` defaults `top_k` to 10 (was 5), matching 1.x and the hosted tool. Test: `tests/test_get_working_context_standalone.py::test_memory_recall_default_top_k_is_10`.
 

@@ -63,7 +63,9 @@ def _run_snippet(env: dict[str, str]) -> dict:
     # Parse the last line (skip any warnings on stderr)
     output = result.stdout.strip().splitlines()[-1]
     data = json.loads(output)
-    assert "list_workspaces" in data["names"]  # Available on stdio in every tier.
+    assert (
+        "list_workspaces" in data["names"]
+    )  # Available on stdio in every tier.
     return data
 
 
@@ -129,6 +131,8 @@ FREE_TOOLS = sorted(
         "read_around",  # CORE-RECALL-CENTERED-1 Phase 2
         "memory_recall_pack",  # CORE-RECALL-BUDGET-1 — budgeted context assembly, FREE by design
         "memory_policy_bundle",  # GOV-STRATUM-SEAM-1 P1 — required before a runner plans
+        "memory_learn",  # SM-LEARNED-TOOLS-1 — record a lesson, FREE like the decision suite
+        "memory_constrain",  # SM-LEARNED-TOOLS-1 — record a constraint
         # DEV-ONBOARD-FU-MCP-DECISION-TOOLS-FREE-1 — the decision suite is FREE
         # (tests/test_decision_tools_free_tier.py pins each name).
         "decision_create",
@@ -150,22 +154,24 @@ FREE_TOOLS = sorted(
 )
 
 
+# Stacked SM-LEARNED-TOOLS-1 adds exactly memory_learn and memory_constrain
+# to every tier. FREE_TOOLS pins the exact set, not only its count.
 class TestToolRegistration:
     def test_free_tier_tool_count(self):
-        """FREE tier registers exactly 35 tools (18 + the 15 decision-suite tools; MCP-SWITCH-WORKSPACE-1 added switch_workspace; SM-EVIDENCE-TYPE-1 added decision_link_evidence + evidence_record)."""
+        """FREE tier registers exactly 37 tools (18 + the 15 decision-suite tools; MCP-SWITCH-WORKSPACE-1 added switch_workspace; SM-EVIDENCE-TYPE-1 added decision_link_evidence + evidence_record)."""
         env = _clean_env()
         data = _run_snippet(env)
-        assert data["count"] == 35, (
-            f"Expected 35 FREE tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 37, (
+            f"Expected 37 FREE tools, got {data['count']}: {data['names']}"
         )
         assert data["names"] == FREE_TOOLS
 
     def test_pro_tier_tool_count(self):
-        """PRO tier registers exactly 75 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed)."""
+        """PRO tier registers exactly 77 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed)."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
         data = _run_snippet(env)
-        assert data["count"] == 75, (
-            f"Expected 75 remote PRO tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 77, (
+            f"Expected 77 remote PRO tools, got {data['count']}: {data['names']}"
         )
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]
@@ -177,13 +183,13 @@ class TestToolRegistration:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
 
     def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 106 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed)."""
+        """PRO_PLUS tier registers exactly 108 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed)."""
         env = _clean_env(
             SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true"
         )
         data = _run_snippet(env)
-        assert data["count"] == 106, (
-            f"Expected 106 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 108, (
+            f"Expected 108 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
         )
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]
