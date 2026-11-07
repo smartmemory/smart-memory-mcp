@@ -29,21 +29,6 @@ from smartmemory_mcp.workspace_select import SwitchResult, refuse, resolve_works
 logger = logging.getLogger(__name__)
 
 
-def _raise_recall_conflict(response: httpx.Response) -> None:
-    """Preserve strict read refusals as MCP tool errors, never successful error dicts."""
-    if response.status_code != 409:
-        return
-    try:
-        body = response.json()
-    except ValueError:
-        return
-    detail = body.get("detail") if isinstance(body, dict) else None
-    if isinstance(detail, dict) and detail.get("error") == "recall_conflict":
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError("recall_conflict: " + str(detail.get("message", "Strict recall refused")))
-
-
 @dataclass(frozen=True)
 class LoginResult:
     """Outcome of ``RemoteBackend.login``: ``ok`` only when the service confirmed the key."""
@@ -227,7 +212,6 @@ class RemoteBackend(BackendCapabilities):
                 "error": f"SmartMemory API unreachable at {self._api_url}. Check SMARTMEMORY_API_URL."
             }
         except httpx.HTTPStatusError as e:
-            _raise_recall_conflict(e.response)
             self._on_http_error(e.response)
             if e.response.status_code == 401:
                 self._on_unauthorized(e.response)
@@ -859,7 +843,7 @@ class RemoteBackend(BackendCapabilities):
         to what the SDKs send, so one route body shape serves every caller.
         """
         body: dict[str, Any] = {"budget_tokens": budget_tokens}
-        for key in ("query", "sections", "preset", "as_of", "fail_if_conflicted"):
+        for key in ("query", "sections", "preset", "as_of"):
             if kwargs.get(key) is not None:
                 body[key] = kwargs[key]
         return self._request("POST", "/memory/recall/pack", json=body)
@@ -906,8 +890,6 @@ class RemoteBackend(BackendCapabilities):
         # blueprint C3: a missed allowlist entry is a silent param drop).
         if kwargs.get("as_of_date"):
             body["as_of_date"] = kwargs["as_of_date"]
-        if "fail_if_conflicted" in kwargs:
-            body["fail_if_conflicted"] = kwargs["fail_if_conflicted"]
         if kwargs.get("as_of_strict"):
             body["as_of_strict"] = True
         if kwargs.get("include_superseded"):
@@ -955,7 +937,6 @@ class RemoteBackend(BackendCapabilities):
                 "error": f"SmartMemory API unreachable at {self._api_url}. Check SMARTMEMORY_API_URL."
             }
         except httpx.HTTPStatusError as e:
-            _raise_recall_conflict(e.response)
             self._on_http_error(e.response)
             if e.response.status_code == 401:
                 self._on_unauthorized(e.response)

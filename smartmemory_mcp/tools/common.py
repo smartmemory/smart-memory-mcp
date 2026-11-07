@@ -1,6 +1,5 @@
 """Shared utilities for unified MCP tool modules."""
 
-import json
 import functools
 import logging
 from typing import Any, Callable
@@ -111,10 +110,6 @@ def graceful(func):
                 f"Detail: {e}"
             )
         except Exception as e:
-            if type(e).__name__ == "RecallConflictError":
-                from fastmcp.exceptions import ToolError
-
-                raise ToolError("recall_conflict: " + str(e)) from e
             code = getattr(e, "code", None)
             if code in {
                 "invalid_scoped_validity",
@@ -235,7 +230,4 @@ def resolution_text(value):
     if resolution is not None:
         return f"scoped_validity_resolution: {resolution}"
     label = value.get("as_of_resolution")
-    lines = [] if label is None else [f"as_of_resolution: {label}"]
-    if conflict := value.get("conflict"):
-        lines.append("conflict: " + json.dumps(conflict, sort_keys=True))
-    return "\n".join(lines)
+    return "" if label is None else f"as_of_resolution: {label}"
