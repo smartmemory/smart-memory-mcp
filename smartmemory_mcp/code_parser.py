@@ -8,9 +8,14 @@ Parser adapted from smart-memory-core/smartmemory/code/parser.py
 
 import ast
 import os
+import logging
+from pathlib import Path
 from typing import Any
 from dataclasses import dataclass, field
 
+from smartmemory_mcp.code_paths import read_python_source
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -99,8 +104,7 @@ class CodeParser:
         rel_path = os.path.relpath(abs_path, self.repo_root)
         result = ParseResult(file_path=rel_path)
         try:
-            with open(abs_path, "r", encoding="utf-8") as f:
-                source = f.read()
+            source = read_python_source(abs_path, self.repo_root).decode("utf-8")
             tree = ast.parse(source, filename=file_path)
         except SyntaxError as e:
             result.errors.append(f"SyntaxError in {rel_path}: {e}")
@@ -344,10 +348,30 @@ def collect_python_files(directory, exclude_dirs=None, *, errors=None):
 
     py_files = []
     for root, dirs, files in os.walk(directory, onerror=onerror):
-        dirs[:] = [
-            d for d in dirs if d not in exclude_dirs and not d.endswith(".egg-info")
-        ]
+        kept = []
+        for name in dirs:
+            if name in exclude_dirs or name.endswith(".egg-info"):
+                continue
+            path = os.path.join(root, name)
+            if os.path.islink(path):
+                if not Path(path).resolve().is_relative_to(Path(directory).resolve()):
+                    message = f"Code input refused for {path}: directory symlink outside the checkout root"
+                    logger.warning("%s", message)
+                    if errors is None:
+                        raise ValueError(message)
+                    errors.append(message)
+                continue  # In-root targets are walked at their real path, without loops or duplicate facts.
+            kept.append(name)
+        dirs[:] = kept
         for f in files:
             if f.endswith(".py"):
-                py_files.append(os.path.join(root, f))
+                path = os.path.join(root, f)
+                try:
+                    read_python_source(path, directory, read=False)
+                except ValueError as exc:
+                    if errors is None:
+                        raise
+                    errors.append(str(exc))
+                    continue
+                py_files.append(path)
     return sorted(py_files)
