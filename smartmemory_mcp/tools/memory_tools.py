@@ -156,6 +156,7 @@ _MODEL_ITEM_FIELDS = frozenset(
         "derived_from",
         "reference",
         "as_of_resolution",
+        "conflict",
         "valid_at_resolution",
         "score_breakdown",
         # U5.22: extraction status of a pending/merged hit (gate-ON arm only).
@@ -536,6 +537,7 @@ def register_free(mcp):
         cite: bool = False,
         as_of_date: Optional[str] = None,
         as_of_strict: bool = False,
+        fail_if_conflicted: bool = False,
         include_superseded: bool = False,
         include_retracted: bool = False,
         include_archived: bool = False,
@@ -545,6 +547,9 @@ def register_free(mcp):
         valid_at: Optional[str] = None,
     ):
         """Search memories using semantic similarity with optional hybrid mode.
+
+        fail_if_conflicted refuses supported disagreements in the returned pool.
+        Conflict warnings identify scoped peers, without deciding which claim is true.
 
         hop_strategy: consensus follows entities several top results agree on; relevance
         follows best-result entities and one-off bridges; semantic asks an LLM.
@@ -598,6 +603,7 @@ def register_free(mcp):
             budget_ms=budget_ms,
             as_of_date=as_of_date,
             as_of_strict=as_of_strict,
+            **({"fail_if_conflicted": True} if fail_if_conflicted else {}),
             include_superseded=include_superseded,
             include_retracted=include_retracted,
             include_archived=include_archived,
@@ -1043,6 +1049,7 @@ def register_free(mcp):
         sections: Optional[list] = None,
         preset: Optional[str] = None,
         as_of: Optional[str] = None,
+        fail_if_conflicted: bool = False,
         business_scope: Optional[Dict[str, Any]] = None,
         valid_at: Optional[str] = None,
     ) -> dict:
@@ -1088,6 +1095,7 @@ def register_free(mcp):
             query=query,
             sections=sections,
             preset=preset,
+            **({"fail_if_conflicted": True} if fail_if_conflicted else {}),
             **dated(as_of),
         )
 
