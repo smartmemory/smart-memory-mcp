@@ -7,8 +7,6 @@ from typing import Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 
-from smartmemory_mcp.recall_presets import PRESETS as READER_PRESETS, PRESET_BUDGETS
-
 from smartmemory_mcp.backends.models import (
     none_found,
     partial_note,
@@ -41,10 +39,6 @@ from .common import (
 from .lexical_contract import validate_channel_weights
 
 logger = logging.getLogger(__name__)
-
-
-# Mirrored from smartmemory.learned.declaration.VALID_LEARNED_SCOPES (docs SM-LEARNED-TOOLS-1 contract.json).
-_LEARNED_SCOPES = ("repo", "workspace", "global")
 
 
 def _core_marks() -> bool:
@@ -1028,12 +1022,10 @@ def register_free(mcp):
         "notes",
         "hot_topics",
         "last_session",
-        "learned",
-        "constraints",
     )
 
     # Mirrored from smartmemory.recall_pack.PRESETS.
-    _RECALL_PRESETS = ("wakeup", *READER_PRESETS)
+    _RECALL_PRESETS = ("wakeup",)
 
     @mcp.tool(
         title="Build a recall pack",
@@ -1046,7 +1038,7 @@ def register_free(mcp):
     )
     @graceful
     def memory_recall_pack(
-        budget_tokens: Optional[int] = None,
+        budget_tokens: int,
         query: Optional[str] = None,
         sections: Optional[list] = None,
         preset: Optional[str] = None,
@@ -1062,9 +1054,6 @@ def register_free(mcp):
         truncated or dropped (CORE-RECALL-BUDGET-1).
 
         ``query`` ranks each section by relevance; omit it to rank by recency.
-        Reader ``preset`` values select sections and a default budget: ``brief``
-        (2000), ``resume`` (3000), ``review`` (4000), ``pane`` (600). An explicit
-        ``budget_tokens`` overrides that default. Other calls require a budget.
         ``sections`` overrides the default list/order/caps as ``{name, cap_tokens}``
         entries. ``preset`` selects a named section set instead: pass ``"wakeup"`` with a
         small budget (~300 tokens) at session start for an L1 orientation card (active
@@ -1073,13 +1062,12 @@ def register_free(mcp):
         ``as_of`` (ISO 8601; omit for now) answers every section as of that instant:
         nothing created later; a section that cannot (active plan, anchors) is left
         out and named in ``manifest.dropped_sections``.
-        ``learned`` and ``constraints`` are opt-in sections (SM-LEARNED-TOOLS-1): name them in
-        ``sections`` to pack the lessons and hard limits recorded with ``memory_learn`` and
-        ``memory_constrain``; an expired constraint is left out.
         Returns ``{block, manifest}``.
         """
         refuse_scoped_options(business_scope, valid_at)
         as_of = checked_as_of(as_of)
+        if not isinstance(budget_tokens, int) or budget_tokens < 1:
+            return {"error": "`budget_tokens` must be an integer >= 1."}
         if preset is not None:
             if sections is not None:
                 return {"error": "pass either `preset` or `sections`, not both."}
@@ -1087,14 +1075,6 @@ def register_free(mcp):
                 return {
                     "error": f"unknown preset {preset!r}; known presets: {', '.join(_RECALL_PRESETS)}"
                 }
-            if budget_tokens is None:
-                budget_tokens = PRESET_BUDGETS.get(preset)
-        if (
-            not isinstance(budget_tokens, int)
-            or isinstance(budget_tokens, bool)
-            or budget_tokens < 1
-        ):
-            return {"error": "`budget_tokens` must be an integer >= 1."}
         for entry in sections or []:
             name = (entry or {}).get("name")
             if name not in _RECALL_SECTIONS:
@@ -1102,25 +1082,14 @@ def register_free(mcp):
                     "error": f"unknown section {name!r}; known sections: {', '.join(_RECALL_SECTIONS)}"
                 }
 
-        # Core-free remote installs expand the new presets into the admitted wire
-        # fields. Do the same locally so every MCP transport uses identical caps.
-        reader = preset in READER_PRESETS
-        if reader:
-            sections = [
-                {"name": name, "cap_tokens": max(1, int(budget_tokens * fraction))}
-                for name, fraction in READER_PRESETS[preset]
-            ]
         backend = get_backend()
-        result = backend.recall_pack(
+        return backend.recall_pack(
             budget_tokens=budget_tokens,
             query=query,
             sections=sections,
-            preset=None if reader else preset,
+            preset=preset,
             **dated(as_of),
         )
-        if reader and isinstance(result, dict) and "manifest" in result:
-            result["manifest"]["preset"] = preset
-        return result
 
     @mcp.tool(
         title="Get policy bundle",
@@ -1152,82 +1121,6 @@ def register_free(mcp):
         return get_backend().policy_bundle(
             workflow=workflow, domain=domain, **dated(as_of)
         )
-
-    @mcp.tool(
-        title="Record a lesson learned",
-        annotations=ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=False,
-            openWorldHint=False,
-        ),
-    )
-    @graceful
-    def memory_learn(
-        content: str,
-        category: Optional[str] = None,
-        incident_link: Optional[str] = None,
-        learned_scope: Optional[str] = None,
-    ) -> str:
-        """Record a lesson learned, so later sessions can recall it.
-
-        Use this when a mistake, incident or surprise taught something worth keeping:
-        "never run migrations at peak". Put the lesson in `content` as one or two
-        sentences. `category` is a free-form tag, `incident_link` points at the incident
-        or ticket it came from, and `learned_scope` is where it applies: `repo`,
-        `workspace` or `global`. Read it back with `memory_recall_pack(sections=[{"name":
-        "learned"}])`.
-        """
-        if not isinstance(content, str) or not content.strip():
-            return "Error: `content` must be a non-empty string."
-        if learned_scope is not None and learned_scope not in _LEARNED_SCOPES:
-            return (
-                f"Error: unknown learned_scope {learned_scope!r}; "
-                f"known scopes: {', '.join(_LEARNED_SCOPES)}"
-            )
-        learned = get_backend().add_learning(
-            content,
-            category=category,
-            incident_link=incident_link,
-            learned_scope=learned_scope,
-        )
-        return f"Learned recorded: {learned['item_id']}"
-
-    @mcp.tool(
-        title="Record a constraint",
-        annotations=ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=False,
-            openWorldHint=False,
-        ),
-    )
-    @graceful
-    def memory_constrain(
-        content: str,
-        domain: Optional[str] = None,
-        source: Optional[str] = None,
-        expires_at: Optional[str] = None,
-    ) -> str:
-        """Record a hard limit that later work must respect.
-
-        Use this for a rule that must hold: "never publish an sdist", "no ARQ".
-        Put the rule in `content`. `domain` is its area (compliance, security, infra,
-        release, ...), `source` is who or what set it, and `expires_at` is an ISO-8601
-        time after which it no longer applies (a naive time is read as UTC). Read it
-        back with `memory_recall_pack(sections=[{"name": "constraints"}])`.
-        """
-        if not isinstance(content, str) or not content.strip():
-            return "Error: `content` must be a non-empty string."
-        if expires_at is not None:
-            try:
-                datetime.fromisoformat(expires_at.strip().replace("Z", "+00:00"))
-            except ValueError:
-                return f"Error: `expires_at` {expires_at!r} is not an ISO-8601 time."
-        constraint = get_backend().add_constraint(
-            content, domain=domain, source=source, expires_at=expires_at
-        )
-        return f"Constraint recorded: {constraint['item_id']}"
 
 
 # ---------------------------------------------------------------------------

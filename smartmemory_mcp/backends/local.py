@@ -216,19 +216,6 @@ def _decision_dict(decision: Any) -> dict[str, Any]:
     return decision.to_dict()
 
 
-def _set_fields(**kwargs: Any) -> dict[str, Any]:
-    """The fields the caller set: core's create takes only what was given, never a None."""
-    return {key: value for key, value in kwargs.items() if value is not None}
-
-
-def _parse_expires_at(value: str) -> Any:
-    """An ISO-8601 string to a timezone-aware datetime (a naive time is read as UTC, like the service route)."""
-    from datetime import datetime, timezone
-
-    parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-
-
 class LocalBackend(BackendCapabilities):
     """Wraps smartmemory package for local-mode operations."""
 
@@ -1143,63 +1130,6 @@ class LocalBackend(BackendCapabilities):
             }
         except Exception as exc:
             return {"error": str(exc)}
-
-    # -- Learned lessons and constraints (SM-LEARNED-TOOLS-1) --
-    #
-    # Core's managers take the REAL SmartMemory (``self._mem``), never this wrapper (the decision
-    # precedent below): the managed-type write calls ``sm.add``, which the wrapper would re-wrap.
-
-    def add_learning(
-        self,
-        content: str,
-        *,
-        category: str | None = None,
-        incident_link: str | None = None,
-        learned_scope: str | None = None,
-    ) -> dict[str, Any]:
-        """``SmartMemory.add_learning`` on the real store, serialized to the route's response shape."""
-        learned = self._mem.add_learning(
-            content,
-            **_set_fields(
-                category=category,
-                incident_link=incident_link,
-                learned_scope=learned_scope,
-            ),
-        )
-        return {
-            "item_id": learned.learned_id,
-            "learned_id": learned.learned_id,
-            "content": learned.content,
-            "category": getattr(learned, "category", None),
-            "incident_link": getattr(learned, "incident_link", None),
-            "learned_scope": getattr(learned, "learned_scope", None),
-        }
-
-    def add_constraint(
-        self,
-        content: str,
-        *,
-        domain: str | None = None,
-        source: str | None = None,
-        expires_at: str | None = None,
-    ) -> dict[str, Any]:
-        """``SmartMemory.add_constraint`` on the real store, serialized to the route's response shape."""
-        fields = _set_fields(domain=domain, source=source, expires_at=expires_at)
-        expires_at = fields.get("expires_at")
-        if isinstance(expires_at, str):
-            fields["expires_at"] = _parse_expires_at(expires_at)
-        constraint = self._mem.add_constraint(content, **fields)
-        expires = getattr(constraint, "expires_at", None)
-        return {
-            "item_id": constraint.constraint_id,
-            "constraint_id": constraint.constraint_id,
-            "content": constraint.content,
-            "domain": getattr(constraint, "domain", None),
-            "source": getattr(constraint, "source", None),
-            "expires_at": expires.isoformat()
-            if hasattr(expires, "isoformat")
-            else expires,
-        }
 
     # -- Decision lifecycle (MCP-REMOTE-DECISIONS-1) --
     #

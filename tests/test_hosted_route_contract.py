@@ -38,8 +38,6 @@ TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
     "memory_explain": ("get", "/memory/{memory_id}/explain"),
     "memory_recall_pack": ("post", "/memory/recall/pack"),
     "memory_policy_bundle": ("get", "/memory/policy/bundle"),
-    "memory_learn": ("post", "/memory/learned"),  # SM-LEARNED-TOOLS-1
-    "memory_constrain": ("post", "/memory/constraints"),  # SM-LEARNED-TOOLS-1
     "memory_update": ("patch", "/memory/{item_id}"),
     "memory_ask": ("post", "/memory/ask"),
     "memory_supersede": ("post", "/memory/{item_id}/supersede"),

@@ -111,32 +111,6 @@ class MemoryBackend(Protocol):
         """Compile the active workspace's policy bundle for an enforcement runner."""
         ...
 
-    # --- Learned lessons and constraints (SM-LEARNED-TOOLS-1) --------------------
-
-    def add_learning(
-        self,
-        content: str,
-        *,
-        category: str | None = None,
-        incident_link: str | None = None,
-        learned_scope: str | None = None,
-    ) -> dict[str, Any]:
-        """Record a lesson. Returns ``{item_id, learned_id, content, category, incident_link, learned_scope}``.
-
-        Explicit fields only: a root ``scope`` or ``workspace_id`` is a TypeError, never a stored value."""
-        ...
-
-    def add_constraint(
-        self,
-        content: str,
-        *,
-        domain: str | None = None,
-        source: str | None = None,
-        expires_at: str | None = None,
-    ) -> dict[str, Any]:
-        """Record a constraint (``expires_at`` is ISO-8601). Returns ``{item_id, constraint_id, content, ...}``."""
-        ...
-
     # --- Pipeline ----------------------------------------------------------------
 
     def ingest_code(

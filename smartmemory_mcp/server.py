@@ -1,9 +1,9 @@
 """SmartMemory Unified MCP Server.
 
 Tiered tool registration:
-  FREE  (37 tools) — no login required, includes the decision suite
-  PRO   (77 tools) — after smartmemory login
-  PRO+  (108 tools) — PRO + SMARTMEMORY_MCP_FULL_TOOLS=true
+  FREE  (35 tools) — no login required, includes the decision suite
+  PRO   (75 tools) — after smartmemory login
+  PRO+  (106 tools) — PRO + SMARTMEMORY_MCP_FULL_TOOLS=true
 (Counts are cumulative registered tools, asserted by tests/test_tier_registration.py.)
 
 Backend is independent of tier:

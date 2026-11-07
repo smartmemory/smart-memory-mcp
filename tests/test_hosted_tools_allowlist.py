@@ -183,22 +183,6 @@ def fake_svc_api(
             return ok({"sections": [], "budget_tokens": 100, "tokens_used": 0})
         if path == "/memory/policy/bundle":
             return ok({"policies": [], "workflow": None})
-        if path == "/memory/learned":
-            return ok(
-                {
-                    "item_id": "learned-1",
-                    "learned_id": "learned-1",
-                    "workspace_id": "ws-1",
-                }
-            )
-        if path == "/memory/constraints":
-            return ok(
-                {
-                    "item_id": "constraint-1",
-                    "constraint_id": "constraint-1",
-                    "workspace_id": "ws-1",
-                }
-            )
         if path == "/memory/list":
             return ok({"items": [ITEM], "total": 1})
         if path == "/memory/by-metadata":
@@ -338,7 +322,7 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
 
     assert advertised == set(HOSTED_TOOLS)
     assert (
-        len(advertised) == 37
+        len(advertised) == 35
     )  # SM-SCOPED-VALIDITY-1 six remote decision tools + DRIFT-V3-DHRUV-BOUNDARIES-1 memory_supersede
 
 
@@ -454,20 +438,6 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ("memory_recall_pack", {"budget_tokens": 500, "query": "runbook"}),
     ("memory_policy_bundle", {}),
     ("memory_policy_bundle", {"workflow": "deploy"}),
-    ("memory_learn", {"content": "never run migrations at peak"}),
-    (
-        "memory_learn",
-        {"content": "a lesson", "category": "ops", "learned_scope": "repo"},
-    ),
-    ("memory_constrain", {"content": "never publish an sdist"}),
-    (
-        "memory_constrain",
-        {
-            "content": "a rule",
-            "domain": "release",
-            "expires_at": "2030-01-01T00:00:00Z",
-        },
-    ),
     ("memory_feedback", {"search_session_id": "search:ws:abc", "result_used": []}),
     ("read_around", {"item_id": "mem-1"}),
     (
