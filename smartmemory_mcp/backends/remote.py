@@ -719,9 +719,15 @@ class RemoteBackend(BackendCapabilities):
             return SaveReturn(str(item_id))
         return SaveReturn(str(result))
 
-    def get(self, item_id: str, **kwargs: Any) -> MemoryResult | None:
+    def get(
+        self, item_id: str, *, workspace_id: str | None = None, **kwargs: Any
+    ) -> MemoryResult | None:
         """GET /memory/{item_id}. Returns None only when the item genuinely is absent."""
-        result = self._request("GET", f"/memory/{path_id(item_id, under='/memory/')}")
+        result = self._request(
+            "GET",
+            f"/memory/{path_id(item_id, under='/memory/')}",
+            **({"workspace_id": workspace_id} if workspace_id is not None else {}),
+        )
         if result is None:
             return None
         # A 404 IS genuine absence — keep returning None for it. But an API 403/500
@@ -751,7 +757,9 @@ class RemoteBackend(BackendCapabilities):
             raise RuntimeError(err)
         return result
 
-    def update(self, item_id: str, **kwargs: Any) -> dict[str, Any]:
+    def update(
+        self, item_id: str, *, workspace_id: str | None = None, **kwargs: Any
+    ) -> dict[str, Any]:
         """PATCH /memory/{item_id}.
 
         Supports the CORE-CRUD-UPDATE-1 contract: content/metadata/properties/write_mode
@@ -763,7 +771,10 @@ class RemoteBackend(BackendCapabilities):
                 body[key] = kwargs[key]
         return (
             self._request(
-                "PATCH", f"/memory/{path_id(item_id, under='/memory/')}", json=body
+                "PATCH",
+                f"/memory/{path_id(item_id, under='/memory/')}",
+                json=body,
+                **({"workspace_id": workspace_id} if workspace_id is not None else {}),
             )
             or {}
         )

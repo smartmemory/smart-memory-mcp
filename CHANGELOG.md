@@ -1,3 +1,15 @@
+## Unreleased - SM-PROCEDURE-TYPE-1 + SM-PROCEDURE-MCP-1 (2026-11-06)
+
+- Pin each remote procedure operation to its initial workspace across concurrent session switches, including writes, updates, cursor pages and readback. Refuse operations without a resolved workspace.
+
+- Format the configurable Mongo fixture construction consistently with the repository formatter.
+
+- Allow the real procedure fixture to select its disposable Mongo port with SMARTMEMORY_PROCEDURE_TEST_MONGO_PORT when the original test stack is unavailable.
+
+- Register caller-owned FalkorDB backends in the real procedure test fixture so teardown closes resolver workers before deleting the test graph.
+
+- Add procedure_create, procedure_list, procedure_get, procedure_promote, procedure_dismiss and procedure_record_outcome in all stdio tiers. Local and remote calls reuse the paired core human-procedure manager and scoped CRUD. Remote writes preserve structured bodies through direct add. Hosted exposure awaits its surface audit.
+
 - SM-ASOF-DECISIONS-1 (feat, 2026-11-04; pairs with core, common and service on `wk/SM-ASOF-DECISIONS-1`): `as_of: Optional[str]` (ISO 8601; omit for now) on `decision_get`, `decision_list`, `decision_search`, `decision_provenance`, `memory_policy_bundle` and `memory_recall_pack`, through both backends. New `tools/common.checked_as_of` refuses an unparseable value with a `ToolError` naming it before any backend call, never a silent "now". RemoteBackend sends `as_of` as a query param on the GET routes and a body field on `POST /memory/recall/pack`, only when set (the undated requests are unchanged). LocalBackend sends a dated read through the SmartMemory facade (`get_decision`, `get_active_decisions`, `get_decisions_about`, `get_decision_provenance`, `compile_policy_bundle(as_of=)`), which binds its history read gate; an undated read is the call shipped before. Local-mode `memory_policy_bundle` on a real Lite store still needs SM-LOCAL-TOOLS-1 (the Lite workspace scope). Tests: new `tests/test_decision_tools_as_of.py` (remote request shapes with and without `as_of`, ToolError per tool, local routing through the facade, and the D1 -> D2 -> retract headline on a real Lite store through LocalBackend).
 
 
