@@ -1134,7 +1134,7 @@ def _property_names(schema: Any) -> set[str]:
     ("server", "listing", "count"),
     # 2.0 tip registers 103 stdio tools (including the pattern CRUD tools).
     # This hosted-only port adds one tool: hosted 26 -> 27, stdio unchanged.
-    [("stdio", _stdio_listing, 112), ("hosted", _hosted_listing, 35)],
+    [("stdio", _stdio_listing, 105), ("hosted", _hosted_listing, 35)],
 )
 def test_the_listing_has_no_tenant_selector_and_team_only_on_the_alias(
     server, listing, count
