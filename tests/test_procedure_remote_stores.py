@@ -23,6 +23,7 @@ from smartmemory.stores.vector.backends.usearch import UsearchVectorBackend
 from smartmemory.utils.cache import LocalCache
 from smartmemory_mcp.backends.remote import RemoteBackend
 from smartmemory_mcp.tools import common, procedure_tools
+from ._falkor import falkor_host, falkor_port
 from .test_procedure_tools import call, create
 
 
@@ -39,9 +40,16 @@ def remote_tools(tmp_path, monkeypatch):
 
     prefix = "test_sm_procedure_" + uuid4().hex
     graph_name = prefix + "_graph"
-    mongo_port = int(os.environ.get("SMARTMEMORY_PROCEDURE_TEST_MONGO_PORT", "19080"))
+    # The runner's sidecars are named hosts (MONGODB_HOST, FALKORDB_HOST); the Mac uses
+    # loopback throwaway servers. The conftest socket guard still refuses 9010/9012/9013.
+    mongo_host = os.environ.get("MONGODB_HOST") or "127.0.0.1"
+    mongo_port = int(
+        os.environ.get("SMARTMEMORY_PROCEDURE_TEST_MONGO_PORT")
+        or os.environ.get("MONGODB_PORT")
+        or "19080"
+    )
     mongo = MongoClient(
-        f"mongodb://127.0.0.1:{mongo_port}", serverSelectionTimeoutMS=3000
+        f"mongodb://{mongo_host}:{mongo_port}", serverSelectionTimeoutMS=3000
     )
     db = mongo[prefix]
     repo = create_workspace_repository(db=db)
@@ -55,8 +63,8 @@ def remote_tools(tmp_path, monkeypatch):
         lambda tenant_id, workspace_id: ({}, {}),
     )
     scopes, facades, memories, owned_backends = {}, {}, [], []
-    graph_port = int(os.environ.get("FALKORDB_PORT", "1"))
-    graph_db = FalkorDB(host="127.0.0.1", port=graph_port)
+    graph_host, graph_port = falkor_host(), falkor_port()
+    graph_db = FalkorDB(host=graph_host, port=graph_port)
     graph_before = set(graph_db.list_graphs())
     databases_before = set(mongo.list_database_names())
     try:
@@ -94,7 +102,7 @@ def remote_tools(tmp_path, monkeypatch):
             backend = FalkorDBBackend(
                 graph_name=graph_name,
                 scope_provider=scope,
-                host="127.0.0.1",
+                host=graph_host,
                 port=graph_port,
             )
             owned_backends.append(backend)
