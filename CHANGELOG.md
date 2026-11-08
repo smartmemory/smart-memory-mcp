@@ -1,3 +1,7 @@
+## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 (2026-11-08)
+
+- New PRO+ tools in `smartmemory_mcp/tools/review_tools.py`: `review_queue_list(status, limit, offset)` and `review_queue_settle(review_id, action, reason)` (remote: `GET /memory/reasoning/reviews`, `POST /memory/reasoning/reviews/{id}/settle`, never sends an actor or workspace; local: the core facade, actor `local:mcp`), and `supersession_policy_get()` / `supersession_policy_set('retire'|'propose'|'inherit')` on the session workspace's `review.supersession` setting (remote only, no If-Match). Inputs are validated before any call. PRO+ count 112 -> 116 (`tests/test_tier_registration.py`); server docstring and README counts corrected to 41/81/116. Not on the hosted allowlist. Tests: `tests/test_review_tools.py`.
+
 ## Unreleased - RECALL-CONFLICT-FLAG-1 D-0039 r1 (2026-11-08)
 
 - Fixed (M2): `resolution_text` no longer returns early on `scoped_validity_resolution`. memory_search text and catalog output now show the scoped-validity line AND the conflict warning with its scoped peer ids when both are present.
