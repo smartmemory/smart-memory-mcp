@@ -1,3 +1,7 @@
+## Unreleased - RECALL-CONFLICT-FLAG-1 D-0039 r1 (2026-11-08)
+
+- Fixed (M2): `resolution_text` no longer returns early on `scoped_validity_resolution`. memory_search text and catalog output now show the scoped-validity line AND the conflict warning with its scoped peer ids when both are present.
+
 ## Unreleased - RECALL-CONFLICT-FLAG-1 D-0139 dependency repair
 
 - Revalidate the restored adapter against its fixed core dependency and retain its typed conflict evidence boundary.

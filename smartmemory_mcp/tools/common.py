@@ -233,9 +233,11 @@ def resolution_text(value):
         value.get("metadata") or {}
     ).get("scoped_validity_resolution")
     if resolution is not None:
-        return f"scoped_validity_resolution: {resolution}"
-    label = value.get("as_of_resolution")
-    lines = [] if label is None else [f"as_of_resolution: {label}"]
+        lines = [f"scoped_validity_resolution: {resolution}"]
+    else:
+        label = value.get("as_of_resolution")
+        lines = [] if label is None else [f"as_of_resolution: {label}"]
+    # RECALL-CONFLICT-FLAG-1 D-0039 r1 (M2): conflict evidence renders with every other diagnostic.
     if conflict := value.get("conflict"):
         lines.append("conflict: " + json.dumps(conflict, sort_keys=True))
     return "\n".join(lines)

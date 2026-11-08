@@ -1,5 +1,7 @@
 """Canonical decoding, model presentation and tool refusal preserve conflict evidence."""
 
+import json
+
 import httpx
 import pytest
 from fastmcp.exceptions import ToolError
@@ -51,3 +53,48 @@ def test_local_and_remote_strict_errors_are_tool_errors():
     with pytest.raises(ToolError, match="recall_conflict"):
         _raise_recall_conflict(response)
     _raise_recall_conflict(httpx.Response(409, json={"detail": "unrelated conflict"}))
+
+
+def test_scoped_validity_text_still_renders_conflict_and_peer_evidence():
+    """D-0039 r1 (M2): a scoped-validity diagnostic no longer hides the conflict warning."""
+    from unittest.mock import patch
+
+    from tests._tools import tool_fn
+
+    items = [
+        MemoryItem(
+            item_id=f"test_rcf_sv_{n}",
+            content=f"Acme permits {n} retries.",
+            memory_type="semantic",
+            metadata={"tenant_id": "T", "workspace_id": "W"},
+        )
+        for n in [3, 5]
+    ]
+    items, evidence = annotate_conflicts(items)
+    assert evidence
+    normalized = [normalize_item(i) for i in items]
+    resolution = {"selected_item_id": "test_rcf_sv_3"}
+    for item in normalized:
+        item["metadata"] = {
+            **(item.get("metadata") or {}),
+            "scoped_validity_resolution": resolution,
+        }
+        assert item["conflict"]
+
+    class Backend:
+        def search(self, query, top_k=5, **kwargs):
+            return normalized
+
+    fn = tool_fn("memory_search")
+    for catalog_mode in (False, True):
+        with patch("smartmemory_mcp.tools.common._backend", Backend()):
+            text = fn(query="Acme retries", catalog_mode=catalog_mode)
+        assert text.count("scoped_validity_resolution: ") == 2, text
+        assert text.count("conflict: ") == 2, text
+        # Each row names its scoped peer.
+        peers = [
+            json.loads(line.split("conflict: ", 1)[1])["with_item_ids"]
+            for line in text.splitlines()
+            if line.strip().startswith("conflict: ")
+        ]
+        assert sorted(peers) == [["test_rcf_sv_3"], ["test_rcf_sv_5"]]
