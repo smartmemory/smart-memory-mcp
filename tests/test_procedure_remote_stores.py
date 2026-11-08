@@ -49,8 +49,10 @@ def remote_tools(tmp_path, monkeypatch):
         "service_common.repositories.factories.create_workspace_repository",
         lambda **kw: repo,
     )
+    # Retrieval overrides come from the settings layers since WS-MGMT-16; none here.
     monkeypatch.setattr(
-        "memory_service.services.retrieval_policy.get_shared_mongo_db", lambda: db
+        "memory_service.services.retrieval_policy.runtime_retrieval_layers",
+        lambda tenant_id, workspace_id: ({}, {}),
     )
     scopes, facades, memories, owned_backends = {}, {}, [], []
     graph_port = int(os.environ.get("FALKORDB_PORT", "1"))
