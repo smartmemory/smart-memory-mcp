@@ -1,9 +1,9 @@
 """SmartMemory Unified MCP Server.
 
 Tiered tool registration:
-  FREE  (35 tools) — no login required, includes the decision suite
-  PRO   (75 tools) — after smartmemory login
-  PRO+  (106 tools) — PRO + SMARTMEMORY_MCP_FULL_TOOLS=true
+  FREE  (41 tools) — no login required, includes the decision suite
+  PRO   (81 tools) — after smartmemory login
+  PRO+  (116 tools) — PRO + SMARTMEMORY_MCP_FULL_TOOLS=true
 (Counts are cumulative registered tools, asserted by tests/test_tier_registration.py.)
 
 Backend is independent of tier:
@@ -314,6 +314,7 @@ def _register_tools():
         from smartmemory_mcp.tools import (
             evolution_tools,
             reasoning_tools,
+            review_tools,
             insight_tools,
             dev_tools,
             zettel_tools,
@@ -321,6 +322,7 @@ def _register_tools():
 
         evolution_tools.register(mcp)
         reasoning_tools.register(mcp)
+        review_tools.register(mcp)  # OUTREACH-MARIUS-HITL-SURFACE-1
         insight_tools.register(mcp)
         dev_tools.register(mcp)
         zettel_tools.register(mcp)
