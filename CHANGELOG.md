@@ -1,3 +1,7 @@
+## Unreleased - MCP-2.0-DHRUV-SUPERSESSION-LABEL-TWIN-1 fix r1 (2026-11-08)
+
+- Test-only: native Lite `memory_recall` (real `LocalBackend.recall` -> `smartmemory_app.storage.recall`) is covered for the `[replaces <id8>]` label, plus parity rows against the smart-memory formatter. The label itself is rendered by the smart-memory formatter fix.
+
 ## Unreleased - RECALL-CONFLICT-FLAG-1 D-0039 r1 (2026-11-08)
 
 - Fixed (M2): `resolution_text` no longer returns early on `scoped_validity_resolution`. memory_search text and catalog output now show the scoped-validity line AND the conflict warning with its scoped peer ids when both are present.

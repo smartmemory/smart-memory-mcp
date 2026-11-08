@@ -148,3 +148,86 @@ def test_hosted_text(monkeypatch, tool, kwargs, extra, expected):
     if expected:
         assert expected in text
         assert OLD_ID not in text
+
+
+# --- MCP-2.0-DHRUV-SUPERSESSION-LABEL-TWIN-1 fix r1: native Lite recall ---------
+
+
+# Parity rows: same inputs and exact strings as smart-memory tests/unit/test_recall_format.py.
+@pytest.mark.parametrize(
+    "item,expected",
+    [
+        ({"via_supersession_of": OLD_ID}, " [replaces old-rule]"),
+        ({"metadata": {"via_supersession_of": OLD_ID}}, " [replaces old-rule]"),
+        (
+            {
+                "via_supersession_of": "top-id-12345",
+                "metadata": {"via_supersession_of": OLD_ID},
+            },
+            " [replaces top-id-1]",
+        ),
+        ({"metadata": {}}, ""),
+    ],
+)
+def test_label_parity_rows(item, expected):
+    assert supersession_label(item) == expected
+
+
+def test_native_local_recall_renders_label(monkeypatch):
+    """Real LocalBackend.recall -> smartmemory_app.storage.recall, no recall-less stub."""
+    storage = pytest.importorskip("smartmemory_app.storage")
+    recall_format = pytest.importorskip("smartmemory_app.recall_format")
+    if not hasattr(recall_format, "supersession_label"):
+        pytest.skip("installed smartmemory_app predates the native label twin")
+    from smartmemory_mcp.backends.local import LocalBackend
+
+    monkeypatch.setattr(recall_format, "_trace", lambda **kw: None)
+    monkeypatch.delenv("SMARTMEMORY_RECALL_FLOOR", raising=False)
+    monkeypatch.setattr("smartmemory.origin_policy.get_default_tiers", lambda _: {1, 2})
+    monkeypatch.setattr(
+        "smartmemory.origin_policy.filter_by_tiers",
+        lambda rows, tiers: [r for r in rows if getattr(r, "tier", 1) in tiers],
+    )
+
+    def row(item_id, content, metadata):
+        return SimpleNamespace(
+            item_id=item_id,
+            content=content,
+            memory_type="semantic",
+            metadata=metadata,
+            confidence=1.0,
+            reference=False,
+        )
+
+    rows = [
+        row(
+            "successor-1",
+            "Use the lab-confirmed code.",
+            {"via_supersession_of": OLD_ID},
+        ),
+        row("plain-1", "plain", {}),
+    ]
+    monkeypatch.setattr(
+        storage,
+        "get_memory",
+        lambda: SimpleNamespace(search=lambda text, *, top_k, **kw: rows[:top_k]),
+    )
+    captured = {}
+
+    class Capture:
+        def tool(self, *args, **kwargs):
+            def register(fn):
+                captured[fn.__name__] = fn
+                return fn
+
+            return register
+
+    memory_tools.register_free(Capture())
+    memory_tools.register_pro(Capture())
+    backend = LocalBackend()
+    assert hasattr(backend, "recall")
+    monkeypatch.setattr(memory_tools, "get_backend", lambda: backend)
+    out = captured["memory_recall"](query="/path/to/project")
+    assert "[mem:successor-1] [replaces old-rule] Use the lab-confirmed code." in out
+    assert out.count("[replaces ") == 1
+    assert OLD_ID not in out
