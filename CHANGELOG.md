@@ -1,6 +1,9 @@
 ## Unreleased - RECALL-CONFLICT-FLAG-1 D-0139 dependency repair
 
 - Revalidate the restored adapter against its fixed core dependency and retain its typed conflict evidence boundary.
+## Unreleased - SM-PROCEDURE-TYPE-1 D-0139 repair
+
+- Require the six procedure tools in exact tier inventories alongside persistent-effect and scope-override checks.
 
 ## Unreleased - D-0139 gate rollback: SM-RECALL-PROFILES-1 (2026-11-07)
 
