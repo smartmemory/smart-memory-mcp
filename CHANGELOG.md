@@ -1,3 +1,7 @@
+## Unreleased - REL-2.0-VERSION-BUMP-1: version 2.0.0 (2026-11-08)
+
+- Version set to 2.0.0 on the 2.0 branch (`pyproject.toml` and `server.json`). No tag, no publish (D-0138).
+
 ## Unreleased - REL-2.0-CUT-1 route-table freshness (2026-11-08)
 
 - Fixed (MCP-2.0-ROUTE-TABLE-FRESHNESS-1): `review_tools.py` builds review and workspace-settings path ids with `path_id` instead of `quote(..., safe='')`, so reserved segments such as `..` are refused; `tenant` is reserved under `/memory/`, with empty lists for `/memory/reasoning/reviews/` and `/memory/workspaces/`; `tests/fixtures/service_route_table.json` regenerated at service 59dc3e2be (6 routes added).
