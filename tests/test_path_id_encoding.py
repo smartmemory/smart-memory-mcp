@@ -33,7 +33,12 @@ import pytest
 
 from smartmemory_mcp.backends.path_guard import RESERVED_SEGMENTS, path_id
 from smartmemory_mcp.backends.remote import RemoteBackend
-from smartmemory_mcp.tools import agent_tools, decision_tools, memory_tools
+from smartmemory_mcp.tools import (
+    agent_tools,
+    decision_tools,
+    memory_tools,
+    review_tools,
+)
 
 HERE = Path(__file__).resolve()
 PACKAGE = HERE.parents[1] / "smartmemory_mcp"
@@ -41,6 +46,7 @@ FIXTURE = HERE.parent / "fixtures" / "service_route_table.json"
 SNAPSHOT_REL = "smart-memory-service/tests/contracts/snapshots/openapi_schema.json"
 REMOTE = "backends/remote.py"
 AGENT = "tools/agent_tools.py"
+REVIEW = "tools/review_tools.py"
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options"}
 
 # Service params declared with Starlette's `:path` convertor (regex `.*`, crosses `/`).
@@ -165,6 +171,27 @@ def _agent(name, *args):
         mcp = _FakeMCP()
         agent_tools.register(mcp)
         return mcp.fns[name](item_id, *args)
+
+    return call
+
+
+def _review(name, *args):
+    def call(backend, item_id):
+        mcp = _FakeMCP()
+        review_tools.register(mcp)
+        return mcp.fns[name](item_id, *args)
+
+    return call
+
+
+def _workspace(name, *args):
+    """The settings tools take the workspace id from the session, not from an argument."""
+
+    def call(backend, item_id):
+        backend._session["team_id"] = item_id
+        mcp = _FakeMCP()
+        review_tools.register(mcp)
+        return mcp.fns[name](*args)
 
     return call
 
@@ -301,6 +328,27 @@ ROWS = [
         "/memory/agents/{agent_id}/recall-profile",
         _agent("agent_get_recall_profile"),
     ),
+    (
+        "review_queue_settle",
+        REVIEW,
+        "POST",
+        "/memory/reasoning/reviews/{review_id}/settle",
+        _review("review_queue_settle", "keep_b", "checked"),
+    ),
+    (
+        "supersession_policy_get",
+        REVIEW,
+        "GET",
+        "/memory/workspaces/{workspace_id}/settings",
+        _workspace("supersession_policy_get"),
+    ),
+    (
+        "supersession_policy_set",
+        REVIEW,
+        "PATCH",
+        "/memory/workspaces/{workspace_id}/settings",
+        _workspace("supersession_policy_set", "propose"),
+    ),
 ]
 
 
@@ -335,6 +383,7 @@ def wire(monkeypatch):
     monkeypatch.setattr(agent_tools, "get_backend", lambda: backend)
     monkeypatch.setattr(memory_tools, "get_backend", lambda: backend)
     monkeypatch.setattr(decision_tools, "get_backend", lambda: backend)
+    monkeypatch.setattr(review_tools, "get_backend", lambda: backend)
     return backend, seen
 
 

@@ -130,15 +130,23 @@ def test_remote_settle_never_sends_an_actor_and_quotes_the_id(monkeypatch):
     backend = _use(
         monkeypatch, _Remote({**ROW, "status": "resolved", "resolved_by": "api_key:u1"})
     )
-    out = _tools()["review_queue_settle"]("../x", "keep_b", "checked")
+    out = _tools()["review_queue_settle"]("rev 1", "keep_b", "checked")
     assert "api_key:u1" in out
     assert backend.calls == [
         (
             "POST",
-            "/memory/reasoning/reviews/..%2Fx/settle",
+            "/memory/reasoning/reviews/rev%201/settle",
             {"json": {"action": "keep_b", "reason": "checked"}},
         )
     ]
+
+
+@pytest.mark.parametrize("bad_id", ["..", "../x", "a/b"])
+def test_settle_refuses_an_id_that_could_reach_another_route(monkeypatch, bad_id):
+    backend = _use(monkeypatch, _Remote({}))
+    with pytest.raises(ValueError, match="Invalid id"):
+        _tools()["review_queue_settle"](bad_id, "keep_b", "checked")
+    assert backend.calls == []
 
 
 @pytest.mark.parametrize("status", [404, 403, 409, 500])

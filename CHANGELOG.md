@@ -1,3 +1,7 @@
+## Unreleased - REL-2.0-CUT-1 route-table freshness (2026-11-08)
+
+- Fixed (MCP-2.0-ROUTE-TABLE-FRESHNESS-1): `review_tools.py` builds review and workspace-settings path ids with `path_id` instead of `quote(..., safe='')`, so reserved segments such as `..` are refused; `tenant` is reserved under `/memory/`, with empty lists for `/memory/reasoning/reviews/` and `/memory/workspaces/`; `tests/fixtures/service_route_table.json` regenerated at service 59dc3e2be (6 routes added).
+
 ## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 (2026-11-08)
 
 - New PRO+ tools in `smartmemory_mcp/tools/review_tools.py`: `review_queue_list(status, limit, offset)` and `review_queue_settle(review_id, action, reason)` (remote: `GET /memory/reasoning/reviews`, `POST /memory/reasoning/reviews/{id}/settle`, never sends an actor or workspace; local: the core facade, actor `local:mcp`), and `supersession_policy_get()` / `supersession_policy_set('retire'|'propose'|'inherit')` on the session workspace's `review.supersession` setting (remote only, no If-Match). Inputs are validated before any call. PRO+ count 112 -> 116 (`tests/test_tier_registration.py`); server docstring and README counts corrected to 41/81/116. Not on the hosted allowlist. Tests: `tests/test_review_tools.py`.

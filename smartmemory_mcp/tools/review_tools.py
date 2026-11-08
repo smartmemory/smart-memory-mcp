@@ -10,10 +10,10 @@ Contract: smart-memory-docs ``docs/features/OUTREACH-MARIUS-HITL-SURFACE-1/revie
 
 import json
 import logging
-from urllib.parse import quote
 
 from mcp.types import ToolAnnotations
 
+from smartmemory_mcp.backends.path_guard import path_id
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -143,7 +143,7 @@ def register(mcp):
         if backend.supports("request"):
             result = backend.request(
                 "POST",
-                f"/memory/reasoning/reviews/{quote(review_id, safe='')}/settle",
+                f"/memory/reasoning/reviews/{path_id(review_id, under='/memory/reasoning/reviews/')}/settle",
                 json={"action": action, "reason": reason},
             )
             if err := _error(result):
@@ -181,7 +181,8 @@ def register(mcp):
             return _POLICY_REMOTE_ONLY
         workspace_id = backend.active_workspace_id
         result = backend.request(
-            "GET", f"/memory/workspaces/{quote(workspace_id, safe='')}/settings"
+            "GET",
+            f"/memory/workspaces/{path_id(workspace_id, under='/memory/workspaces/')}/settings",
         )
         if err := _error(result):
             return err
@@ -215,7 +216,7 @@ def register(mcp):
         stated = None if policy == "inherit" else policy
         result = backend.request(
             "PATCH",
-            f"/memory/workspaces/{quote(workspace_id, safe='')}/settings",
+            f"/memory/workspaces/{path_id(workspace_id, under='/memory/workspaces/')}/settings",
             json={"stated": {"review": {"supersession": stated}}},
         )
         if err := _error(result):

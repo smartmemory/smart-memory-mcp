@@ -1,5 +1,5 @@
 {
-"_source": "smart-memory-service 2.0 stacked 6d69851dd7c8200b2b6bf072f895ab2ef5d4327d tests/contracts/snapshots/openapi_schema.json (paths, in snapshot order)",
+"_source": "smart-memory-service 2.0 stacked 59dc3e2be16e4c2dd4fd204da729cbfb999dc7c3 tests/contracts/snapshots/openapi_schema.json (paths, in snapshot order)",
 "_regenerate": "python3 tests/test_path_id_encoding.py --write-route-table",
 "routes": [
 ["GET", "/admin/logs"],
@@ -333,6 +333,8 @@
 ["POST", "/memory/reasoning/proof"],
 ["POST", "/memory/reasoning/query"],
 ["POST", "/memory/reasoning/resolve"],
+["GET", "/memory/reasoning/reviews"],
+["POST", "/memory/reasoning/reviews/{review_id}/settle"],
 ["POST", "/memory/reasoning/traces/extract"],
 ["POST", "/memory/reasoning/traces/query"],
 ["POST", "/memory/reasoning/traces/store"],
@@ -395,6 +397,8 @@
 ["POST", "/memory/temporal/{item_id}/compare"],
 ["GET", "/memory/temporal/{item_id}/history"],
 ["POST", "/memory/temporal/{item_id}/rollback"],
+["GET", "/memory/tenant/settings"],
+["PATCH", "/memory/tenant/settings"],
 ["GET", "/memory/token-usage"],
 ["GET", "/memory/token-usage/current"],
 ["POST", "/memory/validate"],
@@ -416,6 +420,8 @@
 ["POST", "/memory/workspaces/{workspace_id}/restore"],
 ["GET", "/memory/workspaces/{workspace_id}/retrieval-policy"],
 ["PUT", "/memory/workspaces/{workspace_id}/retrieval-policy"],
+["GET", "/memory/workspaces/{workspace_id}/settings"],
+["PATCH", "/memory/workspaces/{workspace_id}/settings"],
 ["POST", "/memory/workspaces/{workspace_id}/share"],
 ["DELETE", "/memory/workspaces/{workspace_id}/share/{team_id}"],
 ["GET", "/memory/zettel/bridges"],
