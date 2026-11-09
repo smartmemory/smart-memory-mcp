@@ -76,6 +76,59 @@ def test_local_scheduled_receipt_matches_persisted_amendment(local):
     assert datetime.fromisoformat(inferred["recorded_at"]).tzinfo is not None
 
 
+def test_tool_reports_scheduled_for_dated_supersede_of_scoped_history(
+    local, monkeypatch
+):
+    """DRIFT-V3-DHRUV-BOUNDARIES-FU-1 F1: real Lite scoped history, then a future valid_from."""
+    from smartmemory.models.memory_item import MemoryItem
+
+    old = local._mem.add(MemoryItem(content="Old rule", memory_type="semantic"))
+    first = local.supersede(old, "Sponsor rule", "go-live", scope_go_lives=SCHEDULE)
+    assert first["status"] == "scheduled"
+    mcp = server(local, monkeypatch)
+
+    async def run():
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "memory_supersede",
+                {
+                    "item_id": first["new_item_id"],
+                    "content": "Later rule",
+                    "reason": "future amendment",
+                    "valid_from": "2099-01-01T00:00:00Z",
+                },
+            )
+            text = " ".join(c.text for c in result.content if hasattr(c, "text"))
+            return json.loads(text)
+
+    receipt = asyncio.run(run())
+    assert receipt["status"] == "scheduled"
+    assert receipt["old_item_id"] == first["new_item_id"]
+    assert receipt["new_item_id"] != first["new_item_id"]
+    assert receipt["scope_go_lives"] == [
+        {"scope": None, "valid_from": "2099-01-01T00:00:00+00:00"}
+    ]
+    assert datetime.fromisoformat(receipt["recorded_at"]).tzinfo is not None
+
+
+def test_tool_plain_supersede_text_unchanged(local, monkeypatch):
+    from smartmemory.models.memory_item import MemoryItem
+
+    old = local._mem.add(MemoryItem(content="Plain rule", memory_type="semantic"))
+    mcp = server(local, monkeypatch)
+
+    async def run():
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "memory_supersede",
+                {"item_id": old, "content": "Plain v2", "reason": "changed"},
+            )
+            return " ".join(c.text for c in result.content if hasattr(c, "text"))
+
+    text = asyncio.run(run())
+    assert text.startswith(f"Superseded: {old} -> ")
+
+
 @pytest.fixture
 def wire(local):
     """Exercise real HTTP framing and dropped acknowledgements without a provider."""

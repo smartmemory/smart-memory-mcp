@@ -830,7 +830,7 @@ class RemoteBackend(BackendCapabilities):
     ) -> dict[str, Any]:
         """POST /memory/{item_id}/supersede: a new version, the old one retained.
 
-        ``valid_from`` (ISO date) is the date the new version takes effect; it is
+        ``valid_from`` (ISO datetime) is when the new version takes effect; it is
         sent only when given, so the service keeps its default otherwise.
         """
         body: dict[str, Any] = {
