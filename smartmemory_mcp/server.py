@@ -240,6 +240,39 @@ def list_workspaces() -> str:
     return format_workspace_rows(rows, backend.active_workspace_id)
 
 
+@mcp.tool(
+    title="Create private workspace",
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    ),
+)
+@graceful
+def create_workspace(name: str, description: str | None = None) -> str:
+    """Create a private workspace that only you can see (no Team), and return its id.
+
+    Does not switch this session: call switch_workspace with the returned id to
+    write there. Agent keys and workspace-bound keys are refused by the server.
+    """
+    from smartmemory_mcp.backends.local import LocalBackend
+    from smartmemory_mcp.workspace_select import format_created_workspace
+
+    backend = get_backend()
+    if isinstance(backend, LocalBackend):
+        return (
+            "Lite (local mode) has no workspaces: everything is in one local store. "
+            "Use remote mode (smartmemory setup --mode remote) for workspaces."
+        )
+    if not name or not name.strip():
+        return "Could not create the workspace: name is required."
+    row, why = backend.create_workspace(name.strip(), description)
+    if row is None:
+        return f"Could not create the workspace: {why}"
+    return format_created_workspace(row)
+
+
 @mcp.tool(title="Switch team (deprecated)", annotations=_SWITCH_ANNOTATIONS)
 @graceful
 def switch_team(team_id: str) -> str:

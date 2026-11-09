@@ -37,8 +37,8 @@ def test_hosted_tools_have_explicit_directory_annotations() -> None:
 
     assert set(by_name) == set(HOSTED_TOOLS)
     assert (
-        len(by_name) == 35
-    )  # SM-SCOPED-VALIDITY-1 six remote decision tools + DRIFT-V3-DHRUV-BOUNDARIES-1 memory_supersede
+        len(by_name) == 36
+    )  # SM-SCOPED-VALIDITY-1 six remote decision tools + DRIFT-V3-DHRUV-BOUNDARIES-1 memory_supersede + WS-POLICY-10 create_workspace
     for name, tool in by_name.items():
         assert tool.title, f"{name} is missing a title"
         assert tool.annotations is not None, f"{name} is missing annotations"

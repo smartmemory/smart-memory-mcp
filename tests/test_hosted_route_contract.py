@@ -64,6 +64,7 @@ TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
         "/memory/workspaces",
     ),  # deprecated alias of switch_workspace
     "list_workspaces": ("get", "/memory/workspaces"),
+    "create_workspace": ("post", "/memory/workspaces"),  # WS-POLICY-10 B: no team_id
     "decision_create": ("post", "/memory/decisions/create"),
     "decision_supersede": ("post", "/memory/decisions/{decision_id}/supersede"),
     "decision_get": ("get", "/memory/decisions/{decision_id}"),

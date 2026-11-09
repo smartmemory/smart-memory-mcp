@@ -59,7 +59,14 @@ DECISION_TOOLS = (
 # Registered by the hosted server itself; session-scoped, no backend route of
 # their own beyond the workspace listing lookup. `switch_team` is the
 # deprecated alias of `switch_workspace` (MCP-SWITCH-WORKSPACE-1, one release).
-HOSTED_ONLY_TOOLS = ("whoami", "list_workspaces", "switch_workspace", "switch_team")
+# `create_workspace` (WS-POLICY-10 B) creates the caller's private workspace and never writes the session record.
+HOSTED_ONLY_TOOLS = (
+    "whoami",
+    "list_workspaces",
+    "switch_workspace",
+    "switch_team",
+    "create_workspace",
+)
 
 HOSTED_TOOLS: frozenset[str] = frozenset(
     MEMORY_TOOLS

@@ -657,6 +657,35 @@ class RemoteBackend(BackendCapabilities):
             )
         return [r for r in rows if isinstance(r, dict) and r.get("workspace_id")], ""
 
+    def create_workspace(
+        self, name: str, description: str | None = None
+    ) -> tuple[dict[str, Any] | None, str]:
+        """`POST /memory/workspaces` with no `team_id`: the caller's own private workspace (WS-POLICY-10 B).
+
+        Returns (the created row, "") or (None, why it failed). Sent without `X-Workspace-Id` (creation is tenant-level)
+        and never changes the session's workspace: the caller switches with `switch_workspace` when it wants to.
+        """
+        headers = self._headers()
+        headers.pop("X-Workspace-Id", None)
+        body: dict[str, Any] = {"name": name}
+        if description is not None:
+            body["description"] = description
+        result = self._request("POST", "/memory/workspaces", headers=headers, json=body)
+        if err := self._fmt_error(result):
+            logger.warning("Workspace create failed: %s", err[:200])
+            return (
+                None,
+                f"could not create the workspace at {self._api_url} ({err[:200]}).",
+            )
+        if not isinstance(result, dict) or not result.get("workspace_id"):
+            logger.warning(
+                "Workspace create returned an unexpected shape: %r", type(result)
+            )
+            return None, (
+                f"could not create the workspace at {self._api_url} (unexpected response shape)."
+            )
+        return result, ""
+
     def resolve_switch(self, workspace: str) -> SwitchResult:
         """Resolve `workspace` against the caller's listing without changing anything.
 

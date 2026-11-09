@@ -120,6 +120,7 @@ FREE_TOOLS = sorted(
         "list_workspaces",
         "switch_workspace",  # MCP-SWITCH-WORKSPACE-1
         "switch_team",  # deprecated alias of switch_workspace, one release
+        "create_workspace",  # WS-POLICY-10 B
         "memory_save",
         "memory_search",
         "memory_recall",
@@ -158,20 +159,20 @@ FREE_TOOLS = sorted(
 
 class TestToolRegistration:
     def test_free_tier_tool_count(self):
-        """FREE tier registers exactly 41 tools (18 + the 15 decision-suite tools; MCP-SWITCH-WORKSPACE-1 added switch_workspace; SM-EVIDENCE-TYPE-1 added decision_link_evidence + evidence_record)."""
+        """FREE tier registers exactly 42 tools (WS-POLICY-10 added create_workspace; 18 + the 15 decision-suite tools; MCP-SWITCH-WORKSPACE-1 added switch_workspace; SM-EVIDENCE-TYPE-1 added decision_link_evidence + evidence_record)."""
         env = _clean_env()
         data = _run_snippet(env)
-        assert data["count"] == 41, (
-            f"Expected 41 FREE tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 42, (
+            f"Expected 42 FREE tools, got {data['count']}: {data['names']}"
         )
         assert data["names"] == FREE_TOOLS
 
     def test_pro_tier_tool_count(self):
-        """PRO tier registers exactly 81 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed)."""
+        """PRO tier registers exactly 82 remote tools (+create_workspace WS-POLICY-10; +transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed)."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
         data = _run_snippet(env)
-        assert data["count"] == 81, (
-            f"Expected 81 remote PRO tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 82, (
+            f"Expected 82 remote PRO tools, got {data['count']}: {data['names']}"
         )
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]
@@ -183,13 +184,13 @@ class TestToolRegistration:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
 
     def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 116 remote tools (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed; +4 OUTREACH-MARIUS-HITL-SURFACE-1: review_queue_list/settle, supersession_policy_get/set)."""
+        """PRO_PLUS tier registers exactly 117 remote tools (+create_workspace WS-POLICY-10; +transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed; +4 OUTREACH-MARIUS-HITL-SURFACE-1: review_queue_list/settle, supersession_policy_get/set)."""
         env = _clean_env(
             SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true"
         )
         data = _run_snippet(env)
-        assert data["count"] == 116, (
-            f"Expected 116 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 117, (
+            f"Expected 117 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
         )
         assert {
             "review_queue_list",

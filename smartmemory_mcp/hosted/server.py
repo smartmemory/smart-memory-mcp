@@ -29,6 +29,7 @@ from .middleware import HostedIdentityMiddleware, HostedSessionSelectionError
 from .ratelimit import hosted_asgi_middleware
 from ..workspace_select import (
     ALIAS_NOTICE,
+    format_created_workspace,
     format_workspace_rows,
     refuse,
     resolve_workspace,
@@ -150,6 +151,34 @@ def _register_hosted_tools(
         if rows is None:
             raise ToolError(f"Could not list your workspaces: {why}")
         return format_workspace_rows(rows, identity.team_id if identity else "")
+
+    @mcp.tool(
+        name="create_workspace",
+        title="Create private workspace",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def hosted_create_workspace(
+        name: str, ctx: Context, description: Optional[str] = None
+    ) -> str:
+        """Create a private workspace that only you can see (no Team), and return its id.
+
+        Does not switch this session: call switch_workspace with the returned id
+        to write there. Agent keys and workspace-bound keys are refused by the server.
+        """
+        if not name or not name.strip():
+            raise ToolError("Could not create the workspace: name is required.")
+        backend = get_backend()
+        row, why = backend.create_workspace(name.strip(), description)
+        if row is None:
+            # The hosted api_url is the internal svc-api address: never shown to a hosted caller.
+            why = why.replace(f" at {backend._api_url}", "")
+            raise ToolError(f"Could not create the workspace: {why}")
+        return format_created_workspace(row)
 
     async def switch_session_workspace(ref: str, ctx: Context) -> str:
         """The one hosted switch: membership-checked, saved server-side (WS-ROUTING-4).

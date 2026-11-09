@@ -1,3 +1,7 @@
+## Unreleased - WS-POLICY-10 B: members create private workspaces (2026-11-09)
+
+- New `create_workspace(name, description=None)` tool on stdio (remote mode) and hosted MCP: creates your own private workspace with no Team (`POST /memory/workspaces` without `team_id`, no `X-Workspace-Id`) and returns its id. It never switches the session and hosted writes no routing record: call `switch_workspace` to use it. Lite answers that it has no workspaces (WS-POLICY-10 B, OWNER D-0147).
+
 ## Unreleased - REL-2.0-VERSION-BUMP-1: version 2.0.0 (2026-11-08)
 
 - Version set to 2.0.0 on the 2.0 branch (`pyproject.toml` and `server.json`). No tag, no publish (D-0138).

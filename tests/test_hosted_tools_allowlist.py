@@ -197,6 +197,11 @@ def fake_svc_api(
                 team_headers.append(sent)
             if sent.get("x-workspace-id") in revoked:
                 return ok({"detail": "insufficient_team_permissions"}, 403)
+            if (
+                method == "POST"
+            ):  # WS-POLICY-10 B: create_workspace, the caller's private workspace
+                body = kwargs.get("json") or {}
+                return ok({"workspace_id": "ws-new", "name": body.get("name")}, 201)
             return ok(
                 {
                     "workspaces": [
@@ -322,8 +327,8 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
 
     assert advertised == set(HOSTED_TOOLS)
     assert (
-        len(advertised) == 35
-    )  # SM-SCOPED-VALIDITY-1 six remote decision tools + DRIFT-V3-DHRUV-BOUNDARIES-1 memory_supersede
+        len(advertised) == 36
+    )  # SM-SCOPED-VALIDITY-1 six remote decision tools + DRIFT-V3-DHRUV-BOUNDARIES-1 memory_supersede + WS-POLICY-10 create_workspace
 
 
 @pytest.mark.parametrize("name", EXCLUDED_TOOLS)
@@ -492,6 +497,7 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ("list_workspaces", {}),
     ("switch_workspace", {"workspace": "team-B"}),
     ("switch_team", {"team_id": "team-B"}),  # deprecated alias
+    ("create_workspace", {"name": "Scratch"}),  # WS-POLICY-10 B
 ]
 
 

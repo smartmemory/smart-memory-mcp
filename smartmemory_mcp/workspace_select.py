@@ -101,3 +101,14 @@ def format_workspace_rows(rows: list[dict[str, Any]], current: str) -> str:
         marker = "* " if workspace_id == current else "  "
         lines.append(f"{marker}{name} ({workspace_id})")
     return "\n".join(lines) + "\n(* = where a write from this client goes now)"
+
+
+def format_created_workspace(row: dict) -> str:
+    """The `create_workspace` answer (WS-POLICY-10 B): the new id, and that the session did not move (Q-D)."""
+    workspace_id = row.get("workspace_id", "")
+    name = row.get("name") or workspace_id
+    return (
+        f"Created private workspace: {name} ({workspace_id}). Only you can see it.\n"
+        "This session's workspace did not change: call "
+        f"switch_workspace('{workspace_id}') to write there."
+    )
