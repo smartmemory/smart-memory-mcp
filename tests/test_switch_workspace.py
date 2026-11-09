@@ -1265,3 +1265,99 @@ def test_hosted_list_workspaces_reports_empty_and_failures(
         status != 200 or "workspaces" not in body
     )
     assert harness.cfg.api_url not in _text(result)
+
+
+# --- WS-ROUTING-5: every write tool's result names the workspace it landed in -----------------------------
+
+
+class _Registry:
+    """A stand-in `mcp` that keeps each registered tool's function by name."""
+
+    def __init__(self) -> None:
+        self.fns: dict[str, Any] = {}
+
+    def tool(self, **_kwargs: Any):
+        def keep(fn):
+            self.fns[fn.__name__] = fn
+            return fn
+
+        return keep
+
+
+def _write_tools() -> dict[str, Any]:
+    from smartmemory_mcp.tools import memory_tools, save_tools
+
+    registry = _Registry()
+    for module in (save_tools, memory_tools):
+        module.register_free(registry)
+        module.register_pro(registry)
+    return registry.fns
+
+
+def _write_service(method: str, url: str, **_kwargs: Any) -> httpx.Response:
+    path = httpx.URL(url).path
+    request = httpx.Request(method, url)
+    if path == "/memory/workspaces":
+        return httpx.Response(200, json={"workspaces": WORKSPACES}, request=request)
+    body: dict[str, Any] = {
+        "/memory/add": {"item_id": "mem-1"},
+        "/memory/ingest": {"item_id": "mem-1", "status": "ingested"},
+        "/memory/ingest/document": {"document_id": "doc-1", "chunk_ids": ["c-1"]},
+        "/memory/ingest/conversation": {
+            "conversation_id": "conv-1",
+            "chunks_ingested": 1,
+            "chunks_failed": 0,
+        },
+        "/memory/mem-1/supersede": {"new_item_id": "mem-2"},
+    }.get(path, {"item_id": "mem-1"})
+    return httpx.Response(200, json=body, request=request)
+
+
+def _text_of(result: Any) -> str:
+    content = getattr(result, "content", None)
+    if content is None:
+        return str(result)
+    return "\n".join(getattr(part, "text", "") for part in content)
+
+
+def test_each_write_tool_names_the_workspace(monkeypatch) -> None:
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", _write_service)
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.get", _auth_me)
+    backend = RemoteBackend(api_url=API, api_key="sk_test", team_id="")
+    monkeypatch.setattr(dispatch, "_backend", backend)
+    monkeypatch.setattr(common, "_backend", backend)
+    assert backend.switch_workspace("Beta").ok
+    tools = _write_tools()
+    turns = [{"role": "user", "content": "u"}, {"role": "assistant", "content": "a"}]
+
+    saved = tools["memory_save"](content="a note")
+    assert "Workspace: Beta (ws-b)" in _text_of(saved)
+    assert saved.structured_content["workspace"] == "Beta (ws-b)"
+    document = tools["memory_save_document"](source="https://example.test/a")
+    assert "Workspace: Beta (ws-b)" in _text_of(document)
+    turn = tools["memory_save_conversation"](turns=turns)
+    assert "Workspace: Beta (ws-b)" in _text_of(turn)
+    transcript = tools["memory_save_conversation"](turns=turns * 2)
+    assert "Workspace: Beta (ws-b)" in _text_of(transcript)
+    assert "Workspace: Beta (ws-b)" in tools["memory_update"](
+        item_id="mem-1", content="x"
+    )
+    assert "Workspace: Beta (ws-b)" in tools["memory_supersede"](
+        item_id="mem-1", content="x", reason="changed"
+    )
+    assert "Workspace: Beta (ws-b)" in tools["memory_delete"](item_id="mem-1")
+
+
+def test_local_write_results_name_the_lite_workspace(monkeypatch) -> None:
+    class _Local(LocalBackend):
+        def __init__(self) -> None:
+            pass
+
+        def delete(self, item_id: str, **_kwargs: Any) -> bool:
+            return True
+
+    monkeypatch.setattr(common, "_backend", _Local())
+
+    assert "Workspace: default (local mode)" in _write_tools()["memory_delete"](
+        item_id="m"
+    )

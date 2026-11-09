@@ -142,7 +142,10 @@ def _switch_workspace(workspace: str, save_as_default: bool = False) -> str:
     if not result.ok:
         return result.message
     if not commit_if_current(
-        backend, lambda: backend.set_active_workspace(result.workspace_id)
+        backend,
+        lambda: backend.set_active_workspace(
+            result.workspace_id, result.workspace_name
+        ),
     ):
         return refuse(
             "memory_migrate replaced the backend while this switch was looking up "

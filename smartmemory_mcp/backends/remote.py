@@ -42,7 +42,9 @@ def _raise_recall_conflict(response: httpx.Response) -> None:
     if isinstance(detail, dict) and detail.get("error") == "recall_conflict":
         from fastmcp.exceptions import ToolError
 
-        raise ToolError("recall_conflict: " + str(detail.get("message", "Strict recall refused")))
+        raise ToolError(
+            "recall_conflict: " + str(detail.get("message", "Strict recall refused"))
+        )
 
 
 @dataclass(frozen=True)
@@ -104,6 +106,35 @@ def env_workspace_id() -> str:
     return env_workspace()[0]
 
 
+# WS-ROUTING-5 on 2.0 (shape B, s1-chat 2026-11-09): every remote and hosted call names its client in `X-SM-Client`
+# (contract `client_key.grammar`, `mcp:<clientInfo.name>`). It is a hint the 2.0 service ignores and grants nothing; it
+# lets main's `routing_probable_echo_total` and a later resolver tell MCP traffic apart. `X-Workspace-Id` sourcing is
+# unchanged on 2.0: a tool argument, then the saved pick, then the session team. A stdio process has one client and no
+# handshake name at backend build time, so it sends `mcp:stdio`; hosted sets `mcp:<clientInfo.name>` per call.
+CLIENT_KEY_FALLBACK = "mcp:stdio"
+
+# Where this session's `X-Workspace-Id` came from, as whoami shows it. A tool argument wins for one call only.
+ROUTED_BY_ARGUMENT = "tool argument"
+ROUTED_BY_PICK = "saved pick (switch_workspace)"
+ROUTED_BY_CONFIG = "config/env"
+ROUTED_BY_DEFAULT = "default"
+ROUTED_BY_HOW = {
+    ROUTED_BY_ARGUMENT: "This call only; the next call without one uses the session workspace.",
+    ROUTED_BY_PICK: "Change it with switch_workspace(workspace).",
+    ROUTED_BY_CONFIG: (
+        f"Set by {WORKSPACE_ENV} or the saved smartmemory config; "
+        "switch_workspace(workspace) overrides it for this session."
+    ),
+    ROUTED_BY_DEFAULT: "Your account default; switch_workspace(workspace) picks another.",
+}
+
+
+def routed_by_lines(routed_by: str) -> str:
+    """The whoami `Routed by:` line plus how to change it."""
+    how = ROUTED_BY_HOW.get(routed_by, ROUTED_BY_HOW[ROUTED_BY_PICK])
+    return f"Routed by: {routed_by}\n{how}"
+
+
 # export_okf(workspace_id=LIVE_PICK): send whatever pick is live when the headers are built.
 LIVE_PICK: Any = object()
 
@@ -144,13 +175,18 @@ class RemoteBackend(BackendCapabilities):
         self._api_url = (
             api_url or os.environ.get("SMARTMEMORY_API_URL", DEFAULT_API_URL)
         ).rstrip("/")
+        team = team_id or env_workspace_id()
         self._session: dict[str, str | bool] = {
             "access_token": api_key or os.environ.get("SMARTMEMORY_API_KEY", ""),
             "refresh_token": "",
-            "team_id": team_id or env_workspace_id(),
+            "team_id": team,
             "user_email": "",
             "tenant_id": "",
             "_bootstrapped": False,
+            "client_key": CLIENT_KEY_FALLBACK,
+            # A constructor team is the env or saved config (dispatch.build_backend); none means /auth/me's default.
+            "routed_by": ROUTED_BY_CONFIG if team else ROUTED_BY_DEFAULT,
+            "workspace_name": "",
         }
 
     # --- Session bootstrap -------------------------------------------------------
@@ -187,7 +223,34 @@ class RemoteBackend(BackendCapabilities):
             "Authorization": f"Bearer {self._session['access_token']}",
             "Content-Type": "application/json",
             "X-Workspace-Id": workspace_id or str(self._session.get("team_id", "")),
+            "X-SM-Client": self.client_key,
         }
+
+    @property
+    def client_key(self) -> str:
+        """The `X-SM-Client` this backend sends."""
+        return str(self._session.get("client_key") or CLIENT_KEY_FALLBACK)
+
+    def set_client_key(self, client_key: str) -> None:
+        """Name the MCP client (`mcp:<clientInfo.name>`); hosted sets it per call."""
+        self._session["client_key"] = client_key or CLIENT_KEY_FALLBACK
+
+    @property
+    def routed_by(self) -> str:
+        """Where the session's `X-Workspace-Id` came from (a `ROUTED_BY_*` value)."""
+        return str(self._session.get("routed_by") or ROUTED_BY_DEFAULT)
+
+    def set_routed_by(self, routed_by: str) -> None:
+        self._session["routed_by"] = routed_by
+
+    def workspace_label(self, workspace_id: str | None = None) -> str:
+        """The workspace a write lands in: its name when this session knows it, else its id."""
+        active = self.active_workspace_id
+        target = workspace_id or active
+        if not target:
+            return "(none: the service default)"
+        name = str(self._session.get("workspace_name") or "")
+        return f"{name} ({target})" if name and target == active else target
 
     def _request(
         self,
@@ -590,9 +653,15 @@ class RemoteBackend(BackendCapabilities):
             user = r.json()
             self._session["user_email"] = user.get("email", "")
             self._session["tenant_id"] = user.get("tenant_id") or ""
+            previous_team = str(self._session["team_id"])
             self._session["team_id"] = (
-                team_id or user.get("default_team_id") or str(self._session["team_id"])
+                team_id or user.get("default_team_id") or previous_team
             )
+            if self._session["team_id"] != previous_team:
+                self._session["workspace_name"] = ""
+                self._session["routed_by"] = (
+                    ROUTED_BY_CONFIG if team_id else ROUTED_BY_DEFAULT
+                )
             self._session["_bootstrapped"] = True
         except httpx.HTTPStatusError as e:
             return LoginResult(
@@ -619,10 +688,10 @@ class RemoteBackend(BackendCapabilities):
         return (
             f"User: {self._session['user_email'] or '(API key auth)'}\n"
             f"Tenant: {tenant}\n"
-            f"Workspace: {workspace}\n"
+            f"Workspace: {self.workspace_label() if self._session.get('team_id') else workspace}\n"
             f"API: {self._api_url}\n"
             f"Backend: remote\n"
-            "Change workspace with switch_workspace(workspace)."
+            f"{routed_by_lines(self.routed_by)}"
         )
 
     def list_workspaces(self) -> list[dict[str, Any]] | None:
@@ -705,15 +774,26 @@ class RemoteBackend(BackendCapabilities):
         workspace_id, detail = resolve_workspace(rows, workspace, id_key="workspace_id")
         if workspace_id is None:
             return refuse(detail, previous)
+        name = next(
+            (
+                str(r.get("name") or "")
+                for r in rows
+                if str(r.get("workspace_id")) == workspace_id
+            ),
+            "",
+        )
         return SwitchResult(
             ok=True,
             message=f"Switched to workspace: {detail}. The next request uses it.",
             workspace_id=workspace_id,
+            workspace_name=name,
         )
 
-    def set_active_workspace(self, workspace_id: str) -> None:
-        """Make `workspace_id` the `X-Workspace-Id` of this session's next request."""
+    def set_active_workspace(self, workspace_id: str, name: str = "") -> None:
+        """Make `workspace_id` the `X-Workspace-Id` of this session's next request (a saved pick)."""
         self._session["team_id"] = workspace_id
+        self._session["workspace_name"] = name
+        self._session["routed_by"] = ROUTED_BY_PICK
 
     def switch_workspace(self, workspace: str) -> SwitchResult:
         """Point this live session at another of the caller's workspaces.
@@ -725,7 +805,7 @@ class RemoteBackend(BackendCapabilities):
         """
         result = self.resolve_switch(workspace)
         if result.ok:
-            self.set_active_workspace(result.workspace_id)
+            self.set_active_workspace(result.workspace_id, result.workspace_name)
         return result
 
     # --- MemoryBackend protocol: implemented (have REST routes) ------------------

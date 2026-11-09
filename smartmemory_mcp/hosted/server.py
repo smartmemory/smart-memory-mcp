@@ -16,7 +16,7 @@ from fastmcp.exceptions import ToolError
 from key_value.aio.protocols.key_value import AsyncKeyValue
 from mcp.types import ToolAnnotations
 
-from ..backends.remote import MISSING_TEAMS_SCOPE
+from ..backends.remote import MISSING_TEAMS_SCOPE, routed_by_lines
 from ..health import register_health
 from ..instructions import HOSTED_INSTRUCTIONS
 from ..tools.common import get_backend, graceful
@@ -130,7 +130,7 @@ def _register_hosted_tools(
                 f"Workspace: {team_id}",
                 f"Auth: {verified.kind}",
                 "Backend: hosted (mcp.smartmemory.ai)",
-                "Change workspace with switch_workspace(workspace).",
+                routed_by_lines(identity.backend.routed_by),
             ]
         )
 

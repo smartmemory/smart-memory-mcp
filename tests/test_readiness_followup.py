@@ -228,6 +228,8 @@ def test_tool_preserves_remote_scheduled_receipt(wire, monkeypatch):
                 "new_item_id": "new",
                 "scope_go_lives": SCHEDULE,
                 "recorded_at": "2026-11-06T00:00:00+00:00",
+                # WS-ROUTING-5: every write result names the workspace it landed in.
+                "workspace": "test_readiness_ws",
             }
 
     asyncio.run(run())

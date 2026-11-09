@@ -1,3 +1,11 @@
+## Unreleased - WS-ROUTING-5 on 2.0: shape-B leftovers (2026-11-09)
+
+- Shape B kept (s1-chat 2026-11-09: "keep shape B, leftovers only"): `X-Workspace-Id` sourcing is unchanged (a call argument, then the saved pick, then the session team). No header-rule change, no resolver.
+- Every remote and hosted call now sends `X-SM-Client` (contract `client_key` grammar): hosted `mcp:<clientInfo.name>`, stdio `mcp:stdio`. A hint only; the 2.0 service ignores it today.
+- `whoami` adds `Routed by:` (`saved pick (switch_workspace)`, `config/env` or `default`) and one line on how to change it, on stdio remote and hosted. Remote whoami shows the workspace name after a switch (`Beta (ws-b)`).
+- Write tool results name the target workspace (name when known, else id): `memory_save`, `memory_save_document`, `memory_save_conversation`, `memory_update`, `memory_supersede`, `memory_delete`. Text results gain a `Workspace: ...` line; structured results and the scheduled supersede receipt gain a `workspace` field.
+- New tests: `tests/test_header_rule.py`, `tests/test_no_literal_workspace_ids.py` (CI grep for literal workspace ids, with a planted-literal row), a 25 h hosted pick row in `tests/test_hosted_session_record.py`, write-result rows in `tests/test_switch_workspace.py`.
+
 ## Unreleased - DRIFT-V3-DHRUV-BOUNDARIES-FU-1 scheduled supersede receipt coverage (2026-11-09)
 
 - Test and docstring only (post-land F1): `memory_supersede` already returns the scheduled receipt (`status`, `scope_go_lives`, `recorded_at`) on local and remote since MCP-2.0-READINESS-FU-1; new tests in `tests/test_readiness_followup.py` cover the F1 sequence through the registered tool on real Lite (scoped history, then a future `valid_from`) and pin the plain `Superseded: <old> -> <new>` text. `RemoteBackend.supersede` docstring says ISO datetime, not date.

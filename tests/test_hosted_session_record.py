@@ -322,3 +322,40 @@ def test_the_switch_tools_run_when_the_pick_cannot_be_read(
     assert [
         call for call in harness.routing.calls if call[0] == "GET"
     ] == []  # the exemption skips the read
+
+
+def test_a_pick_older_than_24_hours_still_routes(monkeypatch) -> None:
+    """Fold-in, shape-B form (WS-ROUTING-5): the 24 h lapse is gone on 2.0, so this is green on the current code.
+
+    Switch, move the wall clock 25 h on, reconnect with a new MCP session: the next write still carries the pick.
+    """
+    import time
+
+    harness = _ServerHarness()
+    sent: list[str] = []
+
+    def spy(method, url, **kwargs):
+        sent.append((kwargs.get("headers") or {}).get("X-Workspace-Id", ""))
+        return fake_svc_api()(method, url, **kwargs)
+
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", spy)
+    real_time = time.time
+
+    async def body(client):
+        first = await harness.session(client)
+        switched = await harness.call(
+            client, first, "switch_workspace", {"workspace": "team-B"}
+        )
+        monkeypatch.setattr(time, "time", lambda: real_time() + 25 * 3600)
+        later = await harness.session(client)
+        sent.clear()
+        saved = await harness.call(client, later, "memory_save", {"content": "a note"})
+        return switched, later != first, saved
+
+    switched, reconnected, saved = harness.run(body)
+
+    assert switched.get("isError") is not True, _text(switched)
+    assert reconnected
+    assert saved.get("isError") is not True, _text(saved)
+    assert sent and set(sent) == {"team-B"}
+    assert saved["structuredContent"]["workspace"] == "team-B"

@@ -22,6 +22,7 @@ from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from mcp.types import TextContent
 
+from ..backends.remote import ROUTED_BY_DEFAULT, ROUTED_BY_PICK
 from .backend import HostedNdaRequiredError
 from .config import HostedConfig
 from .exchange import DEFAULT_EXCHANGE_CACHE, ExchangeCache, get_sm_identity
@@ -162,6 +163,9 @@ class HostedIdentityMiddleware(Middleware):
         except AssertionError as exc:
             logger.warning("Hosted backend construction refused: %s", exc)
             raise ToolError(f"Unauthorized: incomplete identity ({exc})") from exc
+        # WS-ROUTING-5 (shape B): name the client on every svc-api call and record where the workspace came from.
+        backend.set_client_key(mcp_client_key(fastmcp_context))
+        backend.set_routed_by(ROUTED_BY_PICK if session_team else ROUTED_BY_DEFAULT)
 
         identity = HostedIdentity(
             verified=verified,

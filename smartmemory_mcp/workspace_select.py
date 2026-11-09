@@ -31,6 +31,7 @@ class SwitchResult:
     ok: bool
     message: str
     workspace_id: str = ""
+    workspace_name: str = ""
 
 
 def warn_alias_once() -> None:

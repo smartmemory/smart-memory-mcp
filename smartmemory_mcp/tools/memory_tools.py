@@ -32,6 +32,8 @@ from .common import (
     checked_as_of,
     dated,
     get_backend,
+    name_workspace,
+    target_workspace,
     graceful,
     scoped_options,
     refuse_scoped_options,
@@ -1171,6 +1173,7 @@ def register_pro(mcp):
         - ``write_mode``: "merge" (default) or "replace".
         """
         backend = get_backend()
+        workspace = target_workspace(backend)
         result = backend.update(
             item_id,
             content=content,
@@ -1178,7 +1181,9 @@ def register_pro(mcp):
             properties=properties,
             write_mode=write_mode,
         )
-        return str(result) if result else f"Updated: {item_id}"
+        return name_workspace(
+            str(result) if result else f"Updated: {item_id}", workspace
+        )
 
     @mcp.tool(
         title="Supersede a memory",
@@ -1210,13 +1215,14 @@ def register_pro(mcp):
         """
         options = scoped_options(scope_go_lives=scope_go_lives, valid_from=valid_from)
         backend = get_backend()
+        workspace = target_workspace(backend)
         result = backend.supersede(
             item_id, content, reason, metadata=metadata, **options
         )
         if result and result.get("status") == "scheduled":
-            return result
+            return name_workspace(result, workspace)
         new_id = (result or {}).get("new_item_id", "unknown")
-        return f"Superseded: {item_id} -> {new_id}"
+        return name_workspace(f"Superseded: {item_id} -> {new_id}", workspace)
 
     @mcp.tool(
         title="Delete a memory",
@@ -1231,8 +1237,12 @@ def register_pro(mcp):
     def memory_delete(item_id: str) -> str:
         """Delete a memory item by ID."""
         backend = get_backend()
+        workspace = target_workspace(backend)
         success = backend.delete(item_id)
-        return f"Deleted: {item_id}" if success else f"Failed to delete: {item_id}"
+        return name_workspace(
+            f"Deleted: {item_id}" if success else f"Failed to delete: {item_id}",
+            workspace,
+        )
 
     @mcp.tool(
         title="Clear all memories",

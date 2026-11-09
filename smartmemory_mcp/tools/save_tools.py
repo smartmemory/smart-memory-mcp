@@ -18,7 +18,7 @@ from mcp.types import ToolAnnotations
 
 from smartmemory_mcp.backends.local import SaveReturn
 
-from .common import get_backend, graceful
+from .common import get_backend, graceful, name_workspace, target_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -227,14 +227,18 @@ def register_free(mcp):
         if (content is None) == (data is None):
             raise ToolError("Provide exactly one of content or data.")
         backend = get_backend()
+        workspace = target_workspace(backend)
         if data is not None:
             if not memory_type:
                 raise ToolError("data needs memory_type: the registered schema name.")
             if metadata or tags:
                 raise ToolError("metadata and tags apply to content, not data.")
             saved = backend.ingest_structured_with_receipt(data, schema=memory_type)
-            return _item_result(
-                saved, noun="Structured item", detail=f" Schema: {memory_type}."
+            return name_workspace(
+                _item_result(
+                    saved, noun="Structured item", detail=f" Schema: {memory_type}."
+                ),
+                workspace,
             )
         item_metadata = dict(metadata or {})
         if tags:
@@ -245,7 +249,7 @@ def register_free(mcp):
             saved = backend.add_with_receipt(content, memory_type=mtype, **kwargs)
         else:
             saved = backend.ingest_with_receipt(content, memory_type=mtype, **kwargs)
-        return _item_result(saved, noun="Memory")
+        return name_workspace(_item_result(saved, noun="Memory"), workspace)
 
 
 def register_pro(mcp):
@@ -272,14 +276,16 @@ def register_pro(mcp):
             chunk_strategy: "paragraph" | "sentence" | "markdown" | "recursive".
             reference: Mark nodes as reference material.
         """
-        saved = get_backend().ingest_document_with_receipt(
+        backend = get_backend()
+        workspace = target_workspace(backend)
+        saved = backend.ingest_document_with_receipt(
             source,
             source_type=source_type,
             chunk_size=chunk_size,
             chunk_strategy=chunk_strategy,
             reference=reference,
         )
-        return _document_result(saved)
+        return name_workspace(_document_result(saved), workspace)
 
     @mcp.tool(title="Save a conversation", annotations=_SAVE_ANNOTATIONS)
     @graceful
@@ -306,6 +312,7 @@ def register_pro(mcp):
             max_chunk_chars: Safety split for oversized chunks (default 12000).
         """
         backend = get_backend()
+        workspace = target_workspace(backend)
         if _is_turn_pair(turns, session_boundaries, session_dates):
             meta: Dict[str, Any] = dict(_TURN_METADATA)
             if conversation_id:
@@ -315,7 +322,7 @@ def register_pro(mcp):
                 memory_type="pending",
                 metadata=meta,
             )
-            return _item_result(saved, noun="Turn")
+            return name_workspace(_item_result(saved, noun="Turn"), workspace)
         saved = backend.ingest_conversation_with_receipt(
             turns,
             session_boundaries=session_boundaries,
@@ -324,4 +331,4 @@ def register_pro(mcp):
             turns_per_chunk=turns_per_chunk,
             max_chunk_chars=max_chunk_chars,
         )
-        return _conversation_result(saved, conversation_id)
+        return name_workspace(_conversation_result(saved, conversation_id), workspace)

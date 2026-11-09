@@ -1073,7 +1073,7 @@ class LocalBackend(BackendCapabilities):
         """Same answer as `switch_workspace`: Lite has nothing to resolve or commit."""
         return self.switch_workspace(workspace)
 
-    def set_active_workspace(self, workspace_id: str) -> None:
+    def set_active_workspace(self, workspace_id: str, name: str = "") -> None:
         """No-op: Lite's only workspace is `default`, and `resolve_switch` refuses others."""
 
     def switch_workspace(self, workspace: str, **kwargs: Any) -> SwitchResult:

@@ -48,6 +48,38 @@ def commit_if_current(backend: Any, apply: Callable[[], None]) -> bool:
         return True
 
 
+def target_workspace(backend: Any) -> str:
+    """The workspace a write through ``backend`` lands in: name when known, else id (WS-ROUTING-5).
+
+    Read before the write is sent, so the label is the one that call's ``X-Workspace-Id`` carries.
+    """
+    label = getattr(backend, "workspace_label", None)
+    if callable(label):
+        return str(label())
+    from smartmemory_mcp.backends.local import LOCAL_WORKSPACE
+
+    return f"{LOCAL_WORKSPACE} (local mode)"
+
+
+def name_workspace(result: Any, workspace: str) -> Any:
+    """Add the target workspace to a write tool's result: a text line, and a ``workspace`` field when structured."""
+    from fastmcp.tools import ToolResult
+    from mcp.types import TextContent
+
+    line = f"Workspace: {workspace}"
+    if isinstance(result, ToolResult):
+        result.content = [*result.content, TextContent(type="text", text=line)]
+        if isinstance(result.structured_content, dict):
+            result.structured_content = {
+                **result.structured_content,
+                "workspace": workspace,
+            }
+        return result
+    if isinstance(result, dict):
+        return {**result, "workspace": workspace}
+    return f"{result}\n{line}"
+
+
 def reset_backend() -> None:
     """Clear cached backend (for testing)."""
     global _backend
