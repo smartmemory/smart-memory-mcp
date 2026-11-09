@@ -18,6 +18,7 @@ from typing import Any, NoReturn
 
 import httpx
 
+from smartmemory_mcp.tool_trace import tool_headers
 from smartmemory_mcp.tools.common import scoped_options
 
 from .interface import BackendCapabilities, EvidenceRefused
@@ -224,6 +225,8 @@ class RemoteBackend(BackendCapabilities):
             "Content-Type": "application/json",
             "X-Workspace-Id": workspace_id or str(self._session.get("team_id", "")),
             "X-SM-Client": self.client_key,
+            # INSIGHTS-MCP-TRACES-1: svc-api emits the mcp.<tool> span from these.
+            **tool_headers(),
         }
 
     @property

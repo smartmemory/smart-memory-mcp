@@ -26,6 +26,7 @@ from smartmemory_mcp.backends.remote import (
 from smartmemory_mcp.capabilities import BackendCapabilityMiddleware
 from smartmemory_mcp.health import register_health
 from smartmemory_mcp.instructions import LOCAL_INSTRUCTIONS
+from smartmemory_mcp.tool_trace import ToolTraceMiddleware
 from smartmemory_mcp.tier import Tier, resolve_tier, store_api_key
 from smartmemory_mcp.tools.common import commit_if_current, get_backend, graceful
 
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("smartmemory", instructions=LOCAL_INSTRUCTIONS)
 mcp.add_middleware(BackendCapabilityMiddleware())
+mcp.add_middleware(ToolTraceMiddleware())
 
 # Set when the PRO-tier transcript tools register, so `main()` knows whether the
 # search-model warm-up is worth scheduling (FREE tier has no transcript_search).

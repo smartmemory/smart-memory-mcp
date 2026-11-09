@@ -20,6 +20,7 @@ from ..backends.remote import MISSING_TEAMS_SCOPE, routed_by_lines
 from ..health import register_health
 from ..instructions import HOSTED_INSTRUCTIONS
 from ..tools.common import get_backend, graceful
+from ..tool_trace import ToolTraceMiddleware
 from ..tools.lexical_contract import validate_channel_weights
 from .auth import build_auth
 from .config import HostedConfig
@@ -78,7 +79,7 @@ def build_hosted_server(
         SERVER_NAME,
         instructions=HOSTED_INSTRUCTIONS,
         auth=auth,
-        middleware=[identity_middleware],
+        middleware=[identity_middleware, ToolTraceMiddleware()],
         # The hosted variants of memory_search and memory_recall deliberately
         # supersede the ones their module registers. "replace" is fastmcp's
         # supported route for that (`local_provider.py:186-200`); there is no

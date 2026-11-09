@@ -6,6 +6,12 @@
 - Write tool results name the target workspace (name when known, else id): `memory_save`, `memory_save_document`, `memory_save_conversation`, `memory_update`, `memory_supersede`, `memory_delete`. Text results gain a `Workspace: ...` line; structured results and the scheduled supersede receipt gain a `workspace` field.
 - New tests: `tests/test_header_rule.py`, `tests/test_no_literal_workspace_ids.py` (CI grep for literal workspace ids, with a planted-literal row), a 25 h hosted pick row in `tests/test_hosted_session_record.py`, write-result rows in `tests/test_switch_workspace.py`.
 
+## Unreleased - INSIGHTS-MCP-TRACES-1: MCP tool calls become traceable (2026-11-09)
+
+- `smartmemory_mcp/tool_trace.py` (new): `ToolTraceMiddleware` binds the tool name and a fresh trace id (uuid4 hex) per tool call. Registered on the stdio server and the hosted server. `RemoteBackend._headers` adds `X-SM-Tool` and `X-SM-Trace-Id` from it, so svc-api emits one `mcp.<tool>` progress event per HTTP call on the caller's own workspace stream (every HTTP call of one tool call shares the trace id). Local stdio mode (`SMARTMEMORY_MCP_MODE=local`) wraps the call in core `trace_span("mcp.<tool>")` instead. Remote and hosted stay core-free. Contract: `smart-memory-docs/docs/features/INSIGHTS-MCP-TRACES-1/mcp-span-contract.json`.
+- Tracing never fails a tool call: a lost span logs one WARNING `mcp span lost: <tool>: <reason>`; the tool's own error still propagates.
+- `tests/test_mcp_span_headers.py` (new, 6 tests).
+
 ## Unreleased - DRIFT-V3-DHRUV-BOUNDARIES-FU-1 scheduled supersede receipt coverage (2026-11-09)
 
 - Test and docstring only (post-land F1): `memory_supersede` already returns the scheduled receipt (`status`, `scope_go_lives`, `recorded_at`) on local and remote since MCP-2.0-READINESS-FU-1; new tests in `tests/test_readiness_followup.py` cover the F1 sequence through the registered tool on real Lite (scoped history, then a future `valid_from`) and pin the plain `Superseded: <old> -> <new>` text. `RemoteBackend.supersede` docstring says ISO datetime, not date.
