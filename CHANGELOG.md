@@ -1,3 +1,7 @@
+## 2.0.1
+
+Version bump to 2.0.1, every SmartMemory repo reads the same version (REL-2.0-VERSION-BUMP-2.0.1-1).
+
 ## Unreleased - WS-ROUTING-5 on 2.0: shape-B leftovers (2026-11-09)
 
 - Shape B kept (s1-chat 2026-11-09: "keep shape B, leftovers only"): `X-Workspace-Id` sourcing is unchanged (a call argument, then the saved pick, then the session team). No header-rule change, no resolver.
