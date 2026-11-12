@@ -10,6 +10,25 @@ from smartmemory_mcp.hosted.identity import resolve_hosted_backend
 
 logger = logging.getLogger(__name__)
 
+
+def metadata_dict(item: Any, tool: str = "") -> dict:
+    """``item["metadata"]`` as a dict. Truthy non-dict metadata (str, list, int)
+    gets one WARNING and reads as empty: the line that needs it is left out and
+    the call never fails (MCP-MEMGET-META-1 design, 8de1eee/60f70fb)."""
+    md = item.get("metadata") if isinstance(item, dict) else None
+    if not md:
+        return {}
+    if isinstance(md, dict):
+        return md
+    logger.warning(
+        "%s item %s has %s metadata, not a dict; its metadata was not read",
+        tool or "read tool",
+        item.get("item_id"),
+        type(md).__name__,
+    )
+    return {}
+
+
 _backend = None
 
 
@@ -261,8 +280,8 @@ def resolution_text(value):
     """Render only response diagnostics, identically for all backends."""
     if not isinstance(value, dict):
         return ""
-    resolution = value.get("scoped_validity_resolution") or (
-        value.get("metadata") or {}
+    resolution = value.get("scoped_validity_resolution") or metadata_dict(
+        value, "resolution_text"
     ).get("scoped_validity_resolution")
     if resolution is not None:
         lines = [f"scoped_validity_resolution: {resolution}"]

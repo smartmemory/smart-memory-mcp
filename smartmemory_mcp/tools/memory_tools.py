@@ -38,6 +38,7 @@ from .common import (
     scoped_options,
     refuse_scoped_options,
     resolution_text,
+    metadata_dict,
 )
 from .lexical_contract import validate_channel_weights
 
@@ -181,7 +182,9 @@ def model_item(item: Dict[str, Any]) -> Dict[str, Any]:
             del out["read_status"]
         else:
             out["read_status"] = status
-    if resolution := (item.get("metadata") or {}).get("scoped_validity_resolution"):
+    if resolution := metadata_dict(item, "model_item").get(
+        "scoped_validity_resolution"
+    ):
         out["scoped_validity_resolution"] = resolution
     return out
 
@@ -426,7 +429,7 @@ def _format_catalog(query: str, results: list) -> str:
 
     lines = [f"Memory catalog for '{query}' — {len(results)} results", "─" * 43]
     for i, item in enumerate(results, 1):
-        meta = item["metadata"] or {}
+        meta = metadata_dict(item, "memory_search catalog")
 
         # Content only: metadata text (title) is not copied (MCP-MEMGET-META-1).
         content = str(item["content"]).replace("\n", " ")

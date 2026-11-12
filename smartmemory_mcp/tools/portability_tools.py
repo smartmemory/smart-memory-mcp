@@ -387,7 +387,12 @@ def _export_okf(backend: Any, output_path: Path, workspace_id: Any = LIVE_PICK) 
             return _bundle_page_count(bundle_dir)
 
     if _is_archive(output_path):
-        with tempfile.TemporaryDirectory(prefix="smartmemory-okf-export-") as temp_dir:
+        # Core refuses a symlinked export parent; macOS TMPDIR sits under /var
+        # (-> private/var), so stage under the resolved temp dir.
+        with tempfile.TemporaryDirectory(
+            prefix="smartmemory-okf-export-",
+            dir=Path(tempfile.gettempdir()).resolve(),
+        ) as temp_dir:
             bundle_dir = Path(temp_dir) / "bundle"
             count = int(backend.export_okf(str(bundle_dir)))
             _archive_bundle(bundle_dir, output_path)

@@ -388,7 +388,9 @@ class LocalBackend(BackendCapabilities):
                 if hasattr(item, "metadata") and isinstance(item.metadata, dict):
                     existing_meta = item.metadata
                 elif isinstance(item, dict):
-                    existing_meta = item.get("metadata") or {}
+                    existing_meta = item.get("metadata")
+                    if not isinstance(existing_meta, dict):
+                        existing_meta = {}
                 props["metadata"] = {**existing_meta, **metadata}
 
         if not props:

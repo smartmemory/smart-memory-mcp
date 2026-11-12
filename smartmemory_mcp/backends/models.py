@@ -140,6 +140,9 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         if not d.get("created_at"):
             d["created_at"] = getattr(raw, "transaction_time", None)
 
+    # Non-dict metadata is carried through unchanged (the read tools warn once per
+    # item); only the two chained reads below need a dict.
+    _md = d.get("metadata") if isinstance(d.get("metadata"), dict) else {}
     result = MemoryResult(
         item_id=d.get("item_id") or d.get("id", ""),
         content=d.get("content", ""),
@@ -155,7 +158,7 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         superseded=bool(d.get("superseded", False)),
         superseded_by=d.get("superseded_by"),
         via_supersession_of=d.get("via_supersession_of")
-        or (d.get("metadata") or {}).get("via_supersession_of"),
+        or _md.get("via_supersession_of"),
         derived_from=d.get("derived_from"),
         origin=d.get("origin"),
         reference=d.get("reference"),
@@ -165,7 +168,7 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         conflict=d.get("conflict"),
         as_of_resolution=d.get("as_of_resolution"),
         valid_at_resolution=d.get("valid_at_resolution")
-        or (d.get("metadata") or {}).get("valid_at_resolution"),
+        or _md.get("valid_at_resolution"),
     )
     status = validated_carrier(d.get("read_status"), result["item_id"])
     if status is not None:

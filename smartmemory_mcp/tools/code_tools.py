@@ -8,7 +8,7 @@ from typing import Any, Optional
 from mcp.types import ToolAnnotations
 
 from ..backends.models import none_found, partial_note, partial_reasons
-from .common import get_backend, graceful
+from .common import get_backend, graceful, metadata_dict
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +197,7 @@ def register(mcp):
             partial = partial_reasons(results)
             items = []
             for item in results or []:
-                meta = item["metadata"]
+                meta = metadata_dict(item, "code")
                 if entity_type and meta.get("entity_type") != entity_type:
                     continue
                 if repo and meta.get("repo") != repo:

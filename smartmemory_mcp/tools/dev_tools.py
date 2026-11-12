@@ -7,7 +7,7 @@ from typing import List, Optional
 from mcp.types import ToolAnnotations
 
 from ..backends.models import none_found, partial_note, partial_reasons
-from .common import get_backend, graceful
+from .common import get_backend, graceful, metadata_dict
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ def register(mcp):
 
         filtered = []
         for item in results:
-            meta = item["metadata"]
+            meta = metadata_dict(item, "dev")
 
             if feature_id and meta.get("feature_id") != feature_id:
                 continue
@@ -150,7 +150,7 @@ def register(mcp):
 
         output = [f"Found {len(filtered)} decisions for '{query}':\n"]
         for i, item in enumerate(filtered, 1):
-            meta = item["metadata"]
+            meta = metadata_dict(item, "dev")
             title = meta.get("title", "Untitled")
             rationale = meta.get("rationale", "")
             recorded_at = meta.get("recorded_at", "unknown")
@@ -252,7 +252,7 @@ def register(mcp):
         if session_results:
             output.append(f"=== Recent Sessions ({len(session_results)}) ===\n")
             for i, item in enumerate(session_results, 1):
-                meta = item["metadata"]
+                meta = metadata_dict(item, "dev")
                 summary = meta.get("summary", str(item["content"])[:200])
                 recorded_at = meta.get("recorded_at", "unknown")
                 next_steps = meta.get("next_steps", [])
@@ -279,7 +279,7 @@ def register(mcp):
             if decision_results:
                 output.append(f"=== Related Decisions ({len(decision_results)}) ===\n")
                 for i, item in enumerate(decision_results, 1):
-                    meta = item["metadata"]
+                    meta = metadata_dict(item, "dev")
                     # SM-LOCAL-TOOLS-1: a decision stores rationale=None when it has none.
                     title = meta.get("title") or "Untitled"
                     rationale = meta.get("rationale") or ""
@@ -306,13 +306,15 @@ def register(mcp):
         context_parts = []
         if session_results:
             latest = session_results[0]
-            latest_meta = latest["metadata"]
+            latest_meta = metadata_dict(latest, "dev")
             context_parts.append(f"Last session: {latest_meta.get('summary', 'N/A')}")
             ns = latest_meta.get("next_steps", [])
             if ns:
                 context_parts.append(f"Pending: {'; '.join(ns)}")
         if include_decisions and decision_results:
-            titles = [d["metadata"].get("title", "?") for d in decision_results[:3]]
+            titles = [
+                metadata_dict(d, "dev").get("title", "?") for d in decision_results[:3]
+            ]
             context_parts.append(f"Relevant decisions: {', '.join(titles)}")
 
         if context_parts:

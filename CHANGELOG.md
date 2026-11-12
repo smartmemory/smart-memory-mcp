@@ -2,6 +2,9 @@
 
 Version bump to 2.0.1, every SmartMemory repo reads the same version (REL-2.0-VERSION-BUMP-2.0.1-1).
 
+- Fix (REL-2.0-CUT-1): truthy non-dict item `metadata` (str, list, int) no longer fails the whole call. Read tools (`memory_search`, `memory_get`, hosted `code_effects`, catalog, dev, reasoning and code tools) log one WARNING, leave the line out and return normally. Regression from d8d7dc7, design from 8de1eee/60f70fb.
+- Fix: archive export (`memory_export` to a `.tar.gz`) stages under the resolved temp dir, so macOS `TMPDIR` under `/var` (a symlink to `private/var`) no longer trips core's symlinked-parent check.
+
 ## Unreleased - WS-ROUTING-5 on 2.0: shape-B leftovers (2026-11-09)
 
 - Shape B kept (s1-chat 2026-11-09: "keep shape B, leftovers only"): `X-Workspace-Id` sourcing is unchanged (a call argument, then the saved pick, then the session team). No header-rule change, no resolver.
