@@ -38,7 +38,8 @@ from .common import (
     scoped_options,
     refuse_scoped_options,
     resolution_text,
-    metadata_dict,
+    read_metadata,
+    _UNSET,
 )
 from .lexical_contract import validate_channel_weights
 
@@ -169,8 +170,11 @@ _MODEL_ITEM_FIELDS = frozenset(
 )
 
 
-def model_item(item: Dict[str, Any]) -> Dict[str, Any]:
-    """Model-facing copy of a read-tool item: its own fields, ``metadata`` emptied."""
+def model_item(item: Dict[str, Any], metadata: Any = _UNSET) -> Dict[str, Any]:
+    """Model-facing copy of a read-tool item: its own fields, ``metadata`` emptied.
+
+    ``metadata``: the caller's already-validated ``read_metadata`` result (``None``
+    = malformed, already warned), so one item never warns twice in one call."""
     out = {
         key: {} if key == "metadata" else value
         for key, value in item.items()
@@ -182,9 +186,9 @@ def model_item(item: Dict[str, Any]) -> Dict[str, Any]:
             del out["read_status"]
         else:
             out["read_status"] = status
-    if resolution := metadata_dict(item, "model_item").get(
-        "scoped_validity_resolution"
-    ):
+    if metadata is _UNSET:
+        metadata = read_metadata(item, "model_item")
+    if resolution := (metadata or {}).get("scoped_validity_resolution"):
         out["scoped_validity_resolution"] = resolution
     return out
 
@@ -429,7 +433,7 @@ def _format_catalog(query: str, results: list) -> str:
 
     lines = [f"Memory catalog for '{query}' — {len(results)} results", "─" * 43]
     for i, item in enumerate(results, 1):
-        meta = metadata_dict(item, "memory_search catalog")
+        meta = read_metadata(item, "memory_search catalog")  # once per item
 
         # Content only: metadata text (title) is not copied (MCP-MEMGET-META-1).
         content = str(item["content"]).replace("\n", " ")
@@ -440,14 +444,14 @@ def _format_catalog(query: str, results: list) -> str:
         score = item.get("score")
         score_str = f"  {score:.3f}" if score is not None else ""
         age_str = _relative_age(item.get("created_at"))
-        stale = meta.get("stale", False)
-        stale_str = "  ⚠ stale" if stale else ""
+        # Malformed metadata (meta is None): the stale marker is left out.
+        stale_str = "  ⚠ stale" if (meta or {}).get("stale", False) else ""
 
         lines.append(
             f"{i}. {item_id}  {mtype}{score_str}  {age_str}{stale_str}{supersession_label(item)}"
         )
         lines.append(f"   {snippet}")
-        if diagnostic := resolution_text(item):
+        if diagnostic := resolution_text(item, meta):
             lines.append(f"   {diagnostic}")
         lines.append("")
 

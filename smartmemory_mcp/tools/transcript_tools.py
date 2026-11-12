@@ -190,7 +190,18 @@ def _item_meta(item: Any) -> dict:
     stored chunk — but `normalize_item` and the raw facade disagree on whether they
     surface as attributes or inside `metadata`, so check both rather than assume.
     """
-    meta = dict(getattr(item, "metadata", None) or {})
+    raw_meta = getattr(item, "metadata", None)
+    if isinstance(raw_meta, dict):
+        meta = dict(raw_meta)
+    else:
+        if raw_meta:
+            logger.warning(
+                "transcript item %s has %s metadata, not a dict; its provenance "
+                "was not read from metadata",
+                getattr(item, "item_id", None),
+                type(raw_meta).__name__,
+            )
+        meta = {}
     for key in (
         "origin",
         "cwd",

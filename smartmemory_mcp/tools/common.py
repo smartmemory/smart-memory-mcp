@@ -3,7 +3,7 @@
 import json
 import functools
 import logging
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from smartmemory_mcp.backends.dispatch import rebuild_lock, resolve_backend
 from smartmemory_mcp.hosted.identity import resolve_hosted_backend
@@ -11,10 +11,12 @@ from smartmemory_mcp.hosted.identity import resolve_hosted_backend
 logger = logging.getLogger(__name__)
 
 
-def metadata_dict(item: Any, tool: str = "") -> dict:
-    """``item["metadata"]`` as a dict. Truthy non-dict metadata (str, list, int)
-    gets one WARNING and reads as empty: the line that needs it is left out and
-    the call never fails (MCP-MEMGET-META-1 design, 8de1eee/60f70fb)."""
+def read_metadata(item: Any, tool: str = "") -> Optional[dict]:
+    """``item["metadata"]`` validated ONCE per item: a dict (``{}`` when absent or
+    falsy) or ``None`` when it is truthy non-dict (str, list, int), with one
+    WARNING. Callers keep the result and reuse it (a second call would warn
+    again); on ``None`` they omit the metadata-dependent lines and keep the item's
+    content, never inventing values (MCP-MEMGET-META-1 design, 8de1eee/60f70fb)."""
     md = item.get("metadata") if isinstance(item, dict) else None
     if not md:
         return {}
@@ -26,7 +28,16 @@ def metadata_dict(item: Any, tool: str = "") -> dict:
         item.get("item_id"),
         type(md).__name__,
     )
-    return {}
+    return None
+
+
+def metadata_dict(item: Any, tool: str = "") -> dict:
+    """``read_metadata`` for a read that only needs a dict (malformed reads as
+    empty). Still one WARNING per call; do not call it twice on one item."""
+    return read_metadata(item, tool) or {}
+
+
+_UNSET = object()
 
 
 _backend = None
@@ -276,13 +287,18 @@ def refuse_scoped_options(business_scope, valid_at):
         )
 
 
-def resolution_text(value):
-    """Render only response diagnostics, identically for all backends."""
+def resolution_text(value, metadata=_UNSET):
+    """Render only response diagnostics, identically for all backends.
+
+    ``metadata``: the caller's already-validated ``read_metadata`` result (``None``
+    = malformed, already warned), so one item never warns twice in one call."""
     if not isinstance(value, dict):
         return ""
-    resolution = value.get("scoped_validity_resolution") or metadata_dict(
-        value, "resolution_text"
-    ).get("scoped_validity_resolution")
+    if metadata is _UNSET:
+        metadata = read_metadata(value, "resolution_text")
+    resolution = value.get("scoped_validity_resolution") or (metadata or {}).get(
+        "scoped_validity_resolution"
+    )
     if resolution is not None:
         lines = [f"scoped_validity_resolution: {resolution}"]
     else:

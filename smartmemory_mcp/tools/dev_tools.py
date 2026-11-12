@@ -7,7 +7,7 @@ from typing import List, Optional
 from mcp.types import ToolAnnotations
 
 from ..backends.models import none_found, partial_note, partial_reasons
-from .common import get_backend, graceful, metadata_dict
+from .common import get_backend, graceful, read_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,8 @@ def register(mcp):
 
         filtered = []
         for item in results:
-            meta = metadata_dict(item, "dev")
+            raw_meta = read_metadata(item, "dev")  # once per item; None = malformed
+            meta = raw_meta or {}
 
             if feature_id and meta.get("feature_id") != feature_id:
                 continue
@@ -132,7 +133,7 @@ def register(mcp):
                     except (ValueError, TypeError):
                         pass
 
-            filtered.append(item)
+            filtered.append((item, raw_meta))
             if len(filtered) >= limit:
                 break
 
@@ -149,8 +150,13 @@ def register(mcp):
             )
 
         output = [f"Found {len(filtered)} decisions for '{query}':\n"]
-        for i, item in enumerate(filtered, 1):
-            meta = metadata_dict(item, "dev")
+        for i, (item, meta) in enumerate(filtered, 1):
+            if meta is None:
+                # Malformed metadata: keep the content, omit title/date/feature/rationale.
+                snippet = str(item.get("content", "")).replace("\n", " ")[:150]
+                output.append(f"{i}. [{item['item_id']}] {snippet}")
+                output.append("")
+                continue
             title = meta.get("title", "Untitled")
             rationale = meta.get("rationale", "")
             recorded_at = meta.get("recorded_at", "unknown")
@@ -249,10 +255,17 @@ def register(mcp):
 
         session_results = backend.search(topic, top_k=sessions, memory_type="episodic")
         session_partial = partial_reasons(session_results)
+        # Validate each item's metadata once; every later read reuses the result.
+        session_metas = [read_metadata(it, "dev") for it in session_results or []]
         if session_results:
             output.append(f"=== Recent Sessions ({len(session_results)}) ===\n")
             for i, item in enumerate(session_results, 1):
-                meta = metadata_dict(item, "dev")
+                meta = session_metas[i - 1]
+                if meta is None:
+                    # Malformed metadata: content only, no date or next steps.
+                    output.append(f"{i}. {str(item['content'])[:200]}")
+                    output.append("")
+                    continue
                 summary = meta.get("summary", str(item["content"])[:200])
                 recorded_at = meta.get("recorded_at", "unknown")
                 next_steps = meta.get("next_steps", [])
@@ -276,10 +289,16 @@ def register(mcp):
             found = backend.search(topic, top_k=3, memory_type="decision")
             decision_partial = partial_reasons(found)
             decision_results = found or []
+            decision_metas = [read_metadata(d, "dev") for d in decision_results]
             if decision_results:
                 output.append(f"=== Related Decisions ({len(decision_results)}) ===\n")
                 for i, item in enumerate(decision_results, 1):
-                    meta = metadata_dict(item, "dev")
+                    meta = decision_metas[i - 1]
+                    if meta is None:
+                        # Malformed metadata: content only, no title or rationale.
+                        output.append(f"{i}. {str(item['content'])[:100]}")
+                        output.append("")
+                        continue
                     # SM-LOCAL-TOOLS-1: a decision stores rationale=None when it has none.
                     title = meta.get("title") or "Untitled"
                     rationale = meta.get("rationale") or ""
@@ -305,17 +324,18 @@ def register(mcp):
 
         context_parts = []
         if session_results:
-            latest = session_results[0]
-            latest_meta = metadata_dict(latest, "dev")
-            context_parts.append(f"Last session: {latest_meta.get('summary', 'N/A')}")
-            ns = latest_meta.get("next_steps", [])
-            if ns:
-                context_parts.append(f"Pending: {'; '.join(ns)}")
+            latest_meta = session_metas[0]
+            if latest_meta is not None:
+                context_parts.append(
+                    f"Last session: {latest_meta.get('summary', 'N/A')}"
+                )
+                ns = latest_meta.get("next_steps", [])
+                if ns:
+                    context_parts.append(f"Pending: {'; '.join(ns)}")
         if include_decisions and decision_results:
-            titles = [
-                metadata_dict(d, "dev").get("title", "?") for d in decision_results[:3]
-            ]
-            context_parts.append(f"Relevant decisions: {', '.join(titles)}")
+            titles = [m.get("title", "?") for m in decision_metas[:3] if m is not None]
+            if titles:
+                context_parts.append(f"Relevant decisions: {', '.join(titles)}")
 
         if context_parts:
             output.append("=== Suggested Context ===\n")

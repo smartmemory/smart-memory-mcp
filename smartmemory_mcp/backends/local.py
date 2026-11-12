@@ -384,13 +384,20 @@ class LocalBackend(BackendCapabilities):
             if content is not None:
                 props["content"] = content
             if metadata is not None:
-                existing_meta = {}
-                if hasattr(item, "metadata") and isinstance(item.metadata, dict):
-                    existing_meta = item.metadata
-                elif isinstance(item, dict):
+                if isinstance(item, dict):
                     existing_meta = item.get("metadata")
-                    if not isinstance(existing_meta, dict):
-                        existing_meta = {}
+                else:
+                    existing_meta = getattr(item, "metadata", None)
+                if not existing_meta:
+                    existing_meta = {}
+                if not isinstance(existing_meta, dict):
+                    log.warning(
+                        "update %s: stored metadata is %s, not a dict; the old value "
+                        "is NOT merged and is replaced by the new metadata",
+                        item_id,
+                        type(existing_meta).__name__,
+                    )
+                    existing_meta = {}
                 props["metadata"] = {**existing_meta, **metadata}
 
         if not props:
@@ -449,8 +456,17 @@ class LocalBackend(BackendCapabilities):
             metadata = (
                 replacement
                 if isinstance(replacement, dict)
-                else (replacement.metadata or {})
+                else (getattr(replacement, "metadata", None) or {})
             )
+            if not isinstance(metadata, dict):
+                log.warning(
+                    "supersede %s: replacement %s has %s metadata, not a dict; "
+                    "scope_go_lives was not read from it",
+                    item_id,
+                    new_id,
+                    type(metadata).__name__,
+                )
+                metadata = {}
             raw = getattr(replacement, "scope_go_lives", None) or metadata.get(
                 "scope_go_lives"
             )

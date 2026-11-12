@@ -5,7 +5,7 @@ import logging
 from mcp.types import ToolAnnotations
 
 from ..backends.models import none_found, partial_note, partial_reasons
-from .common import get_backend, graceful, metadata_dict
+from .common import get_backend, graceful, read_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -300,10 +300,14 @@ def register(mcp):
 
         output = [f"Found {len(results)} reasoning traces:\n"]
         for item in results:
-            meta = metadata_dict(item, "reasoning")
-            steps = meta.get("steps", [])
+            meta = read_metadata(item, "reasoning")
             item_id = item["item_id"]
             content = item["content"]
+            if meta is None:
+                # Malformed metadata: keep the content, omit the step count.
+                output.append(f"- [{item_id}]: {content[:120]}")
+                continue
+            steps = meta.get("steps", [])
             output.append(f"- [{item_id}] ({len(steps)} steps): {content[:120]}")
 
         if partial:

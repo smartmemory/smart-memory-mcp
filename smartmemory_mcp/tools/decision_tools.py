@@ -60,10 +60,11 @@ def _uncertainty_marker(decision: Any) -> str:
 def _summary_line(decision: Any) -> str:
     """One list/search row. Shared so both tools cannot drift apart."""
     confidence = _field(decision, "confidence") or 0.0
+    diagnostic = resolution_text(decision)  # once: it warns on malformed metadata
     return (
         f"- [{_field(decision, 'decision_id')}] "
         f"({_field(decision, 'decision_type')}, conf={confidence:.2f}): "
-        f"{str(_field(decision, 'content', ''))[:100]}{_uncertainty_marker(decision)}{(' ' + resolution_text(decision)) if resolution_text(decision) else ''}"
+        f"{str(_field(decision, 'content', ''))[:100]}{_uncertainty_marker(decision)}{(' ' + diagnostic) if diagnostic else ''}"
     )
 
 

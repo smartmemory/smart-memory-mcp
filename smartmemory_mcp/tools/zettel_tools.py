@@ -152,8 +152,24 @@ def register(mcp):
         for target_id, score in filtered:
             try:
                 note = zettel.get(target_id)
-                title = note.metadata.get("title", target_id) if note else target_id
             except Exception:
-                title = target_id
+                logger.warning(
+                    "zettel_discover could not load note %s; showing its id",
+                    target_id,
+                    exc_info=True,
+                )
+                note = None
+            title = target_id
+            if note is not None:
+                note_meta = getattr(note, "metadata", None)
+                if isinstance(note_meta, dict):
+                    title = note_meta.get("title", target_id)
+                elif note_meta:
+                    logger.warning(
+                        "zettel_discover note %s has %s metadata, not a dict; its "
+                        "title was not read",
+                        target_id,
+                        type(note_meta).__name__,
+                    )
             output.append(f"  - {title} (surprise: {score:.2f})")
         return "\n".join(output)
