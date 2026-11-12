@@ -153,17 +153,30 @@ class _Mem:
 
 @pytest.mark.parametrize("typed", [False, True])
 @pytest.mark.parametrize("metadata", BAD)
-def test_local_update_warns_when_stored_metadata_is_not_merged(caplog, metadata, typed):
+def test_local_update_refuses_malformed_stored_metadata(caplog, metadata, typed):
     item = SimpleNamespace(metadata=metadata) if typed else {"metadata": metadata}
     backend = object.__new__(LocalBackend)
     backend._mem = _Mem(item)
     with caplog.at_level(logging.WARNING):
-        backend.update("item-1", metadata={"k": "v"})
-    assert backend._mem.written == {"metadata": {"k": "v"}}
+        out = backend.update("item-1", content="c", metadata={"k": "v"})
+    assert out.startswith("Refused:") and "item-1" in out
+    assert backend._mem.written is None
     msgs = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert len(msgs) == 1
     assert "item-1" in msgs[0] and type(metadata).__name__ in msgs[0]
-    assert "NOT merged" in msgs[0]
+    assert "refused" in msgs[0] and "left as it was" in msgs[0]
+
+
+@pytest.mark.parametrize("typed", [False, True])
+def test_local_update_content_only_ignores_malformed_metadata(caplog, typed):
+    item = SimpleNamespace(metadata="garbage") if typed else {"metadata": "garbage"}
+    backend = object.__new__(LocalBackend)
+    backend._mem = _Mem(item)
+    with caplog.at_level(logging.WARNING):
+        out = backend.update("item-1", content="c")
+    assert out == "Updated: item-1"
+    assert backend._mem.written == {"content": "c"}
+    assert not caplog.records
 
 
 def test_local_update_merges_dict_metadata_silently(caplog):

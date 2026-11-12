@@ -392,12 +392,15 @@ class LocalBackend(BackendCapabilities):
                     existing_meta = {}
                 if not isinstance(existing_meta, dict):
                     log.warning(
-                        "update %s: stored metadata is %s, not a dict; the old value "
-                        "is NOT merged and is replaced by the new metadata",
+                        "update %s: stored metadata is %s, not a dict; the update is "
+                        "refused and the stored metadata is left as it was",
                         item_id,
                         type(existing_meta).__name__,
                     )
-                    existing_meta = {}
+                    return (
+                        f"Refused: {item_id} has stored metadata of type "
+                        f"{type(existing_meta).__name__}, not a dict; nothing was changed"
+                    )
                 props["metadata"] = {**existing_meta, **metadata}
 
         if not props:
