@@ -1,3 +1,7 @@
+## Unreleased - CLAIMS-BUILD-21: search results name the lanes that found them (2026-11-14)
+
+- `MemoryResult.matched_by`: the retrieval lanes that found a search result (`["lexical", "semantic"]`), from the service row or the core item's `_matched_by` stamp; `None` when not recorded or on an older server. `memory_search` prints `found by: ...` next to the score (full and catalog output), and model-facing items keep the field.
+
 ## 2.0.1
 
 Version bump to 2.0.1, every SmartMemory repo reads the same version (REL-2.0-VERSION-BUMP-2.0.1-1).

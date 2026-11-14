@@ -55,6 +55,8 @@ class MemoryResult(TypedDict, total=False):
     valid_end_time: Optional[str]
     transaction_time: Optional[str]
     score: Optional[float]
+    # CLAIMS-BUILD-21: the retrieval lanes that found a search result; None = not recorded on that path.
+    matched_by: Optional[list]
     confidence: Optional[float]
     stale: bool
     # /memory/by-metadata returns these (crud.py get_memory_by_metadata); dropping
@@ -153,6 +155,10 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         valid_end_time=d.get("valid_end_time"),
         transaction_time=d.get("transaction_time"),
         score=d.get("score"),
+        # A service row carries "matched_by"; a core item keeps it as its response-only ``_matched_by`` stamp.
+        matched_by=d.get("matched_by")
+        if d.get("matched_by") is not None
+        else getattr(raw, "_matched_by", None),
         confidence=d.get("confidence"),
         stale=d.get("stale", False),
         superseded=bool(d.get("superseded", False)),
