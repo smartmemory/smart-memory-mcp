@@ -154,6 +154,7 @@ _MODEL_ITEM_FIELDS = frozenset(
         "memory_type",
         "content",
         "score",
+        "matched_by",
         "confidence",
         "stale",
         "superseded",
@@ -426,6 +427,12 @@ def _relative_age(dt) -> str:
         return ""
 
 
+def found_by_text(item: Dict[str, Any], sep: str) -> str:
+    """CLAIMS-BUILD-21: ``found by: lexical, semantic`` for a result that names its lanes, else nothing."""
+    lanes = item.get("matched_by")
+    return f"{sep}found by: {', '.join(lanes)}" if lanes else ""
+
+
 def _format_catalog(query: str, results: list) -> str:
     """Format search results as a compact ranked catalog."""
     if not results:
@@ -443,6 +450,7 @@ def _format_catalog(query: str, results: list) -> str:
         mtype = item["memory_type"]
         score = item.get("score")
         score_str = f"  {score:.3f}" if score is not None else ""
+        score_str += found_by_text(item, "  ")
         age_str = _relative_age(item.get("created_at"))
         # Malformed metadata (meta is None): the stale marker is left out.
         stale_str = "  ⚠ stale" if (meta or {}).get("stale", False) else ""
@@ -698,6 +706,7 @@ def register_free(mcp):
             mtype = item["memory_type"]
             score = item.get("score")
             score_str = f" (score: {score:.3f})" if score is not None else ""
+            score_str += found_by_text(item, " ")
 
             # CORE-PROPS-1: confidence display
             confidence = item.get("confidence")
