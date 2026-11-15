@@ -21,7 +21,7 @@ import httpx
 from smartmemory_mcp.tool_trace import tool_headers
 from smartmemory_mcp.tools.common import scoped_options
 
-from .interface import BackendCapabilities, EvidenceRefused
+from .interface import BackendCapabilities, DecisionRestoreRefused, EvidenceRefused
 from .local import SaveReturn
 from .models import CodeIngestResult, MemoryResult, normalize_item, normalize_items
 from .path_guard import path_id
@@ -1673,6 +1673,28 @@ class RemoteBackend(BackendCapabilities):
             json={"reason": reason},
         )
         return self._strip_scope(result) if result is not None else None
+
+    def decision_restore(self, decision_id: str, reason: str) -> dict[str, Any] | None:
+        """POST /memory/decisions/{decision_id}/restore (DECISION-RESTORE-ONE-ACTION-1). 404 is None; the route's
+        403/409 refusals raise DecisionRestoreRefused with the detail code; anything else raises RuntimeError."""
+        path = f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/restore"
+        result = self._request("POST", path, json={"reason": reason})
+        if err := self._fmt_error(result):
+            status = result.get("status_code")
+            if status == 404:
+                return None
+            body = result.get("body")
+            detail = body.get("detail") if isinstance(body, dict) else None
+            if status in (403, 409) and isinstance(detail, dict) and detail.get("code"):
+                raise DecisionRestoreRefused(
+                    str(detail["code"]),
+                    str(detail.get("message") or err),
+                    detail.get("newer_decision_id"),
+                )
+            raise RuntimeError(f"POST {path} failed: {err}")
+        if result is None:
+            raise RuntimeError(f"POST {path} failed: empty response from the API")
+        return self._strip_scope(result)
 
     def decision_reinforce(
         self, decision_id: str, evidence_id: str

@@ -153,6 +153,7 @@
 ["GET", "/memory/decisions/{decision_id}/provenance"],
 ["POST", "/memory/decisions/{decision_id}/reinforce"],
 ["POST", "/memory/decisions/{decision_id}/retract"],
+["POST", "/memory/decisions/{decision_id}/restore"],
 ["POST", "/memory/decisions/{decision_id}/supersede"],
 ["POST", "/memory/edge"],
 ["GET", "/memory/entities"],

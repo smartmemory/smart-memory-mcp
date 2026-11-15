@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 
-from smartmemory_mcp.backends.interface import EvidenceRefused
+from smartmemory_mcp.backends.interface import DecisionRestoreRefused, EvidenceRefused
 from .common import (
     checked_as_of,
     dated,
@@ -359,6 +359,39 @@ def register(mcp):
             return f"Decision retracted: {decision_id}"
         except Exception as e:
             logger.error(f"Failed to retract decision: {e}", exc_info=True)
+            raise
+
+    @mcp.tool(
+        title="Restore a wrongly retired decision",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def decision_restore(decision_id: str, reason: str) -> str:
+        """Undo a wrong retirement in one action: the decision is active again, its replacement stays active, and the
+        history keeps both. Only the decision's owner can restore it (DECISION-RESTORE-ONE-ACTION-1)."""
+        try:
+            backend = get_backend()
+            result = backend.decision_restore(decision_id, reason=reason)
+            if result is None:
+                return f"Decision not found: {decision_id}"
+            return (
+                f"Decision restored: {decision_id}\n"
+                f"Replacement stays active: {result.get('replacement_decision_id')}"
+            )
+        except DecisionRestoreRefused as e:
+            newer = (
+                f" (newer decision: {e.newer_decision_id})"
+                if e.newer_decision_id
+                else ""
+            )
+            return f"Restore refused ({e.code}): {e}{newer}"
+        except Exception as e:
+            logger.error(f"Failed to restore decision: {e}", exc_info=True)
             raise
 
     @mcp.tool(

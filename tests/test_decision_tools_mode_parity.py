@@ -178,6 +178,30 @@ def _cases():
         _remote({"decision_id": "dec_1", "status": "retracted", "user_id": "u"}),
     )
     yield (
+        "decision_restore",
+        {"decision_id": "dec_1", "reason": "wrongly retired"},
+        _local(
+            _decision_manager=lambda: _Manager(
+                restore=lambda _id, _reason: _Decision(
+                    {
+                        "decision_id": "dec_1",
+                        "status": "active",
+                        "context_snapshot": {"restored_from_replacement": "dec_2"},
+                    }
+                )
+            )
+        ),
+        _remote(
+            {
+                "decision_id": "dec_1",
+                "status": "active",
+                "replacement_decision_id": "dec_2",
+                "replacement_rule": "replacement_stays_active_link_undone",
+                "user_id": "u",
+            }
+        ),
+    )
+    yield (
         "decision_reinforce",
         {"decision_id": "dec_1", "evidence_id": "mem_1"},
         _local(

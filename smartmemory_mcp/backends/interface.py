@@ -24,6 +24,18 @@ class EvidenceRefused(ValueError):
     """
 
 
+class DecisionRestoreRefused(ValueError):
+    """DECISION-RESTORE-ONE-ACTION-1: the store refused a restore; ``code`` is one of the contract refusal codes
+    (not_owner, not_retired, scheduled, replaced_again, replacement_unreadable). ``not_found`` is returned as None."""
+
+    def __init__(
+        self, code: str, message: str = "", newer_decision_id: str | None = None
+    ):
+        super().__init__(message or code)
+        self.code = code
+        self.newer_decision_id = newer_decision_id
+
+
 class BackendCapabilities:
     """Central capability check, including explicitly unsupported operations."""
 
@@ -365,6 +377,11 @@ class MemoryBackend(Protocol):
 
     def decision_retract(self, decision_id: str, reason: str) -> dict[str, Any] | None:
         """{decision_id, status}, or None when the decision does not exist."""
+        ...
+
+    def decision_restore(self, decision_id: str, reason: str) -> dict[str, Any] | None:
+        """DECISION-RESTORE-ONE-ACTION-1: {decision_id, status, replacement_decision_id}, None when absent; a refusal
+        raises DecisionRestoreRefused."""
         ...
 
     def decision_reinforce(

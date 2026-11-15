@@ -12,7 +12,12 @@ from typing import Any, NoReturn
 
 from smartmemory_mcp.tools.common import scoped_options
 
-from .interface import LOCAL_BROKEN_TOOLS, BackendCapabilities, EvidenceRefused
+from .interface import (
+    LOCAL_BROKEN_TOOLS,
+    BackendCapabilities,
+    DecisionRestoreRefused,
+    EvidenceRefused,
+)
 from .models import MemoryResult, normalize_item, normalize_items
 from smartmemory_mcp.workspace_select import SwitchResult, refuse
 
@@ -1307,6 +1312,26 @@ class LocalBackend(BackendCapabilities):
         except ValueError:
             return None
         return {"decision_id": decision_id, "status": "retracted"}
+
+    def decision_restore(self, decision_id: str, reason: str) -> dict[str, Any] | None:
+        """DECISION-RESTORE-ONE-ACTION-1: DecisionManager.restore on the real store (owner checks run in core)."""
+        from smartmemory.decisions.restore import DecisionRestoreRefused as CoreRefused
+
+        try:
+            decision = self._decision_manager().restore(decision_id, reason)
+        except CoreRefused as e:
+            if e.code == "not_found":
+                return None
+            raise DecisionRestoreRefused(
+                e.code, str(e), getattr(e, "newer_id", None)
+            ) from e
+        return {
+            "decision_id": decision.decision_id,
+            "status": decision.status,
+            "replacement_decision_id": (decision.context_snapshot or {}).get(
+                "restored_from_replacement"
+            ),
+        }
 
     def decision_reinforce(
         self, decision_id: str, evidence_id: str

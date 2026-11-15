@@ -1,3 +1,7 @@
+## Unreleased - DECISION-RESTORE-ONE-ACTION-1: `decision_restore` tool (2026-11-15)
+
+- New `decision_restore` tool (free tier and up) with local (core `DecisionManager.restore`) and remote (`POST /memory/decisions/{id}/restore`) backends; refusals render as `Restore refused (<code>)`. Tier counts 43/83/118; route table gains the restore route.
+
 ## Unreleased - CLAIMS-BUILD-21: search results name the lanes that found them (2026-11-14)
 
 - `MemoryResult.matched_by`: the retrieval lanes that found a search result (`["lexical", "semantic"]`), from the service row or the core item's `_matched_by` stamp; `None` when not recorded or on an older server. `memory_search` prints `found by: ...` next to the score (full and catalog output), and model-facing items keep the field.

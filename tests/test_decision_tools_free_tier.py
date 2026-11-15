@@ -26,6 +26,7 @@ DECISION_ROWS = (
         {"decision_id": "dec_1", "new_content": "Use SQS", "reason": "scale"},
     ),
     ("decision_retract", {"decision_id": "dec_1", "reason": "obsolete"}),
+    ("decision_restore", {"decision_id": "dec_1", "reason": "wrongly retired"}),
     ("decision_reinforce", {"decision_id": "dec_1", "evidence_id": "mem_1"}),
     ("decision_contradict", {"decision_id": "dec_1", "evidence_id": "mem_1"}),
     ("decision_provenance", {"decision_id": "dec_1"}),
