@@ -1220,6 +1220,7 @@ class LocalBackend(BackendCapabilities):
         as_of: str | None = None,
         business_scope: dict[str, Any] | None = None,
         valid_at: str | None = None,
+        status: str | None = None,
     ) -> list[dict[str, Any]]:
         options = scoped_options(business_scope=business_scope, valid_at=valid_at)
         decisions = self._mem.get_active_decisions(
@@ -1228,6 +1229,7 @@ class LocalBackend(BackendCapabilities):
             min_confidence=min_confidence,
             limit=limit,
             as_of=as_of,
+            **({} if status is None else {"status": status}),
             **options,
         )
         return [_decision_dict(d) for d in decisions]

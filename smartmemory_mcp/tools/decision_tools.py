@@ -57,6 +57,10 @@ def _uncertainty_marker(decision: Any) -> str:
     return f" {_UNCERTAINTY_MARKER}"
 
 
+#: The lifecycle states decision_list reads (the service route's and core's ``status`` filter).
+_LIST_STATES = ("active", "superseded", "retracted", "pending")
+
+
 def _summary_line(decision: Any) -> str:
     """One list/search row. Shared so both tools cannot drift apart."""
     confidence = _field(decision, "confidence") or 0.0
@@ -200,18 +204,28 @@ def register(mcp):
         as_of: Optional[str] = None,
         business_scope: Optional[Dict[str, Any]] = None,
         valid_at: Optional[str] = None,
+        status: Optional[str] = None,
     ) -> str:
-        """Business validity uses business_scope (exact site) and valid_at.
+        """List decisions (rules) in one state: the ones in force by default, or the ones that
+        were replaced or retracted.
 
-        Exact activated site entries take precedence, otherwise use sponsor fallback.
-        Omitted valid_at is resolved once at request start. as_of is independent
-        transaction-time history.
+        ``status``: omit or "active" for the rules in force now; "superseded" for rules that
+        were replaced (answers "what did we use to charge?"); "retracted" for rules that were
+        withdrawn; "pending" for rules waiting on a requirement. A replacement that is still
+        waiting for a person's approval is not a decision yet: it is listed by
+        review_queue_list, and the rule it would replace stays "active" until a person settles it.
 
-        List active decisions with optional filtering.
+        ``as_of`` (ISO 8601; omit for now) lists the decisions that held that state at that
+        instant: a decision superseded or retracted since is listed as active, one created
+        later is not.
 
-        ``as_of`` (ISO 8601; omit for now) lists the decisions that were active at
-        that instant: a decision superseded or retracted since is listed, one
-        created later is not."""
+        Business validity uses business_scope (exact site) and valid_at. Exact activated site
+        entries take precedence, otherwise use sponsor fallback. Omitted valid_at is resolved
+        once at request start. as_of is independent transaction-time history."""
+        if status is not None and status not in _LIST_STATES:
+            return (
+                f"status must be one of {', '.join(_LIST_STATES)} (omit it for active)"
+            )
         options = scoped_options(business_scope=business_scope, valid_at=valid_at)
         as_of = checked_as_of(as_of)
         try:
@@ -223,13 +237,15 @@ def register(mcp):
                 limit=limit,
                 **dated(as_of),
                 **options,
+                **({} if status in (None, "active") else {"status": status}),
             )
 
             when = "" if as_of is None else f" as of {as_of}"
+            state = status or "active"
             if not decisions:
-                return f"No active decisions found{when}."
+                return f"No {state} decisions found{when}."
 
-            output = [f"Found {len(decisions)} active decisions{when}:\n"]
+            output = [f"Found {len(decisions)} {state} decisions{when}:\n"]
             output.extend(_summary_line(d) for d in decisions)
             return "\n".join(output)
         except Exception as e:
@@ -304,6 +320,12 @@ def register(mcp):
     ) -> str:
         """Replace a decision, preserving its rationale, alternatives and constraints.
 
+        In a workspace that asks a person first (supersession policy "propose"), nothing is
+        replaced yet: the answer says "held for review" with a review id, the old decision stays
+        in force, and you must tell the user the change is waiting for a person's approval.
+        review_queue_list shows it; review_queue_settle approves (keep_b) or rejects (keep_a)
+        when the user says so.
+
         scope_go_lives schedules exact site activation with sponsor fallback. A
         site-only amendment leaves the sponsor and other sites on their prior rule.
         valid_from is the legacy global date and cannot accompany scope_go_lives.
@@ -331,8 +353,11 @@ def register(mcp):
                 return (
                     f"Replacement of decision {decision_id} held for review (the workspace asks a person first).\n"
                     f"The old decision stays in force. Review: {result.get('review_id')}\n"
-                    "Accept with review_queue_settle(review_id, action='keep_b', reason=...), "
-                    "reject with action='keep_a'."
+                    "Tell the user: the change is waiting for a person to approve it, and the old rule "
+                    "applies until then. Do not say it was saved as the new rule.\n"
+                    "review_queue_list shows what is waiting. Only when the user says to approve or reject: "
+                    "review_queue_settle(review_id, action='keep_b', reason=...) approves, "
+                    "action='keep_a' rejects."
                 )
             if result.get("status") == "scheduled":
                 return (

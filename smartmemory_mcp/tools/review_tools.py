@@ -1,5 +1,8 @@
 """Conflict review queue and supersession policy MCP tools (OUTREACH-MARIUS-HITL-SURFACE-1).
 
+The two review tools are also on the hosted connector (part 4): there the session's backend carries the signed-in
+workspace and token, so the list and the settle are bound to that workspace and the service records the caller.
+
 Remote: ``GET /memory/reasoning/reviews``, ``POST /memory/reasoning/reviews/{id}/settle`` and the WS-MGMT-16
 settings knob ``review.supersession`` on ``/memory/workspaces/{id}/settings``. The workspace always comes from the
 session; the settle body never names an actor (the service records the authenticated caller).
@@ -84,7 +87,12 @@ def register(mcp):
     def review_queue_list(
         status: str = "open", limit: int = 50, offset: int = 0
     ) -> str:
-        """List the conflict reviews waiting for a human decision in the current workspace.
+        """List what is waiting for a person in the current workspace: conflicting facts, and
+        replacements of a decision (rule) that the workspace holds for approval.
+
+        For a held replacement, "existing" is the rule still in force and "new" is the waiting
+        rule. Show both to the user and ask whether to approve or reject; only settle
+        (review_queue_settle) when the user says so.
 
         Args:
             status: "open" (default) or "resolved".
@@ -127,12 +135,17 @@ def register(mcp):
     )
     @graceful
     def review_queue_settle(review_id: str, action: str, reason: str) -> str:
-        """Settle one conflict review. The decision is recorded once; an identical retry returns the
-        stored receipt, a different decision is refused.
+        """Settle one review with the user's answer. The answer is recorded once, as the
+        signed-in caller (hosted) or local:mcp (local); an identical retry returns the stored
+        receipt, a different answer is refused. Call it only when the user has said to approve
+        or reject.
+
+        For a held decision replacement: "keep_b" approves (the new rule is in force and the old
+        one is listed as superseded), "keep_a" rejects (the old rule stays, nothing new is saved).
 
         Args:
-            review_id: The review id from review_queue_list.
-            action: "keep_a" (keep the existing fact), "keep_b" (the new fact replaces it) or "keep_both".
+            review_id: The review id from review_queue_list or decision_supersede.
+            action: "keep_a" (keep the existing fact or rule), "keep_b" (the new one replaces it) or "keep_both".
             reason: Why, non-blank, up to 2000 characters. Recorded with the decision.
         """
         if action not in _ACTIONS:

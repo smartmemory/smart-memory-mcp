@@ -344,8 +344,11 @@ class MemoryBackend(Protocol):
         as_of: str | None = None,
         business_scope: dict[str, Any] | None = None,
         valid_at: str | None = None,
+        status: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Active decisions, filtered (active at `as_of` when set, SM-ASOF-DECISIONS-1)."""
+        """Decisions in one lifecycle state, filtered: `status` None or "active" (default), "superseded",
+        "retracted" or "pending" (OUTREACH-MARIUS-HITL-SURFACE-1 p4). `as_of` lists the ones that held that
+        state at that instant (SM-ASOF-DECISIONS-1)."""
         ...
 
     def decision_search(

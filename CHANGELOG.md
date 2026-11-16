@@ -1,3 +1,10 @@
+## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 part 4: review tools on the hosted connector, list replaced and retracted decisions (2026-11-16)
+
+- Hosted connector: `review_queue_list` and `review_queue_settle` are on the hosted allowlist (38 hosted tools). They use the per-call backend, so they read and settle in the signed-in workspace only, and the settle body names no actor (the service records the signed-in caller). The policy tools stay off the hosted connector.
+- `decision_list` takes `status`: `active` (default), `superseded`, `retracted` or `pending`, on both backends (remote sends the route's existing `status` filter, local passes it to core `get_active_decisions`). Any other value is refused with the list of allowed states.
+- `decision_supersede` in a propose workspace now tells the assistant what to tell the user (the change waits for a person, the old rule applies until then) and when to settle. The review tool descriptions say the same.
+- Tests: `tests/test_decisions_connector_notes_local.py` (the frozen notes on real Lite stores) and `tests/real_service/test_hosted_decisions_connector_notes.py` (the same notes through the hosted tool code against the real service app, run from a service checkout, skipped here). Hosted allowlist pins move from 36 to 38 tools and the smoke list covers the two review tools.
+
 ## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 part 2: a replacing decision waits for a person in propose mode (2026-11-16)
 
 - `decision_supersede` says the replacement is held for review and names the review id when the workspace's supersession policy is `propose` (remote and local). Settle it with `review_queue_settle`. Test: `tests/test_decision_supersede_held_local.py` (real Lite store).

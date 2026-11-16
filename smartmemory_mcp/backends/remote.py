@@ -1592,9 +1592,12 @@ class RemoteBackend(BackendCapabilities):
         as_of: str | None = None,
         business_scope: dict[str, Any] | None = None,
         valid_at: str | None = None,
+        status: str | None = None,
     ) -> list[dict[str, Any]]:
-        """GET /memory/decisions."""
+        """GET /memory/decisions (``status`` is the route's lifecycle filter; omitted means active)."""
         params: dict[str, Any] = {"min_confidence": min_confidence, "limit": limit}
+        if status is not None:
+            params["status"] = status
         if domain is not None:
             params["domain"] = domain
         if decision_type is not None:

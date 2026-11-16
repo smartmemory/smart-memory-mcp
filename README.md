@@ -171,8 +171,16 @@ Hosted mode advertises 35 tools, an explicit allowlist rather than a tier:
 `code_search` `code_dead_code` `code_dependencies` `code_upload` `code_effects`
 `agent_set_recall_profile` `agent_get_recall_profile` `reasoning_query_traces`
 `decision_create` `decision_supersede` `decision_get` `decision_list`
-`decision_search` `decision_provenance`
+`decision_search` `decision_provenance` `review_queue_list` `review_queue_settle`
 `whoami` `list_workspaces` `switch_workspace` `switch_team`
+
+When a workspace asks a person first (supersession policy `propose`), `decision_supersede`
+answers "held for review" with a review id and the old rule stays in force. The assistant
+tells the user the change is waiting for approval, `review_queue_list` shows what is waiting,
+and `review_queue_settle` approves (`keep_b`) or rejects (`keep_a`) when the user says so.
+Hosted, both review tools act on the signed-in workspace and the service records the signed-in
+caller as the one who settled. `decision_list(status=...)` reads `superseded` (replaced) and
+`retracted` rules as well as the ones in force (`active`, the default).
 
 Hosted search and decision reads accept `business_scope` and `valid_at`.
 Omitting both selects the sponsor rule effective now. `scope_go_lives` on
