@@ -325,6 +325,15 @@ def register(mcp):
             if result is None:
                 return f"Decision not found: {decision_id}"
 
+            if result.get("status") == "held_for_review":
+                # OUTREACH-MARIUS-HITL-SURFACE-1 p2: the workspace holds replacements for a person (review.supersession
+                # propose). Nothing was replaced; review_queue_settle decides it.
+                return (
+                    f"Replacement of decision {decision_id} held for review (the workspace asks a person first).\n"
+                    f"The old decision stays in force. Review: {result.get('review_id')}\n"
+                    "Accept with review_queue_settle(review_id, action='keep_b', reason=...), "
+                    "reject with action='keep_a'."
+                )
             if result.get("status") == "scheduled":
                 return (
                     f"Amendment scheduled for decision {decision_id}.\n"

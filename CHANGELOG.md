@@ -1,3 +1,7 @@
+## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 part 2: a replacing decision waits for a person in propose mode (2026-11-16)
+
+- `decision_supersede` says the replacement is held for review and names the review id when the workspace's supersession policy is `propose` (remote and local). Settle it with `review_queue_settle`. Test: `tests/test_decision_supersede_held_local.py` (real Lite store).
+
 ## Unreleased - DECISION-RESTORE-ONE-ACTION-1: `decision_restore` tool (2026-11-15)
 
 - New `decision_restore` tool (free tier and up) with local (core `DecisionManager.restore`) and remote (`POST /memory/decisions/{id}/restore`) backends; refusals render as `Restore refused (<code>)`. Tier counts 43/83/118; route table gains the restore route.

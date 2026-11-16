@@ -1289,6 +1289,16 @@ class LocalBackend(BackendCapabilities):
             ):
                 return None
             raise
+        if getattr(result, "status", None) == "held_for_review" and getattr(
+            result, "review_id", None
+        ):
+            # The store's workspace holds replacements for review (core HeldSupersession): nothing was replaced.
+            return {
+                "old_decision_id": decision_id,
+                "new_decision_id": None,
+                "status": "held_for_review",
+                "review_id": result.review_id,
+            }
         schedule = getattr(result, "scope_go_lives", None)
         if schedule is not None:
             from datetime import datetime, timezone
