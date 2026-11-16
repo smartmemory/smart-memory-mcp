@@ -343,14 +343,14 @@ ROWS = [
         _review("review_queue_settle", "keep_b", "checked"),
     ),
     (
-        "supersession_policy_get",
+        "_remote_get",
         REVIEW,
         "GET",
         "/memory/workspaces/{workspace_id}/settings",
         _workspace("supersession_policy_get"),
     ),
     (
-        "supersession_policy_set",
+        "_remote_set",
         REVIEW,
         "PATCH",
         "/memory/workspaces/{workspace_id}/settings",
