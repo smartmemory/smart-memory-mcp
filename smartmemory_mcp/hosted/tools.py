@@ -58,8 +58,9 @@ DECISION_TOOLS = (
 )
 # OUTREACH-MARIUS-HITL-SURFACE-1 p4: the review queue, so a replacement held for a person can be shown and settled
 # from the hosted connector. Both go through `backend.request` on the per-call backend: the workspace is the
-# session's and the settle body names no actor (the service records the signed-in caller). The policy tools in the
-# same module stay local/remote-only (hidden here by the allowlist).
+# session's and the settle body names no actor (the service records the caller: on this connector the session is a
+# `connector`, not a person, part 7). The policy and approval tools in the same module stay local/remote-only
+# (hidden here by the allowlist).
 REVIEW_TOOLS = ("review_queue_list", "review_queue_settle")
 # Registered by the hosted server itself; session-scoped, no backend route of
 # their own beyond the workspace listing lookup. `switch_team` is the

@@ -1,3 +1,10 @@
+## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 part 7: only a person approves by default (2026-11-16)
+
+- Only a person approves a review by default now. The local `review_queue_settle` (`local:mcp`) is refused until a person runs `smartmemory --data-dir <dir> review-settings --approval anyone`, and the refusal says so.
+- Local `supersession_policy_get` and `supersession_policy_set` read and set the Lite store's own settings (were remote only). New `review_approval_get` and `review_approval_set` (local and remote, not on the hosted connector). From the tool both knobs can only be tightened. A loosening call is refused and names the command a person runs.
+- A service refusal is shown as the service wrote it (`Error (403): <sentence>`), and `review_queue_list` opens with `N of TOTAL`. The `review_queue_settle` description says a person decides and an assistant is refused unless the workspace allows anyone.
+- 120 PRO+ tools. Tests: `tests/test_approver_final_notes_local.py` (new, real Lite store and the real CLI). The local note fixtures in `tests/test_decisions_connector_notes_local.py` and `tests/test_connector_wording_local.py` now set approval `anyone`, because they settle through the local tool.
+
 ## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 connector wording after the review fixes (2026-11-16)
 
 - `decision_supersede` held answer no longer tells the assistant to settle or approve its own change: it says the change waits for a person, who settles it in the review queue, and gives the review id. Same for the `decision_supersede` and `review_queue_list` descriptions. `review_queue_settle` now says it records a person's decision and that in a person-only workspace an agent's call is refused.

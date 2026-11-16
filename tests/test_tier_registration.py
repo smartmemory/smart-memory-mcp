@@ -185,19 +185,21 @@ class TestToolRegistration:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
 
     def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 118 remote tools (+decision_restore DECISION-RESTORE-ONE-ACTION-1; +create_workspace WS-POLICY-10; +transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed; +4 OUTREACH-MARIUS-HITL-SURFACE-1: review_queue_list/settle, supersession_policy_get/set)."""
+        """PRO_PLUS tier registers exactly 120 remote tools (+decision_restore DECISION-RESTORE-ONE-ACTION-1; +create_workspace WS-POLICY-10; +transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed; +4 OUTREACH-MARIUS-HITL-SURFACE-1: review_queue_list/settle, supersession_policy_get/set; +2 part 7: review_approval_get/set)."""
         env = _clean_env(
             SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true"
         )
         data = _run_snippet(env)
-        assert data["count"] == 118, (
-            f"Expected 118 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 120, (
+            f"Expected 120 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
         )
         assert {
             "review_queue_list",
             "review_queue_settle",
             "supersession_policy_get",
             "supersession_policy_set",
+            "review_approval_get",
+            "review_approval_set",
         } <= set(data["names"])
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]

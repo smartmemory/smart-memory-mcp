@@ -47,6 +47,9 @@ def _lite(path, policy):
         "is_personal": False,
         "supersession_policy": policy,
     }
+    # Part 7 (2.0.2): the default approver is a person, and these notes settle through the local tool (local:mcp),
+    # so the store is set to anyone, the way a person running the review-settings command would.
+    sm.scope_provider.get_workspace_review_approval = lambda: "anyone"
     return sm
 
 

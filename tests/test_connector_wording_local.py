@@ -64,6 +64,9 @@ def world(tmp_path, monkeypatch):
         "is_personal": False,
         "supersession_policy": "propose",
     }
+    # Part 7 (2.0.2): the default approver is a person, and these notes settle through the local tool (local:mcp),
+    # so the store is set to anyone, the way a person running the review-settings command would.
+    sm.scope_provider.get_workspace_review_approval = lambda: "anyone"
     backend = LocalBackend()
     backend._mem = sm
     for module in (decision_tools, review_tools, memory_tools, save_tools):
