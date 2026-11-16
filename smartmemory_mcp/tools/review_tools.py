@@ -88,11 +88,10 @@ def register(mcp):
         status: str = "open", limit: int = 50, offset: int = 0
     ) -> str:
         """List what is waiting for a person in the current workspace: conflicting facts, and
-        replacements of a decision (rule) that the workspace holds for approval.
+        replacements of a decision (rule) that the workspace holds for a person.
 
         For a held replacement, "existing" is the rule still in force and "new" is the waiting
-        rule. Show both to the user and ask whether to approve or reject; only settle
-        (review_queue_settle) when the user says so.
+        rule. Show both to the user. A person settles it; do not settle one yourself.
 
         Args:
             status: "open" (default) or "resolved".
@@ -135,10 +134,11 @@ def register(mcp):
     )
     @graceful
     def review_queue_settle(review_id: str, action: str, reason: str) -> str:
-        """Settle one review with the user's answer. The answer is recorded once, as the
+        """Record a person's decision on one review. The decision is recorded once, as the
         signed-in caller (hosted) or local:mcp (local); an identical retry returns the stored
-        receipt, a different answer is refused. Call it only when the user has said to approve
-        or reject.
+        receipt, a different answer is refused. Call it only to pass on what the user, a person,
+        has just told you to decide; never to settle a change you filed yourself. In a workspace
+        set to person-only approval an agent's call is refused.
 
         For a held decision replacement: "keep_b" approves (the new rule is in force and the old
         one is listed as superseded), "keep_a" rejects (the old rule stays, nothing new is saved).

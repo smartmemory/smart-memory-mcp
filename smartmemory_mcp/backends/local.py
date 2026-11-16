@@ -15,6 +15,8 @@ from smartmemory_mcp.tools.common import scoped_options
 from .interface import (
     LOCAL_BROKEN_TOOLS,
     BackendCapabilities,
+    DecisionAlreadyDecided,
+    DecisionReplaceHeld,
     DecisionRestoreRefused,
     EvidenceRefused,
 )
@@ -444,16 +446,21 @@ class LocalBackend(BackendCapabilities):
             valid_start_time=start,
         )
         # The old item's interval closes at ``start`` inside core's compensated supersession unit.
-        new_id = self._mem.ingest_superseding(
-            item,
-            supersedes=item_id,
-            **({"valid_from": start} if start is not None else {}),
-            **(
-                {"scope_go_lives": options["scope_go_lives"]}
-                if "scope_go_lives" in options
-                else {}
-            ),
-        )
+        try:
+            new_id = self._mem.ingest_superseding(
+                item,
+                supersedes=item_id,
+                **({"valid_from": start} if start is not None else {}),
+                **(
+                    {"scope_go_lives": options["scope_go_lives"]}
+                    if "scope_go_lives" in options
+                    else {}
+                ),
+            )
+        except RuntimeError as error:
+            if type(error).__name__ == "GeneralReplaceRefused":
+                raise DecisionReplaceHeld(str(error)) from error
+            raise
         if not new_id:
             raise RuntimeError("Supersession could not be established")
         replacement = self._mem.get(new_id)
@@ -1290,6 +1297,10 @@ class LocalBackend(BackendCapabilities):
                 "Decision not found:"
             ):
                 return None
+            if type(error).__name__ == "AlreadyDecided":
+                raise DecisionAlreadyDecided(
+                    error.review_id, error.action, error.outcome
+                ) from error
             raise
         if getattr(result, "status", None) == "held_for_review" and getattr(
             result, "review_id", None

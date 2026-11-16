@@ -176,8 +176,11 @@ Hosted mode advertises 35 tools, an explicit allowlist rather than a tier:
 
 When a workspace asks a person first (supersession policy `propose`), `decision_supersede`
 answers "held for review" with a review id and the old rule stays in force. The assistant
-tells the user the change is waiting for approval, `review_queue_list` shows what is waiting,
-and `review_queue_settle` approves (`keep_b`) or rejects (`keep_a`) when the user says so.
+tells the user the change is waiting for a person and never settles it itself. A person settles it
+in the review queue (`review_queue_list` shows what is waiting). `review_queue_settle` records that
+person's decision (`keep_b` accepts, `keep_a` rejects); in a person-only workspace an agent's call is refused.
+Sending the same change again after it was decided answers "already decided: <outcome> (review <id>)".
+`memory_supersede` on a decision in such a workspace shows the refusal ("use `decision_supersede`") and writes nothing.
 Hosted, both review tools act on the signed-in workspace and the service records the signed-in
 caller as the one who settled. `decision_list(status=...)` reads `superseded` (replaced) and
 `retracted` rules as well as the ones in force (`active`, the default).

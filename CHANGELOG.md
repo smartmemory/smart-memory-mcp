@@ -1,3 +1,10 @@
+## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 connector wording after the review fixes (2026-11-16)
+
+- `decision_supersede` held answer no longer tells the assistant to settle or approve its own change: it says the change waits for a person, who settles it in the review queue, and gives the review id. Same for the `decision_supersede` and `review_queue_list` descriptions. `review_queue_settle` now says it records a person's decision and that in a person-only workspace an agent's call is refused.
+- `decision_supersede` on a change already decided answers `already decided: <outcome> (review <id>)`, never "held" (local `AlreadyDecided`, hosted 409 `already_decided`).
+- `memory_supersede` on a decision in a hold workspace shows the refusal as is ("use decision_supersede, which files the review") for local `GeneralReplaceRefused` and hosted 409 `decision_replace_held`. `memory_update`, `memory_save` and `memory_supersede` descriptions point to `decision_supersede` for a rule.
+- Tests: `tests/test_connector_wording_local.py` (real Lite store) and `tests/real_service/test_hosted_connector_wording.py` (real service app), driver `tests/real_service/_connector_wording_notes.py`.
+
 ## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 part 4: review tools on the hosted connector, list replaced and retracted decisions (2026-11-16)
 
 - Hosted connector: `review_queue_list` and `review_queue_settle` are on the hosted allowlist (38 hosted tools). They use the per-call backend, so they read and settle in the signed-in workspace only, and the settle body names no actor (the service records the signed-in caller). The policy tools stay off the hosted connector.

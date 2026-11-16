@@ -14,7 +14,11 @@ from typing import Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 
-from smartmemory_mcp.backends.interface import DecisionRestoreRefused, EvidenceRefused
+from smartmemory_mcp.backends.interface import (
+    DecisionAlreadyDecided,
+    DecisionRestoreRefused,
+    EvidenceRefused,
+)
 from .common import (
     checked_as_of,
     dated,
@@ -212,7 +216,7 @@ def register(mcp):
         ``status``: omit or "active" for the rules in force now; "superseded" for rules that
         were replaced (answers "what did we use to charge?"); "retracted" for rules that were
         withdrawn; "pending" for rules waiting on a requirement. A replacement that is still
-        waiting for a person's approval is not a decision yet: it is listed by
+        waiting for a person is not a decision yet: it is listed by
         review_queue_list, and the rule it would replace stays "active" until a person settles it.
 
         ``as_of`` (ISO 8601; omit for now) lists the decisions that held that state at that
@@ -321,10 +325,11 @@ def register(mcp):
         """Replace a decision, preserving its rationale, alternatives and constraints.
 
         In a workspace that asks a person first (supersession policy "propose"), nothing is
-        replaced yet: the answer says "held for review" with a review id, the old decision stays
-        in force, and you must tell the user the change is waiting for a person's approval.
-        review_queue_list shows it; review_queue_settle approves (keep_b) or rejects (keep_a)
-        when the user says so.
+        replaced yet: the answer says "held for review" with a review id and the old decision
+        stays in force. A person settles it in the review queue: tell the user it is waiting,
+        and do not settle it yourself. review_queue_list shows what is waiting. Sending the same
+        change again after a person has decided it answers "already decided: <outcome> (review
+        <id>)", not "held".
 
         scope_go_lives schedules exact site activation with sponsor fallback. A
         site-only amendment leaves the sponsor and other sites on their prior rule.
@@ -349,15 +354,14 @@ def register(mcp):
 
             if result.get("status") == "held_for_review":
                 # OUTREACH-MARIUS-HITL-SURFACE-1 p2: the workspace holds replacements for a person (review.supersession
-                # propose). Nothing was replaced; review_queue_settle decides it.
+                # propose). Nothing was replaced. The assistant is never told to settle its own change: a person does,
+                # in the review queue (OUTREACH-MARIUS-HITL-SURFACE-1 review M1).
                 return (
                     f"Replacement of decision {decision_id} held for review (the workspace asks a person first).\n"
                     f"The old decision stays in force. Review: {result.get('review_id')}\n"
-                    "Tell the user: the change is waiting for a person to approve it, and the old rule "
-                    "applies until then. Do not say it was saved as the new rule.\n"
-                    "review_queue_list shows what is waiting. Only when the user says to approve or reject: "
-                    "review_queue_settle(review_id, action='keep_b', reason=...) approves, "
-                    "action='keep_a' rejects."
+                    "Tell the user: the change is waiting for a person, who settles it in the review queue, and "
+                    "the old rule applies until then. Do not say it was saved as the new rule, and do not settle "
+                    "it yourself."
                 )
             if result.get("status") == "scheduled":
                 return (
@@ -369,6 +373,8 @@ def register(mcp):
                 f"Decision {decision_id} superseded.\n"
                 f"New decision: {result.get('new_decision_id')}"
             )
+        except DecisionAlreadyDecided as e:
+            return f"already decided: {e.outcome} (review {e.review_id})"
         except Exception as e:
             logger.error(f"Failed to supersede decision: {e}", exc_info=True)
             raise

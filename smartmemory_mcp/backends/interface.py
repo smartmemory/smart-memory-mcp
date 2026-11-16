@@ -36,6 +36,28 @@ class DecisionRestoreRefused(ValueError):
         self.newer_decision_id = newer_decision_id
 
 
+class DecisionAlreadyDecided(ValueError):
+    """A re-sent decision change whose review is already settled: nothing is held, the outcome stands.
+
+    Local mode re-raises core's ``AlreadyDecided`` as this; remote mode raises it for the 409 ``already_decided``.
+    """
+
+    def __init__(self, review_id: str, action: str | None, outcome: str):
+        super().__init__(f"already decided: {outcome} (review {review_id})")
+        self.review_id = review_id
+        self.action = action
+        self.outcome = outcome
+
+
+class DecisionReplaceHeld(RuntimeError):
+    """A general replace (``memory_supersede``) named a decision in a workspace that holds rule changes for a person.
+
+    Nothing was written. ``str(self)`` is the store's own refusal ("use decision_supersede, which files the review"),
+    shown to the assistant as is. Local mode re-raises core's ``GeneralReplaceRefused`` as this; remote mode raises it
+    for the 409 ``decision_replace_held``.
+    """
+
+
 class BackendCapabilities:
     """Central capability check, including explicitly unsupported operations."""
 
