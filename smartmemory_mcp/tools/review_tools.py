@@ -11,9 +11,10 @@ the Lite store's own settings row (``smartmemory.lite_settings``, reached throug
 tool is not a person, so it may only tighten (``propose``, ``person_only``), as an agent may on hosted; a person loosens
 with the ``smartmemory --data-dir <dir> review-settings`` command.
 
-Who may approve (part 7, 2.0.2): ``review.approval`` defaults to ``person_only``. Neither the hosted connector's
-assistant (recorded ``connector:<user id>``) nor the local tool (``local:mcp``) is a person, so both are refused unless
-a person set the workspace (or the store) to ``anyone``. A refusal's sentence is shown as the service or core wrote it.
+Who may approve (parts 7 and 8, 2.0.2): ``review.approval`` is ``person_only``, ``person_or_key`` (the hosted
+default: a signed-in person or an API key) or ``anyone``. A Lite store defaults to ``person_only`` (it has no keys).
+Neither the hosted connector's assistant (recorded ``connector:<user id>``) nor the local tool (``local:mcp``) is a
+person or a key, so both are refused unless a person set the workspace (or the store) to ``anyone``. A refusal's sentence is shown as the service or core wrote it.
 Contract: smart-memory-docs ``docs/features/OUTREACH-MARIUS-HITL-SURFACE-1/review-queue-contract.json``.
 """
 
@@ -31,14 +32,19 @@ LOCAL_ACTOR = "local:mcp"
 _ACTIONS = ("keep_a", "keep_b", "keep_both")
 _STATUSES = ("open", "resolved")
 _POLICIES = ("retire", "propose", "inherit")
-_APPROVALS = ("anyone", "person_only", "inherit")
+_APPROVALS = ("anyone", "person_or_key", "person_only", "inherit")
 # The tight value of each knob: the only one the local tool (not a person) may set.
 _TIGHT = {"supersession": "propose", "approval": "person_only"}
 _CLI_FLAG = {
     "supersession": ("--hold", {"propose": "on", "retire": "off", None: "unset"}),
     "approval": (
         "--approval",
-        {"anyone": "anyone", "person_only": "person_only", None: "unset"},
+        {
+            "anyone": "anyone",
+            "person_or_key": "person_or_key",
+            "person_only": "person_only",
+            None: "unset",
+        },
     ),
 }
 _DEFAULTS = {"supersession": "retire", "approval": "person_only"}
@@ -240,11 +246,11 @@ def register(mcp):
     )
     @graceful
     def review_queue_settle(review_id: str, action: str, reason: str) -> str:
-        """Record a decision on one review. By default only a person approves: unless a person set
-        the workspace (or the local store) to let anyone approve, this call is refused, because
-        an assistant is not a person, and the review stays open. Then tell the user it waits for
-        them: a person approves in the SmartMemory app (hosted) or with a call that names them
-        (local). Where anyone may approve, the decision is recorded once, as connector:<user>
+        """Record a decision on one review. By default only a person (or, hosted, an API key)
+        approves: unless a person set the workspace (or the local store) to let anyone approve,
+        this call is refused, because an assistant is neither, and the review stays open. Then
+        tell the user it waits for them: a person approves in the SmartMemory app (hosted) or with
+        a call that names them (local). Where anyone may approve, the decision is recorded once, as connector:<user>
         (hosted) or local:mcp (local); an identical retry returns the stored receipt, a different
         answer is refused. Call it only to pass on what the user has just told you to decide;
         never to settle a change you filed yourself.
@@ -344,9 +350,10 @@ def register(mcp):
     )
     @graceful
     def review_approval_get() -> str:
-        """Read who may approve (settle) reviews in the current workspace: "person_only" (the
-        default: only a signed-in person, never an assistant or an API key) or "anyone" (any
-        caller with write access). Local: the store's own setting."""
+        """Read who may approve (settle) reviews in the current workspace: "person_or_key" (the
+        hosted default: a signed-in person or an API key, never an assistant), "person_only" (only
+        a signed-in person) or "anyone" (any caller with write access, assistants included).
+        Local: the store's own setting (default "person_only")."""
         backend = get_backend()
         if not backend.supports("request"):
             settings = _lite_settings(backend)
@@ -367,12 +374,12 @@ def register(mcp):
     @graceful
     def review_approval_set(approval: str) -> str:
         """Set who may approve reviews in the current workspace. An assistant may only tighten it
-        (set "person_only"); only a person may set "anyone" or clear it, so a loosening call from
+        (set "person_only"); only a person may set "person_or_key" or "anyone" or clear it, so a loosening call from
         here is refused. Local: the store's own setting; a person loosens it with the
         review-settings command the refusal names.
 
         Args:
-            approval: "person_only", "anyone", or "inherit" to clear the workspace override.
+            approval: "person_only", "person_or_key", "anyone", or "inherit" to clear the workspace override.
         """
         if approval not in _APPROVALS:
             return f"approval must be one of {', '.join(_APPROVALS)}"

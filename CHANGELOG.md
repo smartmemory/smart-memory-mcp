@@ -1,3 +1,8 @@
+## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 part 8: an API key can approve a held decision (2026-11-16)
+
+- `review_approval_get` / `review_approval_set` know `person_or_key` (the hosted default). Local stores keep `person_only`. `review_queue_settle` describes that a person or, hosted, an API key approves by default, and the assistant does not.
+- New `tests/test_key_approve_notes_local.py` (Lite note 12).
+
 ## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 part 7: only a person approves by default (2026-11-16)
 
 - Only a person approves a review by default now. The local `review_queue_settle` (`local:mcp`) is refused until a person runs `smartmemory --data-dir <dir> review-settings --approval anyone`, and the refusal says so.
