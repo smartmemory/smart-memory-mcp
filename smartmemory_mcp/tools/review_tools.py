@@ -324,8 +324,9 @@ def register(mcp):
     )
     @graceful
     def supersession_policy_set(policy: str) -> str:
-        """Set the current workspace's supersession policy. Needs edit rights on the workspace;
-        an API key, an agent or this connector may only tighten it (set "propose"). Local: the
+        """Set the current workspace's supersession policy. Turning the hold on ("propose")
+        needs edit rights. Turning it off ("retire", or "inherit" when the inherited value is retire)
+        needs a workspace owner or admin. An API key, an agent or this connector may only tighten it. Local: the
         store's own setting, tighten only; a person loosens it with the review-settings command.
 
         Args:

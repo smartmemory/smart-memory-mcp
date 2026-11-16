@@ -1,5 +1,7 @@
 ## 2.0.2
 
+- REL-2-0-2-MERGED-TIP-1: `supersession_policy_set` docstring now says turning the hold off (`retire`, or `inherit` when the inherited value is retire) needs a workspace owner or admin. Docs only.
+
 ## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 part 8: an API key can approve a held decision (2026-11-16)
 
 - `review_approval_get` / `review_approval_set` know `person_or_key` (the hosted default). Local stores keep `person_only`. `review_queue_settle` describes that a person or, hosted, an API key approves by default, and the assistant does not.
