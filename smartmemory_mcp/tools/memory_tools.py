@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 
+from smartmemory_mcp.backends.interface import DecisionReplaceHeld
 from smartmemory_mcp.backends.models import (
     none_found,
     partial_note,
@@ -1181,8 +1182,9 @@ def register_pro(mcp):
     ) -> str:
         """Edit a memory item in place (CORE-CRUD-UPDATE-1). Keeps no history.
 
-        To change or reverse a rule, use ``memory_supersede`` so the old version
-        is retained. Use this tool for typo fixes or metadata edits.
+        To change or reverse a rule saved as a decision, use ``decision_supersede``. To
+        replace any other memory, use ``memory_supersede`` so the old version is retained.
+        Use this tool for typo fixes or metadata edits.
 
         - ``content``/``metadata``: convenience — folded into the properties dict.
         - ``properties``: advanced — direct node-property update. Takes precedence.
@@ -1221,7 +1223,9 @@ def register_pro(mcp):
     ) -> str | dict[str, Any]:
         """Replace a memory with a new version, keeping the old one as history.
 
-        Use this to change or reverse an existing rule, decision or instruction.
+        Not for decisions: to change or reverse a decision or rule use ``decision_supersede``.
+        In a workspace that holds rule changes for a person this call refuses a decision, with
+        a message saying so, and writes nothing.
         The old version is retained as replaced history. History visibility
         follows the normal search gates. ``reason`` says why it changed.
         ``valid_from`` (ISO datetime, e.g.
@@ -1232,9 +1236,12 @@ def register_pro(mcp):
         options = scoped_options(scope_go_lives=scope_go_lives, valid_from=valid_from)
         backend = get_backend()
         workspace = target_workspace(backend)
-        result = backend.supersede(
-            item_id, content, reason, metadata=metadata, **options
-        )
+        try:
+            result = backend.supersede(
+                item_id, content, reason, metadata=metadata, **options
+            )
+        except DecisionReplaceHeld as refused:
+            return str(refused)
         if result and result.get("status") == "scheduled":
             return name_workspace(result, workspace)
         new_id = (result or {}).get("new_item_id", "unknown")

@@ -160,7 +160,7 @@ Code indexing reports clean, partial and failed file counts plus acceptance, sta
 
 Local `code_effects(directory, repo_name=None)` scans Python effects through the shared engine without opening a memory store. Hosted `code_effects(repo, source_snapshot, limit=20, offset=0)` reads uploaded `fa_snapshot` records in the selected workspace. It accepts no filesystem path. Upload the engine's `snapshot_record` payload through existing declared-record ingestion first. Repository rules belong in the scanned checkout's `.smartmemory-effects.json`.
 
-Stdio advertises 41 tools in FREE, 81 in PRO and 116 in PRO+ (counts pinned by `tests/test_tier_registration.py`). PRO+ includes the conflict review queue (`review_queue_list`, `review_queue_settle`) and the supersession policy (`supersession_policy_get`, `supersession_policy_set`, remote only). `list_workspaces` is available in every tier.
+Stdio advertises 41 tools in FREE, 81 in PRO and 120 in PRO+ (counts pinned by `tests/test_tier_registration.py`). PRO+ includes the conflict review queue (`review_queue_list`, `review_queue_settle`), the supersession policy (`supersession_policy_get`, `supersession_policy_set`) and who may approve reviews (`review_approval_get`, `review_approval_set`). On a local store the policy and approval tools read and set the store's own settings, and may only tighten them. By default only a person approves a review, so the assistant's settle call is refused until a person sets approval to anyone. `list_workspaces` is available in every tier.
 
 Hosted mode advertises 35 tools, an explicit allowlist rather than a tier:
 
@@ -171,8 +171,19 @@ Hosted mode advertises 35 tools, an explicit allowlist rather than a tier:
 `code_search` `code_dead_code` `code_dependencies` `code_upload` `code_effects`
 `agent_set_recall_profile` `agent_get_recall_profile` `reasoning_query_traces`
 `decision_create` `decision_supersede` `decision_get` `decision_list`
-`decision_search` `decision_provenance`
+`decision_search` `decision_provenance` `review_queue_list` `review_queue_settle`
 `whoami` `list_workspaces` `switch_workspace` `switch_team`
+
+When a workspace asks a person first (supersession policy `propose`), `decision_supersede`
+answers "held for review" with a review id and the old rule stays in force. The assistant
+tells the user the change is waiting for a person and never settles it itself. A person settles it
+in the review queue (`review_queue_list` shows what is waiting). `review_queue_settle` records that
+person's decision (`keep_b` accepts, `keep_a` rejects); in a person-only workspace an agent's call is refused.
+Sending the same change again after it was decided answers "already decided: <outcome> (review <id>)".
+`memory_supersede` on a decision in such a workspace shows the refusal ("use `decision_supersede`") and writes nothing.
+Hosted, both review tools act on the signed-in workspace and the service records the signed-in
+caller as the one who settled. `decision_list(status=...)` reads `superseded` (replaced) and
+`retracted` rules as well as the ones in force (`active`, the default).
 
 Hosted search and decision reads accept `business_scope` and `valid_at`.
 Omitting both selects the sponsor rule effective now. `scope_go_lives` on

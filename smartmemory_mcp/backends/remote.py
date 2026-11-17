@@ -21,7 +21,13 @@ import httpx
 from smartmemory_mcp.tool_trace import tool_headers
 from smartmemory_mcp.tools.common import scoped_options
 
-from .interface import BackendCapabilities, EvidenceRefused
+from .interface import (
+    BackendCapabilities,
+    DecisionAlreadyDecided,
+    DecisionReplaceHeld,
+    DecisionRestoreRefused,
+    EvidenceRefused,
+)
 from .local import SaveReturn
 from .models import CodeIngestResult, MemoryResult, normalize_item, normalize_items
 from .path_guard import path_id
@@ -619,6 +625,17 @@ class RemoteBackend(BackendCapabilities):
         return result or {}
 
     @staticmethod
+    def _conflict_detail(result: Any, code: str) -> dict[str, Any] | None:
+        """The 409 ``detail`` of an error result when its ``error_code`` is ``code``, else None."""
+        if not isinstance(result, dict) or result.get("status_code") != 409:
+            return None
+        body = result.get("body")
+        detail = body.get("detail") if isinstance(body, dict) else None
+        if isinstance(detail, dict) and detail.get("error_code") == code:
+            return detail
+        return None
+
+    @staticmethod
     def _fmt_error(result: Any) -> str | None:
         """If result is an error dict, return the message. Otherwise None."""
         if isinstance(result, dict) and "error" in result:
@@ -937,6 +954,8 @@ class RemoteBackend(BackendCapabilities):
             )
             or {}
         )
+        if held := self._conflict_detail(result, "decision_replace_held"):
+            raise DecisionReplaceHeld(str(held.get("message") or held["error_code"]))
         if err := self._fmt_error(result):
             raise RuntimeError(err)
         return result
@@ -1526,6 +1545,12 @@ class RemoteBackend(BackendCapabilities):
     ) -> Any:
         """Call a decision route, raising loudly on anything but genuine absence."""
         result = self._request(method, path, **kwargs)
+        if decided := self._conflict_detail(result, "already_decided"):
+            raise DecisionAlreadyDecided(
+                str(decided.get("review_id")),
+                decided.get("action"),
+                str(decided.get("outcome") or decided.get("action") or "settled"),
+            )
         if err := self._fmt_error(result):
             if none_on_404 and "API error 404" in err:
                 return None
@@ -1592,9 +1617,12 @@ class RemoteBackend(BackendCapabilities):
         as_of: str | None = None,
         business_scope: dict[str, Any] | None = None,
         valid_at: str | None = None,
+        status: str | None = None,
     ) -> list[dict[str, Any]]:
-        """GET /memory/decisions."""
+        """GET /memory/decisions (``status`` is the route's lifecycle filter; omitted means active)."""
         params: dict[str, Any] = {"min_confidence": min_confidence, "limit": limit}
+        if status is not None:
+            params["status"] = status
         if domain is not None:
             params["domain"] = domain
         if decision_type is not None:
@@ -1673,6 +1701,28 @@ class RemoteBackend(BackendCapabilities):
             json={"reason": reason},
         )
         return self._strip_scope(result) if result is not None else None
+
+    def decision_restore(self, decision_id: str, reason: str) -> dict[str, Any] | None:
+        """POST /memory/decisions/{decision_id}/restore (DECISION-RESTORE-ONE-ACTION-1). 404 is None; the route's
+        403/409 refusals raise DecisionRestoreRefused with the detail code; anything else raises RuntimeError."""
+        path = f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/restore"
+        result = self._request("POST", path, json={"reason": reason})
+        if err := self._fmt_error(result):
+            status = result.get("status_code")
+            if status == 404:
+                return None
+            body = result.get("body")
+            detail = body.get("detail") if isinstance(body, dict) else None
+            if status in (403, 409) and isinstance(detail, dict) and detail.get("code"):
+                raise DecisionRestoreRefused(
+                    str(detail["code"]),
+                    str(detail.get("message") or err),
+                    detail.get("newer_decision_id"),
+                )
+            raise RuntimeError(f"POST {path} failed: {err}")
+        if result is None:
+            raise RuntimeError(f"POST {path} failed: empty response from the API")
+        return self._strip_scope(result)
 
     def decision_reinforce(
         self, decision_id: str, evidence_id: str

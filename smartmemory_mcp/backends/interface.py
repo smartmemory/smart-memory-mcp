@@ -24,6 +24,40 @@ class EvidenceRefused(ValueError):
     """
 
 
+class DecisionRestoreRefused(ValueError):
+    """DECISION-RESTORE-ONE-ACTION-1: the store refused a restore; ``code`` is one of the contract refusal codes
+    (not_owner, not_retired, scheduled, replaced_again, replacement_unreadable). ``not_found`` is returned as None."""
+
+    def __init__(
+        self, code: str, message: str = "", newer_decision_id: str | None = None
+    ):
+        super().__init__(message or code)
+        self.code = code
+        self.newer_decision_id = newer_decision_id
+
+
+class DecisionAlreadyDecided(ValueError):
+    """A re-sent decision change whose review is already settled: nothing is held, the outcome stands.
+
+    Local mode re-raises core's ``AlreadyDecided`` as this; remote mode raises it for the 409 ``already_decided``.
+    """
+
+    def __init__(self, review_id: str, action: str | None, outcome: str):
+        super().__init__(f"already decided: {outcome} (review {review_id})")
+        self.review_id = review_id
+        self.action = action
+        self.outcome = outcome
+
+
+class DecisionReplaceHeld(RuntimeError):
+    """A general replace (``memory_supersede``) named a decision in a workspace that holds rule changes for a person.
+
+    Nothing was written. ``str(self)`` is the store's own refusal ("use decision_supersede, which files the review"),
+    shown to the assistant as is. Local mode re-raises core's ``GeneralReplaceRefused`` as this; remote mode raises it
+    for the 409 ``decision_replace_held``.
+    """
+
+
 class BackendCapabilities:
     """Central capability check, including explicitly unsupported operations."""
 
@@ -332,8 +366,11 @@ class MemoryBackend(Protocol):
         as_of: str | None = None,
         business_scope: dict[str, Any] | None = None,
         valid_at: str | None = None,
+        status: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Active decisions, filtered (active at `as_of` when set, SM-ASOF-DECISIONS-1)."""
+        """Decisions in one lifecycle state, filtered: `status` None or "active" (default), "superseded",
+        "retracted" or "pending" (OUTREACH-MARIUS-HITL-SURFACE-1 p4). `as_of` lists the ones that held that
+        state at that instant (SM-ASOF-DECISIONS-1)."""
         ...
 
     def decision_search(
@@ -365,6 +402,11 @@ class MemoryBackend(Protocol):
 
     def decision_retract(self, decision_id: str, reason: str) -> dict[str, Any] | None:
         """{decision_id, status}, or None when the decision does not exist."""
+        ...
+
+    def decision_restore(self, decision_id: str, reason: str) -> dict[str, Any] | None:
+        """DECISION-RESTORE-ONE-ACTION-1: {decision_id, status, replacement_decision_id}, None when absent; a refusal
+        raises DecisionRestoreRefused."""
         ...
 
     def decision_reinforce(

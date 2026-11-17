@@ -14,7 +14,11 @@ from typing import Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 
-from smartmemory_mcp.backends.interface import EvidenceRefused
+from smartmemory_mcp.backends.interface import (
+    DecisionAlreadyDecided,
+    DecisionRestoreRefused,
+    EvidenceRefused,
+)
 from .common import (
     checked_as_of,
     dated,
@@ -55,6 +59,10 @@ def _uncertainty_marker(decision: Any) -> str:
     if ignorance is None or ignorance <= _UNCERTAINTY_THRESHOLD:
         return ""
     return f" {_UNCERTAINTY_MARKER}"
+
+
+#: The lifecycle states decision_list reads (the service route's and core's ``status`` filter).
+_LIST_STATES = ("active", "superseded", "retracted", "pending")
 
 
 def _summary_line(decision: Any) -> str:
@@ -200,18 +208,28 @@ def register(mcp):
         as_of: Optional[str] = None,
         business_scope: Optional[Dict[str, Any]] = None,
         valid_at: Optional[str] = None,
+        status: Optional[str] = None,
     ) -> str:
-        """Business validity uses business_scope (exact site) and valid_at.
+        """List decisions (rules) in one state: the ones in force by default, or the ones that
+        were replaced or retracted.
 
-        Exact activated site entries take precedence, otherwise use sponsor fallback.
-        Omitted valid_at is resolved once at request start. as_of is independent
-        transaction-time history.
+        ``status``: omit or "active" for the rules in force now; "superseded" for rules that
+        were replaced (answers "what did we use to charge?"); "retracted" for rules that were
+        withdrawn; "pending" for rules waiting on a requirement. A replacement that is still
+        waiting for a person is not a decision yet: it is listed by
+        review_queue_list, and the rule it would replace stays "active" until a person settles it.
 
-        List active decisions with optional filtering.
+        ``as_of`` (ISO 8601; omit for now) lists the decisions that held that state at that
+        instant: a decision superseded or retracted since is listed as active, one created
+        later is not.
 
-        ``as_of`` (ISO 8601; omit for now) lists the decisions that were active at
-        that instant: a decision superseded or retracted since is listed, one
-        created later is not."""
+        Business validity uses business_scope (exact site) and valid_at. Exact activated site
+        entries take precedence, otherwise use sponsor fallback. Omitted valid_at is resolved
+        once at request start. as_of is independent transaction-time history."""
+        if status is not None and status not in _LIST_STATES:
+            return (
+                f"status must be one of {', '.join(_LIST_STATES)} (omit it for active)"
+            )
         options = scoped_options(business_scope=business_scope, valid_at=valid_at)
         as_of = checked_as_of(as_of)
         try:
@@ -223,13 +241,15 @@ def register(mcp):
                 limit=limit,
                 **dated(as_of),
                 **options,
+                **({} if status in (None, "active") else {"status": status}),
             )
 
             when = "" if as_of is None else f" as of {as_of}"
+            state = status or "active"
             if not decisions:
-                return f"No active decisions found{when}."
+                return f"No {state} decisions found{when}."
 
-            output = [f"Found {len(decisions)} active decisions{when}:\n"]
+            output = [f"Found {len(decisions)} {state} decisions{when}:\n"]
             output.extend(_summary_line(d) for d in decisions)
             return "\n".join(output)
         except Exception as e:
@@ -304,6 +324,13 @@ def register(mcp):
     ) -> str:
         """Replace a decision, preserving its rationale, alternatives and constraints.
 
+        In a workspace that asks a person first (supersession policy "propose"), nothing is
+        replaced yet: the answer says "held for review" with a review id and the old decision
+        stays in force. A person settles it in the review queue: tell the user it is waiting,
+        and do not settle it yourself. review_queue_list shows what is waiting. Sending the same
+        change again after a person has decided it answers "already decided: <outcome> (review
+        <id>)", not "held".
+
         scope_go_lives schedules exact site activation with sponsor fallback. A
         site-only amendment leaves the sponsor and other sites on their prior rule.
         valid_from is the legacy global date and cannot accompany scope_go_lives.
@@ -325,6 +352,17 @@ def register(mcp):
             if result is None:
                 return f"Decision not found: {decision_id}"
 
+            if result.get("status") == "held_for_review":
+                # OUTREACH-MARIUS-HITL-SURFACE-1 p2: the workspace holds replacements for a person (review.supersession
+                # propose). Nothing was replaced. The assistant is never told to settle its own change: a person does,
+                # in the review queue (OUTREACH-MARIUS-HITL-SURFACE-1 review M1).
+                return (
+                    f"Replacement of decision {decision_id} held for review (the workspace asks a person first).\n"
+                    f"The old decision stays in force. Review: {result.get('review_id')}\n"
+                    "Tell the user: the change is waiting for a person, who settles it in the review queue, and "
+                    "the old rule applies until then. Do not say it was saved as the new rule, and do not settle "
+                    "it yourself."
+                )
             if result.get("status") == "scheduled":
                 return (
                     f"Amendment scheduled for decision {decision_id}.\n"
@@ -335,6 +373,8 @@ def register(mcp):
                 f"Decision {decision_id} superseded.\n"
                 f"New decision: {result.get('new_decision_id')}"
             )
+        except DecisionAlreadyDecided as e:
+            return f"already decided: {e.outcome} (review {e.review_id})"
         except Exception as e:
             logger.error(f"Failed to supersede decision: {e}", exc_info=True)
             raise
@@ -359,6 +399,39 @@ def register(mcp):
             return f"Decision retracted: {decision_id}"
         except Exception as e:
             logger.error(f"Failed to retract decision: {e}", exc_info=True)
+            raise
+
+    @mcp.tool(
+        title="Restore a wrongly retired decision",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def decision_restore(decision_id: str, reason: str) -> str:
+        """Undo a wrong retirement in one action: the decision is active again, its replacement stays active, and the
+        history keeps both. Only the decision's owner can restore it (DECISION-RESTORE-ONE-ACTION-1)."""
+        try:
+            backend = get_backend()
+            result = backend.decision_restore(decision_id, reason=reason)
+            if result is None:
+                return f"Decision not found: {decision_id}"
+            return (
+                f"Decision restored: {decision_id}\n"
+                f"Replacement stays active: {result.get('replacement_decision_id')}"
+            )
+        except DecisionRestoreRefused as e:
+            newer = (
+                f" (newer decision: {e.newer_decision_id})"
+                if e.newer_decision_id
+                else ""
+            )
+            return f"Restore refused ({e.code}): {e}{newer}"
+        except Exception as e:
+            logger.error(f"Failed to restore decision: {e}", exc_info=True)
             raise
 
     @mcp.tool(

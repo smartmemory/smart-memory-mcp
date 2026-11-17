@@ -149,6 +149,24 @@ def fake_svc_api(
                     "reason": "amend",
                 }
             )
+        if path == "/memory/reasoning/reviews":
+            return ok({"items": [], "status": "open", "limit": 50, "offset": 0})
+        if path == "/memory/reasoning/reviews/conflict_1/settle":
+            return ok(
+                {
+                    "id": "conflict_1",
+                    "status": "resolved",
+                    "conflict": {
+                        "existing_item_id": "dec-1",
+                        "existing_fact": "old",
+                        "new_fact": "new",
+                    },
+                    "resolution_action": "keep_a",
+                    "resolution_reason": "not approved",
+                    "resolved_by": "user-1",
+                    "application_status": "not_required",
+                }
+            )
         if path == "/memory/decisions/dec-1/provenance":
             return ok({"decision": decision, "evidence": []})
         if path == "/memory/decisions/dec-1":
@@ -327,8 +345,8 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
 
     assert advertised == set(HOSTED_TOOLS)
     assert (
-        len(advertised) == 36
-    )  # SM-SCOPED-VALIDITY-1 six remote decision tools + DRIFT-V3-DHRUV-BOUNDARIES-1 memory_supersede + WS-POLICY-10 create_workspace
+        len(advertised) == 38
+    )  # SM-SCOPED-VALIDITY-1 six remote decision tools + DRIFT-V3-DHRUV-BOUNDARIES-1 memory_supersede + WS-POLICY-10 create_workspace + OUTREACH-MARIUS-HITL-SURFACE-1 p4 review_queue_list/settle
 
 
 @pytest.mark.parametrize("name", EXCLUDED_TOOLS)
@@ -382,6 +400,11 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
         {"decision_id": "dec-1", "new_content": "new decision", "reason": "amend"},
     ),
     ("decision_provenance", {"decision_id": "dec-1"}),
+    ("review_queue_list", {}),  # OUTREACH-MARIUS-HITL-SURFACE-1 p4
+    (
+        "review_queue_settle",
+        {"review_id": "conflict_1", "action": "keep_a", "reason": "not approved"},
+    ),
     ("memory_search", {"query": "runbook"}),
     ("memory_search", {"query": "runbook", "memory_type": "semantic"}),
     ("memory_search", {"query": "runbook", "channel_weights": {"semantic": 1.0}}),

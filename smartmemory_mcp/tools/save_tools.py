@@ -215,7 +215,8 @@ def register_free(mcp):
         """Save one memory: free text in ``content``, or a structured record in ``data``.
 
         If this note changes or reverses an earlier one, call ``memory_supersede``
-        on that note so the old version is retained as history.
+        on that note so the old version is retained as history. For a decision, use
+        ``decision_supersede`` instead.
 
         Free text goes through the full extraction pipeline, whatever its type, except ``memory_type="pending"``,
         which is stored as is. For ``data``, ``memory_type`` names the registered schema (required) and ``content`` is

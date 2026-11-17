@@ -12,7 +12,14 @@ from typing import Any, NoReturn
 
 from smartmemory_mcp.tools.common import scoped_options
 
-from .interface import LOCAL_BROKEN_TOOLS, BackendCapabilities, EvidenceRefused
+from .interface import (
+    LOCAL_BROKEN_TOOLS,
+    BackendCapabilities,
+    DecisionAlreadyDecided,
+    DecisionReplaceHeld,
+    DecisionRestoreRefused,
+    EvidenceRefused,
+)
 from .models import MemoryResult, normalize_item, normalize_items
 from smartmemory_mcp.workspace_select import SwitchResult, refuse
 
@@ -439,16 +446,21 @@ class LocalBackend(BackendCapabilities):
             valid_start_time=start,
         )
         # The old item's interval closes at ``start`` inside core's compensated supersession unit.
-        new_id = self._mem.ingest_superseding(
-            item,
-            supersedes=item_id,
-            **({"valid_from": start} if start is not None else {}),
-            **(
-                {"scope_go_lives": options["scope_go_lives"]}
-                if "scope_go_lives" in options
-                else {}
-            ),
-        )
+        try:
+            new_id = self._mem.ingest_superseding(
+                item,
+                supersedes=item_id,
+                **({"valid_from": start} if start is not None else {}),
+                **(
+                    {"scope_go_lives": options["scope_go_lives"]}
+                    if "scope_go_lives" in options
+                    else {}
+                ),
+            )
+        except RuntimeError as error:
+            if type(error).__name__ == "GeneralReplaceRefused":
+                raise DecisionReplaceHeld(str(error)) from error
+            raise
         if not new_id:
             raise RuntimeError("Supersession could not be established")
         replacement = self._mem.get(new_id)
@@ -1215,6 +1227,7 @@ class LocalBackend(BackendCapabilities):
         as_of: str | None = None,
         business_scope: dict[str, Any] | None = None,
         valid_at: str | None = None,
+        status: str | None = None,
     ) -> list[dict[str, Any]]:
         options = scoped_options(business_scope=business_scope, valid_at=valid_at)
         decisions = self._mem.get_active_decisions(
@@ -1223,6 +1236,7 @@ class LocalBackend(BackendCapabilities):
             min_confidence=min_confidence,
             limit=limit,
             as_of=as_of,
+            **({} if status is None else {"status": status}),
             **options,
         )
         return [_decision_dict(d) for d in decisions]
@@ -1283,7 +1297,21 @@ class LocalBackend(BackendCapabilities):
                 "Decision not found:"
             ):
                 return None
+            if type(error).__name__ == "AlreadyDecided":
+                raise DecisionAlreadyDecided(
+                    error.review_id, error.action, error.outcome
+                ) from error
             raise
+        if getattr(result, "status", None) == "held_for_review" and getattr(
+            result, "review_id", None
+        ):
+            # The store's workspace holds replacements for review (core HeldSupersession): nothing was replaced.
+            return {
+                "old_decision_id": decision_id,
+                "new_decision_id": None,
+                "status": "held_for_review",
+                "review_id": result.review_id,
+            }
         schedule = getattr(result, "scope_go_lives", None)
         if schedule is not None:
             from datetime import datetime, timezone
@@ -1307,6 +1335,26 @@ class LocalBackend(BackendCapabilities):
         except ValueError:
             return None
         return {"decision_id": decision_id, "status": "retracted"}
+
+    def decision_restore(self, decision_id: str, reason: str) -> dict[str, Any] | None:
+        """DECISION-RESTORE-ONE-ACTION-1: DecisionManager.restore on the real store (owner checks run in core)."""
+        from smartmemory.decisions.restore import DecisionRestoreRefused as CoreRefused
+
+        try:
+            decision = self._decision_manager().restore(decision_id, reason)
+        except CoreRefused as e:
+            if e.code == "not_found":
+                return None
+            raise DecisionRestoreRefused(
+                e.code, str(e), getattr(e, "newer_id", None)
+            ) from e
+        return {
+            "decision_id": decision.decision_id,
+            "status": decision.status,
+            "replacement_decision_id": (decision.context_snapshot or {}).get(
+                "restored_from_replacement"
+            ),
+        }
 
     def decision_reinforce(
         self, decision_id: str, evidence_id: str

@@ -245,6 +245,13 @@ ROWS = [
         lambda b, i: b.decision_retract(i, "why"),
     ),
     (
+        "decision_restore",
+        REMOTE,
+        "POST",
+        "/memory/decisions/{decision_id}/restore",
+        lambda b, i: b.decision_restore(i, "why"),
+    ),
+    (
         "decision_reinforce",
         REMOTE,
         "POST",
@@ -336,14 +343,14 @@ ROWS = [
         _review("review_queue_settle", "keep_b", "checked"),
     ),
     (
-        "supersession_policy_get",
+        "_remote_get",
         REVIEW,
         "GET",
         "/memory/workspaces/{workspace_id}/settings",
         _workspace("supersession_policy_get"),
     ),
     (
-        "supersession_policy_set",
+        "_remote_set",
         REVIEW,
         "PATCH",
         "/memory/workspaces/{workspace_id}/settings",
@@ -494,6 +501,12 @@ TOOL_ROWS = [
         "POST",
         "/memory/decisions/{decision_id}/retract",
         _tool(decision_tools.register, "decision_retract", "why"),
+    ),
+    (
+        "decision_restore",
+        "POST",
+        "/memory/decisions/{decision_id}/restore",
+        _tool(decision_tools.register, "decision_restore", "why"),
     ),
     (
         "decision_reinforce",

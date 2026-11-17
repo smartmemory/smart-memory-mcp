@@ -101,12 +101,15 @@ def _use(monkeypatch, backend):
     return backend
 
 
-def test_all_four_tools_register():
+def test_all_six_tools_register():
+    # Part 7 (2.0.2): the review approval pair joins the four.
     assert set(_tools()) == {
         "review_queue_list",
         "review_queue_settle",
         "supersession_policy_get",
         "supersession_policy_set",
+        "review_approval_get",
+        "review_approval_set",
     }
 
 
@@ -241,8 +244,146 @@ def test_policy_set_rejects_an_unknown_policy_and_refusals_surface(monkeypatch):
     assert tools["supersession_policy_set"]("retire").startswith("Error (403)")
 
 
-def test_policy_tools_are_remote_only(monkeypatch):
+class _LiteSettings:
+    def __init__(self, tmp_path):
+        self.db_path = tmp_path / "memory.db"
+        self.doc = {"review.supersession": None, "review.approval": None}
+        self.sets: list[dict] = []
+
+    def read(self):
+        return dict(self.doc)
+
+    def set(self, *, updated_by, **changes):
+        self.sets.append({"updated_by": updated_by, **changes})
+        for knob, value in changes.items():
+            self.doc[f"review.{knob}"] = value
+        return self.read()
+
+
+def _lite(monkeypatch, tmp_path):
+    backend = _use(monkeypatch, _Local())
+    settings = _LiteSettings(tmp_path)
+    backend._mem.scope_provider = type("P", (), {"lite_settings": settings})()
+    return settings
+
+
+def test_policy_tools_read_and_tighten_the_lite_store_settings(monkeypatch, tmp_path):
+    # Part 7 (2.0.2): was "remote only"; the local tools now read and set the store's own settings row.
+    settings = _lite(monkeypatch, tmp_path)
+    tools = _tools()
+    assert json.loads(tools["supersession_policy_get"]())["policy"] == "retire"
+    approval = json.loads(tools["review_approval_get"]())
+    assert approval["policy"] == "person_only" and approval["source"] == "default"
+    assert (
+        json.loads(tools["supersession_policy_set"]("propose"))["stated"] == "propose"
+    )
+    assert (
+        json.loads(tools["review_approval_set"]("person_only"))["stated"]
+        == "person_only"
+    )
+    assert settings.sets == [
+        {"updated_by": "local:mcp", "supersession": "propose"},
+        {"updated_by": "local:mcp", "approval": "person_only"},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("tool", "value", "command"),
+    [
+        ("review_approval_set", "anyone", "review-settings --approval anyone"),
+        ("review_approval_set", "inherit", "review-settings --approval unset"),
+        ("supersession_policy_set", "retire", "review-settings --hold off"),
+        ("supersession_policy_set", "inherit", "review-settings --hold unset"),
+    ],
+)
+def test_the_local_tool_never_loosens_and_names_the_person_command(
+    monkeypatch, tmp_path, tool, value, command
+):
+    settings = _lite(monkeypatch, tmp_path)
+    out = _tools()[tool](value)
+    assert out.startswith("Refused: the local connector is not a person"), out
+    assert f"smartmemory --data-dir {tmp_path} {command}" in out
+    assert settings.sets == []
+
+
+def test_policy_tools_without_a_lite_store_say_so(monkeypatch):
     _use(monkeypatch, _Local())
     tools = _tools()
-    assert "remote backend" in tools["supersession_policy_get"]()
-    assert "remote backend" in tools["supersession_policy_set"]("propose")
+    for out in (
+        tools["supersession_policy_get"](),
+        tools["review_approval_get"](),
+        tools["review_approval_set"]("person_only"),
+    ):
+        assert "no settings row" in out
+
+
+def test_remote_approval_pair_uses_the_settings_route(monkeypatch):
+    settings = {
+        **SETTINGS,
+        "effective": {"review": {"approval": "person_only"}},
+        "source": {"review": {"approval": "default"}},
+        "stated": {"review": {}},
+    }
+    backend = _use(monkeypatch, _Remote(settings))
+    tools = _tools()
+    view = json.loads(tools["review_approval_get"]())
+    assert view["policy"] == "person_only" and view["source"] == "default"
+    tools["review_approval_set"]("inherit")
+    assert backend.calls[-1] == (
+        "PATCH",
+        "/memory/workspaces/ws%201/settings",
+        {"json": {"stated": {"review": {"approval": None}}}},
+    )
+    assert tools["review_approval_set"]("nobody").startswith("approval must be")
+
+
+def test_a_403_sentence_is_shown_as_the_service_wrote_it(monkeypatch):
+    sentence = "Only a person can approve reviews in this workspace (review approval is person_only); x"
+    _use(
+        monkeypatch,
+        _Remote(
+            {
+                "error": "API error 403: {...}",
+                "status_code": 403,
+                "body": {"detail": sentence},
+            }
+        ),
+    )
+    assert (
+        _tools()["review_queue_settle"]("conflict_a", "keep_b", "r")
+        == f"Error (403): {sentence}"
+    )
+    _use(
+        monkeypatch,
+        _Remote(
+            {
+                "error": "x",
+                "status_code": 403,
+                "body": {
+                    "detail": {
+                        "code": "c",
+                        "message": "Only a signed-in person may loosen review.approval",
+                    }
+                },
+            }
+        ),
+    )
+    assert (
+        _tools()["review_approval_set"]("anyone")
+        == "Error (403): Only a signed-in person may loosen review.approval"
+    )
+
+
+def test_list_shows_the_total(monkeypatch):
+    _use(
+        monkeypatch,
+        _Remote(
+            {"items": [ROW], "total": 55, "status": "open", "limit": 1, "offset": 0}
+        ),
+    )
+    assert _tools()["review_queue_list"](limit=1).startswith(
+        "1 of 55 open conflict review(s)"
+    )
+    backend = _use(monkeypatch, _Local())
+    backend._mem.count_conflict_reviews = lambda *, status: 3
+    assert _tools()["review_queue_list"]().startswith("1 of 3 open conflict review(s)")

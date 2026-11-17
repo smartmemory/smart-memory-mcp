@@ -1,3 +1,42 @@
+## 2.0.2
+
+- REL-2-0-2-MERGED-TIP-1: `supersession_policy_set` docstring now says turning the hold off (`retire`, or `inherit` when the inherited value is retire) needs a workspace owner or admin. Docs only.
+- REL-2-0-2-MERGED-TIP-1: `tests/test_decision_supersede_held_local.py` now expects the local tool's settle to be refused (`person_only` default, part 7) and settles the held review as a person (`actor='human:...'`). Tests only.
+
+## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 part 8: an API key can approve a held decision (2026-11-16)
+
+- `review_approval_get` / `review_approval_set` know `person_or_key` (the hosted default). Local stores keep `person_only`. `review_queue_settle` describes that a person or, hosted, an API key approves by default, and the assistant does not.
+- New `tests/test_key_approve_notes_local.py` (Lite note 12).
+
+## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 part 7: only a person approves by default (2026-11-16)
+
+- Only a person approves a review by default now. The local `review_queue_settle` (`local:mcp`) is refused until a person runs `smartmemory --data-dir <dir> review-settings --approval anyone`, and the refusal says so.
+- Local `supersession_policy_get` and `supersession_policy_set` read and set the Lite store's own settings (were remote only). New `review_approval_get` and `review_approval_set` (local and remote, not on the hosted connector). From the tool both knobs can only be tightened. A loosening call is refused and names the command a person runs.
+- A service refusal is shown as the service wrote it (`Error (403): <sentence>`), and `review_queue_list` opens with `N of TOTAL`. The `review_queue_settle` description says a person decides and an assistant is refused unless the workspace allows anyone.
+- 120 PRO+ tools. Tests: `tests/test_approver_final_notes_local.py` (new, real Lite store and the real CLI). The local note fixtures in `tests/test_decisions_connector_notes_local.py` and `tests/test_connector_wording_local.py` now set approval `anyone`, because they settle through the local tool.
+
+## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 connector wording after the review fixes (2026-11-16)
+
+- `decision_supersede` held answer no longer tells the assistant to settle or approve its own change: it says the change waits for a person, who settles it in the review queue, and gives the review id. Same for the `decision_supersede` and `review_queue_list` descriptions. `review_queue_settle` now says it records a person's decision and that in a person-only workspace an agent's call is refused.
+- `decision_supersede` on a change already decided answers `already decided: <outcome> (review <id>)`, never "held" (local `AlreadyDecided`, hosted 409 `already_decided`).
+- `memory_supersede` on a decision in a hold workspace shows the refusal as is ("use decision_supersede, which files the review") for local `GeneralReplaceRefused` and hosted 409 `decision_replace_held`. `memory_update`, `memory_save` and `memory_supersede` descriptions point to `decision_supersede` for a rule.
+- Tests: `tests/test_connector_wording_local.py` (real Lite store) and `tests/real_service/test_hosted_connector_wording.py` (real service app), driver `tests/real_service/_connector_wording_notes.py`.
+
+## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 part 4: review tools on the hosted connector, list replaced and retracted decisions (2026-11-16)
+
+- Hosted connector: `review_queue_list` and `review_queue_settle` are on the hosted allowlist (38 hosted tools). They use the per-call backend, so they read and settle in the signed-in workspace only, and the settle body names no actor (the service records the signed-in caller). The policy tools stay off the hosted connector.
+- `decision_list` takes `status`: `active` (default), `superseded`, `retracted` or `pending`, on both backends (remote sends the route's existing `status` filter, local passes it to core `get_active_decisions`). Any other value is refused with the list of allowed states.
+- `decision_supersede` in a propose workspace now tells the assistant what to tell the user (the change waits for a person, the old rule applies until then) and when to settle. The review tool descriptions say the same.
+- Tests: `tests/test_decisions_connector_notes_local.py` (the frozen notes on real Lite stores) and `tests/real_service/test_hosted_decisions_connector_notes.py` (the same notes through the hosted tool code against the real service app, run from a service checkout, skipped here). Hosted allowlist pins move from 36 to 38 tools and the smoke list covers the two review tools.
+
+## Unreleased - OUTREACH-MARIUS-HITL-SURFACE-1 part 2: a replacing decision waits for a person in propose mode (2026-11-16)
+
+- `decision_supersede` says the replacement is held for review and names the review id when the workspace's supersession policy is `propose` (remote and local). Settle it with `review_queue_settle`. Test: `tests/test_decision_supersede_held_local.py` (real Lite store).
+
+## Unreleased - DECISION-RESTORE-ONE-ACTION-1: `decision_restore` tool (2026-11-15)
+
+- New `decision_restore` tool (free tier and up) with local (core `DecisionManager.restore`) and remote (`POST /memory/decisions/{id}/restore`) backends; refusals render as `Restore refused (<code>)`. Tier counts 43/83/118; route table gains the restore route.
+
 ## Unreleased - CLAIMS-BUILD-21: search results name the lanes that found them (2026-11-14)
 
 - `MemoryResult.matched_by`: the retrieval lanes that found a search result (`["lexical", "semantic"]`), from the service row or the core item's `_matched_by` stamp; `None` when not recorded or on an older server. `memory_search` prints `found by: ...` next to the score (full and catalog output), and model-facing items keep the field.
