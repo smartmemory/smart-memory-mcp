@@ -20,7 +20,7 @@ from mcp.types import ToolAnnotations
 # --- the allowlist ---------------------------------------------------------------
 
 MEMORY_TOOLS = (
-    "memory_ingest",
+    "memory_save",
     "memory_search",
     "memory_recall",
     "memory_ask",
@@ -29,14 +29,12 @@ MEMORY_TOOLS = (
     "memory_explain",
     "memory_recall_pack",
     "memory_policy_bundle",
-    "memory_add",
     "memory_update",
     "memory_supersede",
     "memory_delete",
     "memory_list",
     "memory_stats",
-    "memory_distill",
-    "memory_ingest_conversation",
+    "memory_save_conversation",
     "memory_search_by_metadata",
     "memory_feedback",
 )
@@ -49,13 +47,41 @@ CODE_TOOLS = (
 )
 AGENT_TOOLS = ("agent_set_recall_profile", "agent_get_recall_profile")
 REASONING_TOOLS = ("reasoning_query_traces",)
+# These six decision tools dispatch exclusively through the authenticated backend.
+DECISION_TOOLS = (
+    "decision_create",
+    "decision_supersede",
+    "decision_list",
+    "decision_search",
+    "decision_get",
+    "decision_provenance",
+)
+# OUTREACH-MARIUS-HITL-SURFACE-1 p4: the review queue, so a replacement held for a person can be shown and settled
+# from the hosted connector. Both go through `backend.request` on the per-call backend: the workspace is the
+# session's and the settle body names no actor (the service records the caller: on this connector the session is a
+# `connector`, not a person, part 7). The policy and approval tools in the same module stay local/remote-only
+# (hidden here by the allowlist).
+REVIEW_TOOLS = ("review_queue_list", "review_queue_settle")
 # Registered by the hosted server itself; session-scoped, no backend route of
-# their own beyond the workspace (Team list) lookup. `switch_team` is the
+# their own beyond the workspace listing lookup. `switch_team` is the
 # deprecated alias of `switch_workspace` (MCP-SWITCH-WORKSPACE-1, one release).
-HOSTED_ONLY_TOOLS = ("whoami", "list_workspaces", "switch_workspace", "switch_team")
+# `create_workspace` (WS-POLICY-10 B) creates the caller's private workspace and never writes the session record.
+HOSTED_ONLY_TOOLS = (
+    "whoami",
+    "list_workspaces",
+    "switch_workspace",
+    "switch_team",
+    "create_workspace",
+)
 
 HOSTED_TOOLS: frozenset[str] = frozenset(
-    MEMORY_TOOLS + CODE_TOOLS + AGENT_TOOLS + REASONING_TOOLS + HOSTED_ONLY_TOOLS
+    MEMORY_TOOLS
+    + CODE_TOOLS
+    + AGENT_TOOLS
+    + REASONING_TOOLS
+    + DECISION_TOOLS
+    + REVIEW_TOOLS
+    + HOSTED_ONLY_TOOLS
 )
 
 # Any parameter whose name reads like a filesystem location. The hosted
@@ -198,8 +224,11 @@ def register_module_tools(mcp: Any) -> dict[str, CapturedTool]:
     from smartmemory_mcp.tools import (
         agent_tools,
         code_tools,
+        decision_tools,
         memory_tools,
         reasoning_tools,
+        review_tools,
+        save_tools,
     )
 
     registrar = _CapturingRegistrar(mcp)
@@ -207,12 +236,16 @@ def register_module_tools(mcp: Any) -> dict[str, CapturedTool]:
     memory_tools.register_free(registrar)
     memory_tools.register_pro(registrar)
     memory_tools.register_feedback(registrar)
+    save_tools.register_free(registrar)
+    save_tools.register_pro(registrar)
     code_tools.register(registrar)
     from . import effects
 
     effects.register(registrar)
     agent_tools.register(registrar)
     reasoning_tools.register(registrar)
+    decision_tools.register(registrar)
+    review_tools.register(registrar)
     return registrar.captured
 
 

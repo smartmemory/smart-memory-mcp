@@ -9,8 +9,11 @@ See: docs/features/PLAT-MCP-MODELS-1/design.md
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional, TypedDict
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -52,6 +55,8 @@ class MemoryResult(TypedDict, total=False):
     valid_end_time: Optional[str]
     transaction_time: Optional[str]
     score: Optional[float]
+    # CLAIMS-BUILD-21: the retrieval lanes that found a search result; None = not recorded on that path.
+    matched_by: Optional[list]
     confidence: Optional[float]
     stale: bool
     # /memory/by-metadata returns these (crud.py get_memory_by_metadata); dropping
@@ -69,11 +74,42 @@ class MemoryResult(TypedDict, total=False):
     # PLAT-AUDITABLE-MEMORY-1 gap #2 — "resolved" | "unresolved" | "no_chain",
     # set only on as_of_date searches. "unresolved" means present-day content
     # is standing in for a historical belief; an agent must not cite it as history.
+    conflict: Optional[dict]
     as_of_resolution: Optional[str]
-    # DHRUV-CODING-RULE-P0-1 — "valid_time" | "created_at_fallback" | "unresolved",
-    # set only on valid_at searches. "created_at_fallback" means the item had no
-    # effective date, so its recording date stood in for it.
+    # Business-time resolution, distinct from transaction history.
     valid_at_resolution: Optional[str]
+    # U5.22: response-only extraction status ({extraction_state, processing_stage,
+    # execution_state, outcome, revision}) core attaches on the visibility-gate-ON
+    # arm. Present only when the source carries it; absent on the legacy arm.
+    read_status: Optional[dict]
+
+
+class MalformedReadStatusError(ValueError):
+    """A result carries a ``read_status`` that is present but unreadable (U5.22, C1/C8)."""
+
+
+def validated_carrier(status: Any, item_id: Any) -> Optional[dict]:
+    """``status`` as a carrier copy: None when absent, a typed refusal (one WARNING) when present but unreadable.
+
+    Absent (None) is the legacy gate-OFF shape and stays unchanged. A present carrier must be a dict holding a
+    non-empty string ``extraction_state``; anything else is never read as absent.
+    """
+    if status is None:
+        return None
+    if not isinstance(status, dict):
+        reason = f"a {type(status).__name__}, not a dict"
+    elif not (
+        isinstance(status.get("extraction_state"), str) and status["extraction_state"]
+    ):
+        reason = "a dict without a string extraction_state"
+    else:
+        return dict(status)
+    logger.warning(
+        "read_status carrier on %s is %s: refusing to normalize the row without its extraction status",
+        item_id,
+        reason,
+    )
+    raise MalformedReadStatusError(f"read_status on {item_id} is {reason}")
 
 
 def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
@@ -89,6 +125,13 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
     if isinstance(raw, dict):
         d = raw
     elif hasattr(raw, "to_dict"):
+        # U5.22 (C1/C8): core's MemoryItem.to_dict() copies its response-only carrier with dict(), so an unreadable
+        # one would escape as a raw ValueError/TypeError. Check it on the object first: same typed refusal and one
+        # WARNING as every other shape.
+        validated_carrier(
+            getattr(raw, "__dict__", {}).get("read_status"),
+            getattr(raw, "item_id", None),
+        )
         d = raw.to_dict()
     else:
         # Extract canonical + alias fields from object attributes
@@ -99,7 +142,10 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         if not d.get("created_at"):
             d["created_at"] = getattr(raw, "transaction_time", None)
 
-    return MemoryResult(
+    # Non-dict metadata is carried through unchanged (the read tools warn once per
+    # item); only the two chained reads below need a dict.
+    _md = d.get("metadata") if isinstance(d.get("metadata"), dict) else {}
+    result = MemoryResult(
         item_id=d.get("item_id") or d.get("id", ""),
         content=d.get("content", ""),
         memory_type=d.get("memory_type", default_type),
@@ -109,24 +155,75 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         valid_end_time=d.get("valid_end_time"),
         transaction_time=d.get("transaction_time"),
         score=d.get("score"),
+        # A service row carries "matched_by"; a core item keeps it as its response-only ``_matched_by`` stamp.
+        matched_by=d.get("matched_by")
+        if d.get("matched_by") is not None
+        else getattr(raw, "_matched_by", None),
         confidence=d.get("confidence"),
         stale=d.get("stale", False),
         superseded=bool(d.get("superseded", False)),
         superseded_by=d.get("superseded_by"),
         via_supersession_of=d.get("via_supersession_of")
-        or (d.get("metadata") or {}).get("via_supersession_of"),
+        or _md.get("via_supersession_of"),
         derived_from=d.get("derived_from"),
         origin=d.get("origin"),
         reference=d.get("reference"),
         entities=d.get("entities"),
         relations=d.get("relations"),
         drift_warnings=d.get("drift_warnings"),
+        conflict=d.get("conflict"),
         as_of_resolution=d.get("as_of_resolution"),
         valid_at_resolution=d.get("valid_at_resolution")
-        or (d.get("metadata") or {}).get("valid_at_resolution"),
+        or _md.get("valid_at_resolution"),
     )
+    status = validated_carrier(d.get("read_status"), result["item_id"])
+    if status is not None:
+        result["read_status"] = status
+    return result
+
+
+def partial_reasons(rows: Any) -> tuple[str, ...]:
+    """Why core called the answer behind ``rows`` partial (U5.21 F1): the carrier's ``.partial``, else ``()``.
+
+    Read by attribute, not by importing core's ``PartialRows``: a remote-only install has no core. Anything that is not
+    a tuple of strings (a plain list, a mock) is complete-or-unmeasured. Call it on the backend call's own return: a
+    slice, a copy or a tier filter makes a plain list again.
+    """
+    names = getattr(rows, "partial", ())
+    if isinstance(names, tuple) and names and all(type(n) is str for n in names):
+        return names
+    return ()
+
+
+def partial_note(names: tuple[str, ...]) -> str:
+    """One sentence for a model-facing answer built from a partial one, ``""`` when the answer is complete."""
+    if not names:
+        return ""
+    reasons = ", ".join(
+        n[:64] for n in names
+    )  # core's names are short constants: the bound is for any other carrier
+    # The reasons are core's coverage names and the client's own (``fetch_bound``, a lost lookup), so none is "core's".
+    return f"The answer was partial ({reasons}), so matches past what was examined may not be shown."
+
+
+def none_found(complete_text: str, subject: str, names: tuple[str, ...]) -> str:
+    """``complete_text`` ("No X found ...") for a complete answer. A partial answer with nothing visible is not absence:
+    it says what was visible, that the answer was partial and why."""
+    if not names:
+        return complete_text
+    return f"No visible {subject} in the part core examined. {partial_note(names)} This is not proof that none exist."
 
 
 def normalize_items(raw_list: list) -> list[MemoryResult]:
-    """Normalize a list of raw items into MemoryResult dicts."""
-    return [normalize_item(item) for item in raw_list]
+    """Normalize a list of raw items into MemoryResult dicts.
+
+    The call's completeness survives (U5.21): a ``PartialRows`` in comes out as the same carrier over the normalized
+    rows, and any other list comes out as the plain list it always did.
+    """
+    rows = [normalize_item(item) for item in raw_list]
+    names = partial_reasons(raw_list)
+    if not names:
+        return rows
+    from smartmemory.search.results import carry_partial
+
+    return carry_partial(rows, names)

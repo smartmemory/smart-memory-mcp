@@ -2,11 +2,24 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
+import sys
 import threading
-from typing import Any
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any, NoReturn
 
-from .interface import LOCAL_BROKEN_TOOLS, BackendCapabilities
+from smartmemory_mcp.tools.common import scoped_options
+
+from .interface import (
+    LOCAL_BROKEN_TOOLS,
+    BackendCapabilities,
+    DecisionAlreadyDecided,
+    DecisionReplaceHeld,
+    DecisionRestoreRefused,
+    EvidenceRefused,
+)
 from .models import MemoryResult, normalize_item, normalize_items
 from smartmemory_mcp.workspace_select import SwitchResult, refuse
 
@@ -37,6 +50,168 @@ def _metadata_matches(metadata: dict, key: str, value: Any) -> bool:
     return str(cur) == str(value)
 
 
+class _FrozenListPage(list):
+    """A gate-ON list page: the plain list ``list_memories`` always returned, plus the walk's frozen ``total`` and the
+    names (``partial``, as ``PartialRows``) of why core called it degraded. ``total`` is None when core gave none."""
+
+    def __init__(
+        self, rows: Any, *, total: int | None, partial: tuple[str, ...]
+    ) -> None:
+        super().__init__(rows)
+        self.total = total
+        self.partial = partial
+
+
+class SaveReturnUnavailable(RuntimeError):
+    """Core returned a save receipt but the installed wrapper cannot read it. No id was inferred."""
+
+
+@dataclass(frozen=True)
+class SaveReturn:
+    """One core save return, read. ``value`` is what ``add`` returns (the id string, or the legacy held dict),
+    ``receipt`` the wire receipt on the receipt arm and None on the legacy arm."""
+
+    value: Any
+    receipt: dict[str, Any] | None = None
+    summary: str | None = None
+
+
+#: Core's receipt classes, by name (mirrors ``smartmemory_app.save_return.RECEIPT_CLASS_NAMES``).
+_RECEIPT_CLASS_NAMES = frozenset({"Receipt", "ReceiptRefusal"})
+
+
+def _is_receipt_arm(value: Any) -> bool:
+    """Whether a core save return is a save receipt (object or wire mapping) rather than a legacy shape.
+
+    The wrapper's one rule (``smartmemory_app.save_return.is_receipt_arm``, U4.42 r2 N1, r3 F1), mirrored here so the
+    legacy arm needs neither the wrapper nor core. Receipt identity is decided FIRST: an object whose class or a base is
+    named ``Receipt``/``ReceiptRefusal``, or that is an instance of an already-imported ``smartmemory.save.receipt``'s
+    classes, is a receipt even when it also is a ``str`` or a ``Mapping``. Only then: ``str`` and a mapping without
+    ``schema_version`` are legacy, a mapping with it is a wire receipt. Never an exact class-name equality and never
+    ``dict`` only. The wrapper's resolver then refuses any receipt-arm object that is not this core's receipt.
+    """
+    if any(
+        getattr(cls, "__name__", None) in _RECEIPT_CLASS_NAMES
+        for cls in type(value).__mro__
+    ):
+        return True
+    try:  # read, never imported: a core that never loaded its receipts cannot have returned one
+        module = sys.modules["smartmemory.save.receipt"]
+    except KeyError:
+        module = None
+    classes = tuple(
+        cls
+        for cls in (
+            getattr(module, "Receipt", None),
+            getattr(module, "ReceiptRefusal", None),
+        )
+        if isinstance(cls, type)
+    )
+    if classes and isinstance(value, classes):
+        return True
+    if isinstance(value, str):
+        return False
+    if isinstance(value, Mapping):
+        return "schema_version" in value
+    return False
+
+
+def _logged(exc: SaveReturnUnavailable) -> SaveReturnUnavailable:
+    """Mark ``exc`` logged with core's own ``mark_refusal_logged``; a core without it has no boundary that reads one."""
+    try:
+        from smartmemory.refusal_logging import mark_refusal_logged
+    except ImportError:
+        return exc
+    return mark_refusal_logged(exc)
+
+
+def _receipt_unreadable(
+    op: str, cause: BaseException | None = None
+) -> SaveReturnUnavailable:
+    """Log the one WARNING for a receipt this install cannot read and return the marked refusal to raise.
+
+    A ``cause`` that already carries core's logged mark (an inspection failure its writer logged) adds no second WARNING.
+    """
+    if not _cause_logged(cause):
+        log.warning(
+            "Save return %s refused: smartmemory_app.save_return is not installed, so a save receipt "
+            "cannot be read; no id returned",
+            op,
+        )
+    return _logged(
+        SaveReturnUnavailable(
+            "Local save returned a receipt but the installed smartmemory wrapper cannot read it"
+        )
+    )
+
+
+def _cause_logged(cause: BaseException | None) -> bool:
+    """Whether ``cause`` already carries core's logged mark (``refusal_logged``): its writer logged the one WARNING."""
+    if cause is None:
+        return False
+    try:
+        from smartmemory.refusal_logging import refusal_logged
+    except ImportError:  # a core without the mark has no marked cause
+        return False
+    return refusal_logged(cause)
+
+
+def _resolve_save_return(value: Any, *, op: str) -> SaveReturn:
+    """Receipt-or-legacy view of a core save return (N-02.activate.outer-readers).
+
+    Every legacy return (id string, held or queued dict, anything else) is the legacy arm: returned as it is,
+    the wrapper not imported. A receipt is read by the wrapper's one resolver, which raises a typed, logged
+    refusal instead of turning a rejected or unreadable receipt into an id. A return that cannot be inspected is
+    refused on that first failure (U4.42 r3 F3): it is never inspected again and never read as legacy.
+    """
+    try:
+        receipt_arm = _is_receipt_arm(value)
+    except Exception as exc:  # a return that cannot even be told apart is never an id: the wrapper's one refusal ends it
+        try:
+            from smartmemory_app.save_return import refuse_uninspectable
+        except ImportError:
+            raise _receipt_unreadable(
+                op, exc
+            ) from exc  # the inspection failure stays the cause
+        refuse_uninspectable(op, exc)
+    if not receipt_arm:
+        return SaveReturn(value)
+    try:
+        from smartmemory_app.save_return import resolve_save_return
+    except ImportError as exc:
+        raise _receipt_unreadable(op) from exc
+    resolved = resolve_save_return(value, op=op)
+    return SaveReturn(resolved.value, resolved.receipt, resolved.summary)
+
+
+def _save_value(value: Any, *, op: str) -> Any:
+    return _resolve_save_return(value, op=op).value
+
+
+# SM-EVIDENCE-TYPE-1: the contract's evidence_response fields, in contract order (the service route's shape).
+_EVIDENCE_RESPONSE_FIELDS = (
+    "evidence_id",
+    "evidence_ref",
+    "kind",
+    "subject",
+    "checker",
+    "observed_at",
+    "checked_at",
+    "checks",
+    "payload",
+)
+
+
+def _evidence_dict(evidence: Any) -> dict[str, Any]:
+    """Serialize a core Evidence node to the service's evidence_response (node fields plus the Compose record)."""
+    from smartmemory.evidence import to_record
+
+    data = evidence.to_dict()
+    body = {name: data.get(name) for name in _EVIDENCE_RESPONSE_FIELDS}
+    body["record"] = to_record(evidence)
+    return body
+
+
 def _decision_dict(decision: Any) -> dict[str, Any]:
     """Serialize a core Decision to the same dict the REST routes return.
 
@@ -52,7 +227,8 @@ class LocalBackend(BackendCapabilities):
     """Wraps smartmemory package for local-mode operations."""
 
     # Tools using REST have a separate local implementation. The rest are tools
-    # that only error here (MCP-LOCAL-BROKEN-TOOLS-1, bug per tool in LOCAL_BROKEN_TOOLS).
+    # that only error here (MCP-LOCAL-BROKEN-TOOLS-1, bug per tool in LOCAL_BROKEN_TOOLS;
+    # empty since SM-LOCAL-TOOLS-1).
     unsupported_capabilities = frozenset({"request"}) | frozenset(LOCAL_BROKEN_TOOLS)
 
     def __init__(self) -> None:
@@ -133,7 +309,31 @@ class LocalBackend(BackendCapabilities):
         metadata: dict | None = None,
         **kwargs: Any,
     ) -> str:
-        """Store a memory item."""
+        """Store a memory item. Returns the id (or the legacy held dict), whichever arm core returns."""
+        return _save_value(
+            self._add_raw(content, memory_type, metadata, **kwargs), op="add"
+        )
+
+    def add_with_receipt(
+        self,
+        content: str,
+        memory_type: str = "semantic",
+        metadata: dict | None = None,
+        **kwargs: Any,
+    ) -> SaveReturn:
+        """Store a memory item and keep the save receipt when core returns one (see ``SaveReturn``)."""
+        return _resolve_save_return(
+            self._add_raw(content, memory_type, metadata, **kwargs), op="add"
+        )
+
+    def _add_raw(
+        self,
+        content: str,
+        memory_type: str,
+        metadata: dict | None,
+        **kwargs: Any,
+    ) -> Any:
+        """The core save, unread: an id string today, a receipt after the producer flip."""
         from smartmemory.models.memory_item import MemoryItem
 
         # DIST-LITE-QUIET-1: attribute the write so it lands as tier-2 user content, not
@@ -147,7 +347,7 @@ class LocalBackend(BackendCapabilities):
         origin = resolve_origin(
             context,
             origin=kwargs.pop("origin", None) or meta.pop("origin", None),
-            default="mcp:memory_add",
+            default="mcp:memory_save",  # REL-CALLERS-ORIGIN-TAGS-1: was mcp:memory_add (tier 2 either way)
         )
         item = MemoryItem(
             content=content, memory_type=memory_type, metadata=meta, origin=origin
@@ -164,45 +364,6 @@ class LocalBackend(BackendCapabilities):
     def explain(self, memory_id: str, **kwargs: Any) -> dict[str, Any] | None:
         """Full provenance answer via the core facade (PLAT-AUDITABLE-MEMORY-1)."""
         return self._mem.explain(memory_id)
-
-    def supersede(
-        self, item_id: str, content: str, reason: str, **kwargs: Any
-    ) -> dict[str, Any]:
-        """Append a replacement via the core supersede primitive; the old item is kept."""
-        from datetime import datetime, timezone
-
-        from smartmemory.models.memory_item import MemoryItem
-
-        old = self._mem.get(item_id)
-        if old is None:
-            raise RuntimeError(f"Not found: {item_id}")
-        meta = {**(kwargs.get("metadata") or {}), "supersession_reason": reason}
-        valid_from = kwargs.get("valid_from")
-        start = None
-        if valid_from:
-            start = datetime.fromisoformat(valid_from)
-            if start.tzinfo is None:
-                start = start.replace(tzinfo=timezone.utc)
-        item = MemoryItem(
-            content=content,
-            memory_type=kwargs.get("memory_type") or "semantic",
-            metadata=meta,
-            origin="mcp:memory_supersede",
-            valid_start_time=start,
-        )
-        # The old item's interval closes at ``start`` inside core's compensated supersession unit.
-        new_id = self._mem.ingest_superseding(
-            item,
-            supersedes=item_id,
-            **({"valid_from": start} if start is not None else {}),
-        )
-        if not new_id:
-            raise RuntimeError("Supersession could not be established")
-        return {
-            "status": "superseded",
-            "old_item_id": item_id,
-            "new_item_id": new_id,
-        }
 
     def update(
         self,
@@ -230,11 +391,23 @@ class LocalBackend(BackendCapabilities):
             if content is not None:
                 props["content"] = content
             if metadata is not None:
-                existing_meta = {}
-                if hasattr(item, "metadata") and isinstance(item.metadata, dict):
-                    existing_meta = item.metadata
-                elif isinstance(item, dict):
-                    existing_meta = item.get("metadata") or {}
+                if isinstance(item, dict):
+                    existing_meta = item.get("metadata")
+                else:
+                    existing_meta = getattr(item, "metadata", None)
+                if not existing_meta:
+                    existing_meta = {}
+                if not isinstance(existing_meta, dict):
+                    log.warning(
+                        "update %s: stored metadata is %s, not a dict; the update is "
+                        "refused and the stored metadata is left as it was",
+                        item_id,
+                        type(existing_meta).__name__,
+                    )
+                    return (
+                        f"Refused: {item_id} has stored metadata of type "
+                        f"{type(existing_meta).__name__}, not a dict; nothing was changed"
+                    )
                 props["metadata"] = {**existing_meta, **metadata}
 
         if not props:
@@ -242,6 +415,92 @@ class LocalBackend(BackendCapabilities):
 
         self._mem.update_properties(item_id, props, write_mode=write_mode)
         return f"Updated: {item_id}"
+
+    def supersede(
+        self, item_id: str, content: str, reason: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        """Append a replacement via the core supersede primitive; the old item is kept."""
+        from datetime import datetime, timezone
+
+        from smartmemory.models.memory_item import MemoryItem
+
+        old = self._mem.get(item_id)
+        if old is None:
+            raise RuntimeError(f"Not found: {item_id}")
+        meta = {**(kwargs.get("metadata") or {}), "supersession_reason": reason}
+        options = scoped_options(
+            scope_go_lives=kwargs.get("scope_go_lives"),
+            valid_from=kwargs.get("valid_from"),
+        )
+        valid_from = options.get("valid_from")
+        start = None
+        if valid_from:
+            start = datetime.fromisoformat(valid_from)
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+        item = MemoryItem(
+            content=content,
+            memory_type=kwargs.get("memory_type") or "semantic",
+            metadata=meta,
+            origin="mcp:memory_supersede",
+            valid_start_time=start,
+        )
+        # The old item's interval closes at ``start`` inside core's compensated supersession unit.
+        try:
+            new_id = self._mem.ingest_superseding(
+                item,
+                supersedes=item_id,
+                **({"valid_from": start} if start is not None else {}),
+                **(
+                    {"scope_go_lives": options["scope_go_lives"]}
+                    if "scope_go_lives" in options
+                    else {}
+                ),
+            )
+        except RuntimeError as error:
+            if type(error).__name__ == "GeneralReplaceRefused":
+                raise DecisionReplaceHeld(str(error)) from error
+            raise
+        if not new_id:
+            raise RuntimeError("Supersession could not be established")
+        replacement = self._mem.get(new_id)
+        schedule = options.get("scope_go_lives")
+        if schedule is None and replacement is not None:
+            from smartmemory.temporal.scoped_validity import ScopeGoLives
+
+            metadata = (
+                replacement
+                if isinstance(replacement, dict)
+                else (getattr(replacement, "metadata", None) or {})
+            )
+            if not isinstance(metadata, dict):
+                log.warning(
+                    "supersede %s: replacement %s has %s metadata, not a dict; "
+                    "scope_go_lives was not read from it",
+                    item_id,
+                    new_id,
+                    type(metadata).__name__,
+                )
+                metadata = {}
+            raw = getattr(replacement, "scope_go_lives", None) or metadata.get(
+                "scope_go_lives"
+            )
+            schedule = (
+                ScopeGoLives.from_value(raw).to_list() if raw is not None else None
+            )
+        if schedule is not None:
+            return {
+                "status": "scheduled",
+                "old_item_id": item_id,
+                "new_item_id": new_id,
+                "scope_go_lives": schedule,
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+            }
+        return {
+            "status": "superseded",
+            "old_item_id": item_id,
+            "new_item_id": new_id,
+        }
 
     def delete(self, item_id: str, **kwargs: Any) -> bool:
         """Delete a memory by ID."""
@@ -283,8 +542,10 @@ class LocalBackend(BackendCapabilities):
         """
         return self._mem.blame_code(**kwargs)
 
-    def ask(self, question: str, limit: int = 5, *, reasoning: bool = True) -> dict[str, Any]:
-        """Use core's existing answer implementation in local mode."""
+    def ask(
+        self, question: str, limit: int = 5, *, reasoning: bool = True
+    ) -> dict[str, Any]:
+        """Delegate to the existing core answer implementation."""
         return self._mem.ask(question, limit=limit, reasoning=reasoning)
 
     def recall_pack(self, **kwargs: Any) -> dict[str, Any]:
@@ -301,8 +562,15 @@ class LocalBackend(BackendCapabilities):
         domain: str | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Compile the in-process workspace's policy bundle unchanged."""
-        return self._mem.compile_policy_bundle(workflow=workflow, domain=domain)
+        """Compile the in-process store's policy bundle (as of ``as_of`` when given).
+
+        Lite has one unscoped workspace (``LOCAL_WORKSPACE``); core honours that label only on an
+        unscoped Lite store and refuses it on a scoped one (SM-LOCAL-TOOLS-1).
+        """
+        dated = {} if kwargs.get("as_of") is None else {"as_of": kwargs["as_of"]}
+        return self._mem.compile_policy_bundle(
+            workflow=workflow, domain=domain, workspace_id=LOCAL_WORKSPACE, **dated
+        )
 
     def peer_chat(self, **kwargs: Any) -> dict[str, Any]:
         """Zero-schema peer synthesis passthrough (CORE-ZERO-SCHEMA-1 Phase 1).
@@ -326,9 +594,40 @@ class LocalBackend(BackendCapabilities):
     # -- Ingest & Recall --
 
     def ingest(self, content: str, memory_type: str = "episodic", **kwargs: Any) -> str:
-        """Full pipeline ingestion."""
+        """Full pipeline ingestion. Returns what core returns, unread (dev tools still call this)."""
+        return self._ingest_raw(content, memory_type, **kwargs)
+
+    def ingest_with_receipt(
+        self, content: str, memory_type: str = "episodic", **kwargs: Any
+    ) -> SaveReturn:
+        """Full pipeline ingestion that keeps the save receipt when core returns one (see ``SaveReturn``).
+
+        Goes through the wrapper's receipt doorway (``storage.ingest_with_receipt``), never ``storage.ingest``, whose
+        legacy return reads a receipt as its id. A wrapper without the doorway answers the legacy arm with one WARNING.
+        """
+        try:
+            from smartmemory_app.storage import ingest_with_receipt
+        except ImportError:
+            log.warning(
+                "Save return ingest: the installed smartmemory wrapper has no storage.ingest_with_receipt, "
+                "so memory_save answers without the save receipt"
+            )
+            return _resolve_save_return(
+                self._ingest_raw(content, memory_type, **kwargs), op="ingest"
+            )
+        saved = ingest_with_receipt(content, memory_type, **self._ingest_kwargs(kwargs))
+        return SaveReturn(saved.value, saved.receipt, saved.summary)
+
+    def _ingest_raw(self, content: str, memory_type: str, **kwargs: Any) -> Any:
+        """The legacy full-pipeline save: what ``storage.ingest`` returns (an id string with ``sync`` left True)."""
         from smartmemory_app.storage import ingest
 
+        return ingest(content, memory_type, **self._ingest_kwargs(kwargs))
+
+    @staticmethod
+    def _ingest_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+        """MCP save kwargs as ``storage.ingest`` keywords: ``properties`` and an attributed ``origin``."""
+        kwargs = dict(kwargs)
         # storage.ingest() uses 'properties' not 'metadata'
         if "metadata" in kwargs:
             kwargs["properties"] = kwargs.pop("metadata")
@@ -339,12 +638,12 @@ class LocalBackend(BackendCapabilities):
 
         context = dict(kwargs.pop("context", None) or {})
         kwargs["origin"] = resolve_origin(
-            context, origin=kwargs.get("origin"), default="mcp:memory_ingest"
+            context, origin=kwargs.get("origin"), default="mcp:memory_save"
         )
         context.pop("origin", None)
         if context:
             kwargs["properties"] = {**(kwargs.get("properties") or {}), **context}
-        return ingest(content, memory_type, **kwargs)
+        return kwargs
 
     def recall(self, cwd: str | None = None, top_k: int = 10, **kwargs: Any) -> str:
         """Context-aware recall."""
@@ -370,6 +669,20 @@ class LocalBackend(BackendCapabilities):
             reference=reference,
         )
 
+    def ingest_document_with_receipt(self, source: str, **kwargs: Any) -> SaveReturn:
+        """Document ingestion that keeps the save receipt when core returns one (a legacy result dict is the legacy arm)."""
+        return _resolve_save_return(
+            self.ingest_document(source, **kwargs), op="ingest_document"
+        )
+
+    def ingest_conversation_with_receipt(
+        self, turns: list, **kwargs: Any
+    ) -> SaveReturn:
+        """Conversation ingestion that keeps the save receipt when core returns one (a legacy result dict is the legacy arm)."""
+        return _resolve_save_return(
+            self.ingest_conversation_sync(turns, **kwargs), op="ingest_conversation"
+        )
+
     def ingest_structured(
         self,
         data: dict,
@@ -377,9 +690,113 @@ class LocalBackend(BackendCapabilities):
         schema_name: str | None = None,
         **kwargs: Any,
     ) -> str:
-        """Structured data ingestion."""
-        name = schema or schema_name
-        return self._mem.ingest_structured(data, schema=name)
+        """Structured data ingestion. Returns the id, whichever arm core returns (a receipt reads as its subject id)."""
+        return _save_value(
+            self._ingest_structured_raw(data, schema, schema_name),
+            op="ingest_structured",
+        )
+
+    def ingest_structured_with_receipt(
+        self,
+        data: dict,
+        schema: str | None = None,
+        schema_name: str | None = None,
+        **kwargs: Any,
+    ) -> SaveReturn:
+        """Structured data ingestion that keeps the save receipt when core returns one (see ``SaveReturn``)."""
+        return _resolve_save_return(
+            self._ingest_structured_raw(data, schema, schema_name),
+            op="ingest_structured",
+        )
+
+    def _ingest_structured_raw(
+        self, data: dict, schema: str | None, schema_name: str | None
+    ) -> Any:
+        """The core structured save, unread: an id string today, a receipt after the producer flip."""
+        return self._mem.ingest_structured(data, schema=schema or schema_name)
+
+    # -- Receipt save (C-01.activate.save.local-adapters) --
+    # Dormant: no tool calls these. Core refuses ``SmartMemory.save`` with ``SaveNotEnabled`` until the common-receipt
+    # facade is enabled (U20.S2); the legacy add/ingest above never reach it and it never falls back to them.
+
+    #: This backend's registered producer namespace (core ``PRODUCER_NAMESPACES``), the G158 first-party identity.
+    SAVE_NAMESPACE = "mcp.local"
+    #: The retry-key prefix a minted key carries (``mcp:<uuid4 hex>``).
+    SAVE_SEAM = "mcp"
+
+    def save_call(
+        self,
+        content: Any = None,
+        *,
+        data: Any = None,
+        memory_type: Any = None,
+        extract: Any = None,
+        wait: Any = None,
+        requested_links: Any = None,
+        context: Any = None,
+        idempotency_key: Any = None,
+    ) -> Any:
+        """Build one frozen save call carrying a stable retry key: the supplied one verbatim, or a minted one.
+
+        Submit the returned call again (``submit_save``) to retry with the same key and request. Every field is
+        passed to core unjudged; only ``None`` means omitted.
+        """
+        build_save_call = self._save_caller("build_save_call")
+        return build_save_call(
+            seam=self.SAVE_SEAM,
+            content=content,
+            data=data,
+            memory_type=memory_type,
+            extract=extract,
+            wait=wait,
+            requested_links=requested_links,
+            context=context,
+            idempotency_key=idempotency_key,
+            adapter_namespace=self.SAVE_NAMESPACE,
+        )
+
+    def submit_save(self, call: Any) -> SaveReturn:
+        """Submit a ``save_call`` through ``SmartMemory.save`` and return the read receipt (see ``SaveReturn``).
+
+        Core's typed refusals (``SaveNotEnabled``, ``SaveRequestError``, ``IncompatibleWait``) and the wrapper's
+        (``SaveRejected``, ``SaveReturnRefused``, ``SaveCallRefused``) pass through unchanged, each already logged once.
+        """
+        try:
+            from smartmemory_app.storage import save
+        except ImportError as exc:
+            self._save_unavailable(exc)
+        resolved = save(call, memory=self._mem)
+        return SaveReturn(resolved.value, resolved.receipt, resolved.summary)
+
+    def save(self, content: Any = None, **kwargs: Any) -> SaveReturn:
+        """Build and submit one receipt save. Keyword fields are those of ``save_call``."""
+        return self.submit_save(self.save_call(content, **kwargs))
+
+    def _save_caller(self, name: str) -> Any:
+        try:
+            caller = importlib.import_module("smartmemory_app.save_caller")
+        except ImportError as exc:
+            self._save_unavailable(exc)
+        symbol = getattr(caller, name, None)
+        if (
+            symbol is None
+        ):  # a wrapper whose save_caller lacks the export is the same unavailable seam
+            self._save_unavailable(
+                AttributeError(f"smartmemory_app.save_caller has no {name}")
+            )
+        return symbol
+
+    @staticmethod
+    def _save_unavailable(exc: BaseException) -> NoReturn:
+        log.warning(
+            "Save refused: the installed smartmemory wrapper has no receipt save (smartmemory_app.save_caller and "
+            "storage.save), so a receipt save cannot be made; nothing was saved and add/ingest were not used"
+        )
+        raise _logged(
+            SaveReturnUnavailable(
+                "Local receipt save needs a smartmemory wrapper with save_caller; nothing was saved"
+            )
+        ) from exc
 
     def ingest_conversation_sync(
         self,
@@ -441,10 +858,8 @@ class LocalBackend(BackendCapabilities):
 
         `smartmemory.SmartMemory` has no `list_memories` — this delegation
         raised AttributeError on every local-mode call (verified 2026-08-02).
-        There is no core listing API to wire to: `get_all_items_debug()` returns
-        `{total_items, items_by_type, sample_items}`, i.e. a stats summary with
-        SAMPLE items, not a complete page. Listing is therefore served from the
-        same scan `search_by_metadata` uses, and paginated locally.
+        Listing is served from a frozen walk over core's always-on read gate
+        (``_list_frozen``), paginated locally.
         """
         mkey, mval = kwargs.get("metadata_key"), kwargs.get("metadata_value")
         if (mkey is None) != (mval is None):
@@ -453,22 +868,109 @@ class LocalBackend(BackendCapabilities):
                 f"metadata_key and metadata_value must be supplied together; {missing} is missing."
             )
 
-        window = max((limit + offset) * 10, 200)
-        hits = self._mem.search("*", top_k=window)
-        items = [normalize_item(raw) for raw in hits or []]
+        return self._list_frozen(limit, offset, mkey, mval)
+
+    # LOCAL-FROZEN-PAGE-1 (R11(d)): a list walk is frozen by core's ``read_gated_roots_page``. ``memory_list``
+    # keeps its ``limit``/``offset`` contract (no cursor reaches a client), so the backend remembers, per filter, the
+    # cursor that continues each page it served: ``offset`` N resumes the walk whose last page ended at N.
+    _WALK_FILTERS_KEPT = 8
+    _WALK_OFFSETS_KEPT = 64
+
+    def _list_frozen(
+        self, limit: int, offset: int, mkey: str | None, mval: Any
+    ) -> list[MemoryResult]:
+        """One page of the list from a frozen walk: membership and ``total`` are fixed at the walk's first page."""
+        from collections import OrderedDict
+
+        from smartmemory.refusal_logging import mark_refusal_logged
+        from smartmemory.search.direct_lists import REFUSALS
+        from smartmemory.search.visibility_pages import CursorRejected
+
+        if limit < 1:
+            return _FrozenListPage(
+                [], total=None, partial=()
+            )  # inherited: limit=0 is accepted, an empty page
+        walks = self.__dict__.setdefault("_walks", OrderedDict())
+        key = (mkey, None if mval is None else str(mval))
+        offsets: dict[int, str] = walks.setdefault(key, {})
+        walks.move_to_end(key)
+        while len(walks) > self._WALK_FILTERS_KEPT:
+            walks.popitem(last=False)
+        accept = None
+        discriminator = ""
         if mkey is not None:
-            items = [
-                i
-                for i in items
-                if _metadata_matches(i.get("metadata") or {}, mkey, mval)
-            ]
-        if len(hits or []) >= window:
-            log.warning(
-                "list_memories scanned the local cap (%d items); results beyond that window "
-                "are not represented in this page or its offset.",
-                window,
-            )
-        return items[offset : offset + limit]
+            discriminator = f"metadata:{mkey}={mval}"
+
+            def accept(row: Mapping[str, Any], _ctx: Any) -> bool:
+                return _metadata_matches(
+                    normalize_item(dict(row)).get("metadata") or {}, mkey, mval
+                )
+
+        # Offset 0 is a new look at the list, so it starts a new walk. A later offset resumes the walk that served the
+        # page before it, or, with no such page on record, starts a walk and skips ``offset`` rows of it.
+        cursor = None if offset == 0 else offsets.get(offset)
+        if offset == 0:
+            offsets.clear()
+        for attempt in (0, 1):
+            skip = offset if cursor is None and offset > 0 else 0
+            try:
+                page = self._mem.read_gated_roots_page(
+                    limit=skip + limit,
+                    cursor=cursor,
+                    accept=accept,
+                    discriminator=discriminator,
+                    include_total=True,
+                )
+                break
+            except CursorRejected as exc:
+                if attempt:
+                    # Core logged this rejection where it raised it: the tool must not log it again.
+                    raise mark_refusal_logged(exc)
+                log.warning(
+                    "list_memories lost its frozen walk at offset %d (%s); the page is cut from a new walk, so its "
+                    "membership and total may differ from the earlier pages.",
+                    offset,
+                    exc,
+                )
+                offsets.clear()
+                cursor = None
+            except REFUSALS as exc:
+                # Core's typed refusals are logged once where raised (direct_lists docstring: callers log nothing more).
+                raise mark_refusal_logged(exc)
+        rows = page.rows[skip:]
+        if page.next_cursor:
+            offsets[offset + len(rows)] = page.next_cursor
+            while len(offsets) > self._WALK_OFFSETS_KEPT:
+                offsets.pop(next(iter(offsets)))
+        partial = ("read_gate_scan_budget_spent",) if page.degraded else ()
+        try:
+            rows = [self._with_read_status(raw) for raw in rows]
+        except REFUSALS as exc:
+            raise mark_refusal_logged(exc)
+        return _FrozenListPage(
+            [normalize_item(raw) for raw in rows],
+            total=page.total_visible,
+            partial=partial,
+        )
+
+    @staticmethod
+    def _with_read_status(raw: Mapping[str, Any]) -> dict[str, Any]:
+        """A frozen-walk row with core's response-only ``read_status`` (U5.22), built from the stored node alone.
+
+        The roots walk lists graph roots and reads no admission record, so a row's status is the graph row's: merged
+        intake status for a landed row is U5.8's (``direct_lists`` docstring).
+        """
+        from smartmemory.models.read_status import READ_STATUS_KEY, read_status
+        from smartmemory.search.pending_facade import extraction_status
+
+        row = dict(raw)
+        if (
+            READ_STATUS_KEY in row
+        ):  # a carrier core already attached is kept, and normalize_item refuses it if unreadable
+            return row
+        revision = 1 if row.get("revision") is None else row["revision"]
+        row[READ_STATUS_KEY] = read_status(extraction_status(row, None), revision)
+        return row
 
     def clear_user_memories(self, confirm: bool = False, **kwargs: Any) -> str:
         """Clear all user memories.
@@ -604,7 +1106,7 @@ class LocalBackend(BackendCapabilities):
         """Same answer as `switch_workspace`: Lite has nothing to resolve or commit."""
         return self.switch_workspace(workspace)
 
-    def set_active_workspace(self, workspace_id: str) -> None:
+    def set_active_workspace(self, workspace_id: str, name: str = "") -> None:
         """No-op: Lite's only workspace is `default`, and `resolve_switch` refuses others."""
 
     def switch_workspace(self, workspace: str, **kwargs: Any) -> SwitchResult:
@@ -700,11 +1202,20 @@ class LocalBackend(BackendCapabilities):
             rejected_alternatives=kwargs.get("rejected_alternatives") or [],
             rationale=kwargs.get("rationale"),
             constraints=kwargs.get("constraints") or [],
+            **scoped_options(scope_go_lives=kwargs.get("scope_go_lives")),
         )
         return _decision_dict(decision)
 
-    def decision_get(self, decision_id: str) -> dict[str, Any] | None:
-        decision = self._decision_manager().get_decision(decision_id)
+    def decision_get(
+        self,
+        decision_id: str,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
+    ) -> dict[str, Any] | None:
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
+        # The facade also resolves scheduled history when both qualifiers are omitted.
+        decision = self._mem.get_decision(decision_id, as_of=as_of, **options)
         return _decision_dict(decision) if decision else None
 
     def decision_list(
@@ -713,19 +1224,40 @@ class LocalBackend(BackendCapabilities):
         decision_type: str | None = None,
         min_confidence: float = 0.0,
         limit: int = 50,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
+        status: str | None = None,
     ) -> list[dict[str, Any]]:
-        decisions = self._decision_queries().get_active_decisions(
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
+        decisions = self._mem.get_active_decisions(
             domain=domain,
             decision_type=decision_type,
             min_confidence=min_confidence,
             limit=limit,
+            as_of=as_of,
+            **({} if status is None else {"status": status}),
+            **options,
         )
         return [_decision_dict(d) for d in decisions]
 
-    def decision_search(self, topic: str, limit: int = 20) -> list[dict[str, Any]]:
-        decisions = self._decision_queries().get_decisions_about(
-            topic=topic, limit=limit
-        )
+    def decision_search(
+        self,
+        topic: str,
+        limit: int = 20,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
+    ) -> list[dict[str, Any]]:
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
+        if as_of is not None or options:
+            decisions = self._mem.get_decisions_about(
+                topic=topic, limit=limit, as_of=as_of, **options
+            )
+        else:
+            decisions = self._decision_queries().get_decisions_about(
+                topic=topic, limit=limit
+            )
         return [_decision_dict(d) for d in decisions]
 
     def decision_supersede(
@@ -738,9 +1270,12 @@ class LocalBackend(BackendCapabilities):
         rejected_alternatives: list[str] | None = None,
         rationale: str | None = None,
         constraints: list[str] | None = None,
+        scope_go_lives: list[dict[str, Any]] | None = None,
+        valid_from: str | None = None,
     ) -> dict[str, Any] | None:
         from smartmemory.models.decision import Decision
 
+        options = scoped_options(scope_go_lives=scope_go_lives, valid_from=valid_from)
         new_decision = Decision(
             content=new_content,
             decision_type=new_decision_type,
@@ -754,11 +1289,40 @@ class LocalBackend(BackendCapabilities):
                 rejected_alternatives=rejected_alternatives,
                 rationale=rationale,
                 constraints=constraints,
+                **options,
             )
-        except ValueError:
-            # Core raises ValueError for "no such decision"; the service answers
-            # 404 for the same case. Both arms report absence as None.
-            return None
+        except ValueError as error:
+            # Only actual missing IDs are absence. Typed schedule/conflict errors escape.
+            if type(error) is ValueError and str(error).startswith(
+                "Decision not found:"
+            ):
+                return None
+            if type(error).__name__ == "AlreadyDecided":
+                raise DecisionAlreadyDecided(
+                    error.review_id, error.action, error.outcome
+                ) from error
+            raise
+        if getattr(result, "status", None) == "held_for_review" and getattr(
+            result, "review_id", None
+        ):
+            # The store's workspace holds replacements for review (core HeldSupersession): nothing was replaced.
+            return {
+                "old_decision_id": decision_id,
+                "new_decision_id": None,
+                "status": "held_for_review",
+                "review_id": result.review_id,
+            }
+        schedule = getattr(result, "scope_go_lives", None)
+        if schedule is not None:
+            from datetime import datetime, timezone
+
+            return {
+                "status": "scheduled",
+                "old_item_id": decision_id,
+                "new_item_id": result.decision_id,
+                "scope_go_lives": schedule.to_list(),
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+            }
         return {
             "old_decision_id": decision_id,
             "new_decision_id": result.decision_id,
@@ -771,6 +1335,26 @@ class LocalBackend(BackendCapabilities):
         except ValueError:
             return None
         return {"decision_id": decision_id, "status": "retracted"}
+
+    def decision_restore(self, decision_id: str, reason: str) -> dict[str, Any] | None:
+        """DECISION-RESTORE-ONE-ACTION-1: DecisionManager.restore on the real store (owner checks run in core)."""
+        from smartmemory.decisions.restore import DecisionRestoreRefused as CoreRefused
+
+        try:
+            decision = self._decision_manager().restore(decision_id, reason)
+        except CoreRefused as e:
+            if e.code == "not_found":
+                return None
+            raise DecisionRestoreRefused(
+                e.code, str(e), getattr(e, "newer_id", None)
+            ) from e
+        return {
+            "decision_id": decision.decision_id,
+            "status": decision.status,
+            "replacement_decision_id": (decision.context_snapshot or {}).get(
+                "restored_from_replacement"
+            ),
+        }
 
     def decision_reinforce(
         self, decision_id: str, evidence_id: str
@@ -798,8 +1382,49 @@ class LocalBackend(BackendCapabilities):
             "contradiction_count": decision.contradiction_count,
         }
 
-    def decision_provenance(self, decision_id: str) -> dict[str, Any] | None:
-        provenance = self._decision_queries().get_decision_provenance(decision_id)
+    def decision_link_evidence(
+        self, decision_id: str, evidence_id: str
+    ) -> dict[str, Any]:
+        """SmartMemory.link_decision_evidence on the real store; core's refusal is re-raised as EvidenceRefused."""
+        try:
+            decision = self._mem.link_decision_evidence(decision_id, evidence_id)
+        except ValueError as e:
+            raise EvidenceRefused(str(e)) from e
+        # The link resolved an ev: ref to its node id; read it back so the answer names the node it linked.
+        linked = self._mem.get_evidence(evidence_id)
+        if linked is None:
+            raise RuntimeError(
+                f"Linked evidence {evidence_id!r} could not be read back"
+            )
+        return {
+            "decision_id": decision_id,
+            "evidence_id": linked.evidence_id,
+            "evidence_ids": list(decision.evidence_ids),
+            "confidence": decision.confidence,
+        }
+
+    def evidence_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        """SmartMemory.add_evidence on the real store (SM-EVIDENCE-TYPE-1)."""
+        try:
+            evidence = self._mem.add_evidence(record)
+        except ValueError as e:
+            raise EvidenceRefused(str(e)) from e
+        return _evidence_dict(evidence)
+
+    def decision_provenance(
+        self,
+        decision_id: str,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
+    ) -> dict[str, Any] | None:
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
+        if as_of is not None or options:
+            provenance = self._mem.get_decision_provenance(
+                decision_id, as_of=as_of, **options
+            )
+        else:
+            provenance = self._decision_queries().get_decision_provenance(decision_id)
         if not provenance or provenance.get("decision") is None:
             return None
         return {
@@ -852,3 +1477,180 @@ class LocalBackend(BackendCapabilities):
 
     def decision_try_activate(self, decision_id: str) -> bool:
         return bool(self._residuation().try_activate(decision_id))
+
+    # -- Patterns, plans, anchors, failure journal (SM-LOCAL-TOOLS-1) --
+    #
+    # Same rule as the decision block above: the core managers take the REAL SmartMemory
+    # (``self._mem``), never this wrapper. Handed the wrapper they read ``memory._graph``
+    # (AttributeError) or call ``memory.add(MemoryItem)``, which this wrapper's
+    # ``add(content: str)`` received as text. Plain dicts, lists and strings come out, so a
+    # remote implementation can return the same shapes.
+
+    def _pattern_manager(self):
+        from smartmemory.adherence import PatternManager
+
+        return PatternManager(self._mem)
+
+    def _plan_manager(self):
+        from smartmemory.plans.manager import PlanManager
+
+        return PlanManager(self._mem)
+
+    def _anchor_manager(self):
+        from smartmemory.anchors.manager import AnchorManager
+
+        return AnchorManager(self._mem)
+
+    def _failure_journal(self):
+        from smartmemory.plans.failure_journal import FailureJournal
+
+        return FailureJournal(self._mem)
+
+    def pattern_query(
+        self,
+        scope: str | None = None,
+        severity: str | None = None,
+        free_text: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        patterns = self._pattern_manager().query(
+            scope=scope, severity=severity, free_text=free_text, limit=limit
+        )
+        return [_pattern_dict(p) for p in patterns]
+
+    def pattern_get(self, pattern_id: str) -> dict[str, Any] | None:
+        pattern = self._pattern_manager().get(pattern_id)
+        return None if pattern is None else _pattern_dict(pattern)
+
+    def pattern_list(self, limit: int = 200) -> list[dict[str, Any]]:
+        return [
+            _pattern_dict(p)
+            for p in self._pattern_manager().queries.list_all(limit=limit)
+        ]
+
+    # Pattern writes (SM-PATTERN-CRUD-1, OWNER D-0089). Every write carries this process's
+    # provenance: ``source`` on create, ``updated_by`` on update, ``mcp:<agent id>`` when
+    # the store's scope is an agent, else ``mcp:local``.
+
+    def _pattern_editor(self) -> str:
+        provider = getattr(self._mem, "scope_provider", None)
+        resolve = getattr(provider, "resolve_agent_id", None)
+        agent = resolve() if callable(resolve) else None
+        return f"mcp:{agent or 'local'}"
+
+    def pattern_create(
+        self,
+        title: str,
+        content: str,
+        severity: str = "warn",
+        scope: list[str] | None = None,
+        examples: list[dict[str, Any]] | None = None,
+        rationale: str = "",
+    ) -> dict[str, Any]:
+        editor = self._pattern_editor()
+        pattern = self._pattern_manager().create(
+            content=content,
+            title=title,
+            severity=severity,
+            scope=list(scope or []),
+            examples=list(examples or []),
+            rationale=rationale,
+            source=editor,
+            updated_by=editor,
+        )
+        return _pattern_dict(pattern)
+
+    def pattern_update(
+        self, pattern_id: str, /, **fields: Any
+    ) -> dict[str, Any] | None:
+        manager = self._pattern_manager()
+        if manager.get(pattern_id) is None:
+            return None
+        fields["updated_by"] = self._pattern_editor()
+        return _pattern_dict(manager.update(pattern_id, **fields))
+
+    def pattern_retire(
+        self, pattern_id: str, reason: str = "retired via MCP"
+    ) -> dict[str, Any] | None:
+        manager = self._pattern_manager()
+        if manager.get(pattern_id) is None:
+            return None
+        manager.delete(pattern_id, reason=f"{reason} ({self._pattern_editor()})")
+        return {"pattern_id": pattern_id, "status": "retracted"}
+
+    def pattern_seed(self, directory: str) -> dict[str, Any]:
+        from pathlib import Path
+
+        from smartmemory.adherence import read_memory_dir
+
+        index_text, files, refused = read_memory_dir(Path(directory) / "MEMORY.md")
+        editor = self._pattern_editor()
+        return self._mem.seed_patterns(
+            index_text,
+            files,
+            refused=refused,
+            source_prefix=f"{editor}:memory_md",
+            updated_by=editor,  # as pattern_create stamps it
+        )
+
+    def plan_create(
+        self,
+        title: str,
+        tasks: list[dict[str, Any]] | None = None,
+        context: str = "",
+        created_by: str = "",
+    ) -> dict[str, Any]:
+        """``{"plan_id", "task_ids"}`` from PlanManager.create."""
+        return self._plan_manager().create(title, tasks or [], context, created_by)
+
+    def plan_get(self, plan_id: str) -> dict[str, Any] | None:
+        return self._plan_manager().get(plan_id)
+
+    def plan_active(self) -> list[dict[str, Any]]:
+        return self._plan_manager().get_active()
+
+    def plan_update_task(self, plan_id: str, task_id: str, status: str) -> None:
+        self._plan_manager().update_task(plan_id, task_id, status)
+
+    def anchor_set(self, content: str, anchor_type: str, session_id: str) -> str:
+        return self._anchor_manager().set(content, anchor_type, session_id)
+
+    def anchor_list(
+        self, session_id: str = "", anchor_type: str | None = None
+    ) -> list[dict[str, Any]]:
+        return self._anchor_manager().list(session_id, anchor_type)
+
+    def anchor_clear(self, session_id: str = "", anchor_type: str | None = None) -> int:
+        return self._anchor_manager().clear(session_id, anchor_type)
+
+    def anchor_graduate(self, session_id: str = "") -> list[str]:
+        return self._anchor_manager().graduate(session_id)
+
+    def anchor_check_drift(
+        self, session_id: str, recent_outputs: list[str]
+    ) -> list[dict[str, Any]]:
+        """Each core DriftReport as a dict (anchor_id, anchor_content, drift_score, missing_keywords, severity)."""
+        from dataclasses import asdict
+
+        reports = self._anchor_manager().check_drift(session_id, recent_outputs)
+        return [asdict(report) for report in reports]
+
+    def log_failure(
+        self, error_type: str, content: str, context: str, **kwargs: Any
+    ) -> str:
+        """FailureJournal.log on the real store; returns the stored item id."""
+        return self._failure_journal().log(
+            error_type=error_type, content=content, context=context, **kwargs
+        )
+
+    def check_failure(
+        self, error_type: str, context: str, top_k: int = 3
+    ) -> list[dict[str, Any]]:
+        return self._failure_journal().check_before_retry(error_type, context, top_k)
+
+
+def _pattern_dict(pattern: Any) -> dict[str, Any]:
+    """A core Pattern as a JSON-friendly dict."""
+    if hasattr(pattern, "to_dict"):
+        return pattern.to_dict()
+    return dict(pattern)

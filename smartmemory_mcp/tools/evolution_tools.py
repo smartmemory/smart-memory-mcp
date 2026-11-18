@@ -4,6 +4,7 @@ import logging
 
 from mcp.types import ToolAnnotations
 
+from ..backends.models import partial_note, partial_reasons
 from .common import get_backend, graceful
 
 logger = logging.getLogger(__name__)
@@ -64,18 +65,25 @@ def register(mcp):
         """Get status of memory evolution processes."""
         backend = get_backend()
 
+        partial: tuple[str, ...] = ()
         try:
             # CORE-MEMORY-DYNAMICS-1 M1b: "working" memory_type renamed to "pending".
-            pending_items = backend.search("*", memory_type="pending", top_k=100) or []
+            found = backend.search("*", memory_type="pending", top_k=100)
+            partial = partial_reasons(found)
+            pending_items = found or []
             pending_count = len(pending_items)
         except Exception:
             pending_count = 0
 
-        status = "ready" if pending_count >= 1 else "idle"
-        return (
+        # a partial answer with nothing visible is not "idle": the count is a lower bound (U5.21 F1)
+        status = "ready" if pending_count >= 1 else ("unknown" if partial else "idle")
+        text = (
             f"Evolution status: {status}\n"
             f"Pending memory items (formerly 'working'): {pending_count}"
         )
+        if partial:
+            text += f"\n{partial_note(partial)} The pending count is a lower bound."
+        return text
 
     @mcp.tool(
         title="Synthesize opinions",

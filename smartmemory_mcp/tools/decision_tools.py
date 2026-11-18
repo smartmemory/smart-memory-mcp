@@ -1,4 +1,4 @@
-"""Decision lifecycle MCP tools — create, query, supersede, retract, reinforce, contradict.
+"""Decision lifecycle MCP tools — create, query, supersede, retract, reinforce, contradict, link evidence.
 
 MCP-REMOTE-DECISIONS-1: these tools are transport-agnostic. Every one of them calls
 ``backend.decision_*``, which both LocalBackend (core managers over ``_mem``) and
@@ -14,7 +14,19 @@ from typing import Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 
-from .common import get_backend, graceful
+from smartmemory_mcp.backends.interface import (
+    DecisionAlreadyDecided,
+    DecisionRestoreRefused,
+    EvidenceRefused,
+)
+from .common import (
+    checked_as_of,
+    dated,
+    get_backend,
+    graceful,
+    scoped_options,
+    resolution_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +61,18 @@ def _uncertainty_marker(decision: Any) -> str:
     return f" {_UNCERTAINTY_MARKER}"
 
 
+#: The lifecycle states decision_list reads (the service route's and core's ``status`` filter).
+_LIST_STATES = ("active", "superseded", "retracted", "pending")
+
+
 def _summary_line(decision: Any) -> str:
     """One list/search row. Shared so both tools cannot drift apart."""
     confidence = _field(decision, "confidence") or 0.0
+    diagnostic = resolution_text(decision)  # once: it warns on malformed metadata
     return (
         f"- [{_field(decision, 'decision_id')}] "
         f"({_field(decision, 'decision_type')}, conf={confidence:.2f}): "
-        f"{str(_field(decision, 'content', ''))[:100]}{_uncertainty_marker(decision)}"
+        f"{str(_field(decision, 'content', ''))[:100]}{_uncertainty_marker(decision)}{(' ' + diagnostic) if diagnostic else ''}"
     )
 
 
@@ -83,15 +100,19 @@ def register(mcp):
         rejected_alternatives: Optional[List[str]] = None,
         rationale: Optional[str] = None,
         constraints: Optional[List[str]] = None,
+        scope_go_lives: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """Record a decision the user stated, with provenance.
 
         Use this when the user states a decision: "I decided X", "we chose X over
         Y", "we're going with X". Put the decision in `content` as one sentence and
-        pass `rejected_alternatives` and `rationale` when the user gave them. A
+        pass `rejected_alternatives` and `rationale` when the user gave them.
+        scope_go_lives supplies explicit sponsor (scope=null) or exact site activation
+        dates. A site falls back to the sponsor until an exact entry activates. A
         decision stored this way can later be reinforced, superseded or checked for
-        conflicts; one stored with memory_add or memory_ingest may not be.
+        conflicts; one stored with memory_save may not be.
         """
+        options = scoped_options(scope_go_lives=scope_go_lives)
         # CORE-EXPERTISE-1 Phase 1: rejected_alternatives, rationale, constraints
         # capture the "why" structure that makes decisions usable expertise.
         try:
@@ -107,6 +128,7 @@ def register(mcp):
                 rejected_alternatives=rejected_alternatives or [],
                 rationale=rationale,
                 constraints=constraints or [],
+                **options,
             )
 
             lines = [
@@ -137,11 +159,28 @@ def register(mcp):
         ),
     )
     @graceful
-    def decision_get(decision_id: str) -> str:
-        """Retrieve a decision by ID."""
+    def decision_get(
+        decision_id: str,
+        as_of: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
+    ) -> str:
+        """Business validity uses business_scope (exact site) and valid_at.
+
+        Exact activated site entries take precedence, otherwise use sponsor fallback.
+        Omitted valid_at is resolved once at request start. as_of is independent
+        transaction-time history.
+
+        Retrieve a decision by ID.
+
+        ``as_of`` (ISO 8601; omit for now): the decision as it stood then, its status
+        from the supersession chain and version history; "not found" if it did not
+        exist yet."""
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
+        as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
-            decision = backend.decision_get(decision_id)
+            decision = backend.decision_get(decision_id, **dated(as_of), **options)
 
             if not decision:
                 return f"Decision not found: {decision_id}"
@@ -166,8 +205,33 @@ def register(mcp):
         decision_type: Optional[str] = None,
         min_confidence: float = 0.0,
         limit: int = 50,
+        as_of: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
+        status: Optional[str] = None,
     ) -> str:
-        """List active decisions with optional filtering."""
+        """List decisions (rules) in one state: the ones in force by default, or the ones that
+        were replaced or retracted.
+
+        ``status``: omit or "active" for the rules in force now; "superseded" for rules that
+        were replaced (answers "what did we use to charge?"); "retracted" for rules that were
+        withdrawn; "pending" for rules waiting on a requirement. A replacement that is still
+        waiting for a person is not a decision yet: it is listed by
+        review_queue_list, and the rule it would replace stays "active" until a person settles it.
+
+        ``as_of`` (ISO 8601; omit for now) lists the decisions that held that state at that
+        instant: a decision superseded or retracted since is listed as active, one created
+        later is not.
+
+        Business validity uses business_scope (exact site) and valid_at. Exact activated site
+        entries take precedence, otherwise use sponsor fallback. Omitted valid_at is resolved
+        once at request start. as_of is independent transaction-time history."""
+        if status is not None and status not in _LIST_STATES:
+            return (
+                f"status must be one of {', '.join(_LIST_STATES)} (omit it for active)"
+            )
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
+        as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
             decisions = backend.decision_list(
@@ -175,12 +239,17 @@ def register(mcp):
                 decision_type=decision_type,
                 min_confidence=min_confidence,
                 limit=limit,
+                **dated(as_of),
+                **options,
+                **({} if status in (None, "active") else {"status": status}),
             )
 
+            when = "" if as_of is None else f" as of {as_of}"
+            state = status or "active"
             if not decisions:
-                return "No active decisions found."
+                return f"No {state} decisions found{when}."
 
-            output = [f"Found {len(decisions)} active decisions:\n"]
+            output = [f"Found {len(decisions)} {state} decisions{when}:\n"]
             output.extend(_summary_line(d) for d in decisions)
             return "\n".join(output)
         except Exception as e:
@@ -197,11 +266,29 @@ def register(mcp):
         ),
     )
     @graceful
-    def decision_search(topic: str, limit: int = 20) -> str:
-        """Search for active decisions related to a topic."""
+    def decision_search(
+        topic: str,
+        limit: int = 20,
+        as_of: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
+    ) -> str:
+        """Business validity uses business_scope (exact site) and valid_at.
+
+        Exact activated site entries take precedence, otherwise use sponsor fallback.
+        Omitted valid_at is resolved once at request start. as_of is independent
+        transaction-time history.
+
+        Search for active decisions related to a topic.
+
+        ``as_of`` (ISO 8601; omit for now): the decisions active at that instant."""
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
+        as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
-            decisions = backend.decision_search(topic=topic, limit=limit)
+            decisions = backend.decision_search(
+                topic=topic, limit=limit, **dated(as_of), **options
+            )
 
             if not decisions:
                 return f"No decisions found about: {topic}"
@@ -232,8 +319,23 @@ def register(mcp):
         rejected_alternatives: Optional[List[str]] = None,
         rationale: Optional[str] = None,
         constraints: Optional[List[str]] = None,
+        scope_go_lives: Optional[List[Dict[str, Any]]] = None,
+        valid_from: Optional[str] = None,
     ) -> str:
-        """Replace a decision, preserving its rationale, alternatives and constraints."""
+        """Replace a decision, preserving its rationale, alternatives and constraints.
+
+        In a workspace that asks a person first (supersession policy "propose"), nothing is
+        replaced yet: the answer says "held for review" with a review id and the old decision
+        stays in force. A person settles it in the review queue: tell the user it is waiting,
+        and do not settle it yourself. review_queue_list shows what is waiting. Sending the same
+        change again after a person has decided it answers "already decided: <outcome> (review
+        <id>)", not "held".
+
+        scope_go_lives schedules exact site activation with sponsor fallback. A
+        site-only amendment leaves the sponsor and other sites on their prior rule.
+        valid_from is the legacy global date and cannot accompany scope_go_lives.
+        """
+        options = scoped_options(scope_go_lives=scope_go_lives, valid_from=valid_from)
         try:
             backend = get_backend()
             result = backend.decision_supersede(
@@ -245,14 +347,34 @@ def register(mcp):
                 rejected_alternatives=rejected_alternatives,
                 rationale=rationale,
                 constraints=constraints,
+                **options,
             )
             if result is None:
                 return f"Decision not found: {decision_id}"
 
+            if result.get("status") == "held_for_review":
+                # OUTREACH-MARIUS-HITL-SURFACE-1 p2: the workspace holds replacements for a person (review.supersession
+                # propose). Nothing was replaced. The assistant is never told to settle its own change: a person does,
+                # in the review queue (OUTREACH-MARIUS-HITL-SURFACE-1 review M1).
+                return (
+                    f"Replacement of decision {decision_id} held for review (the workspace asks a person first).\n"
+                    f"The old decision stays in force. Review: {result.get('review_id')}\n"
+                    "Tell the user: the change is waiting for a person, who settles it in the review queue, and "
+                    "the old rule applies until then. Do not say it was saved as the new rule, and do not settle "
+                    "it yourself."
+                )
+            if result.get("status") == "scheduled":
+                return (
+                    f"Amendment scheduled for decision {decision_id}.\n"
+                    f"New decision: {result['new_item_id']}\n"
+                    f"scope_go_lives: {result['scope_go_lives']}"
+                )
             return (
                 f"Decision {decision_id} superseded.\n"
                 f"New decision: {result.get('new_decision_id')}"
             )
+        except DecisionAlreadyDecided as e:
+            return f"already decided: {e.outcome} (review {e.review_id})"
         except Exception as e:
             logger.error(f"Failed to supersede decision: {e}", exc_info=True)
             raise
@@ -277,6 +399,39 @@ def register(mcp):
             return f"Decision retracted: {decision_id}"
         except Exception as e:
             logger.error(f"Failed to retract decision: {e}", exc_info=True)
+            raise
+
+    @mcp.tool(
+        title="Restore a wrongly retired decision",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def decision_restore(decision_id: str, reason: str) -> str:
+        """Undo a wrong retirement in one action: the decision is active again, its replacement stays active, and the
+        history keeps both. Only the decision's owner can restore it (DECISION-RESTORE-ONE-ACTION-1)."""
+        try:
+            backend = get_backend()
+            result = backend.decision_restore(decision_id, reason=reason)
+            if result is None:
+                return f"Decision not found: {decision_id}"
+            return (
+                f"Decision restored: {decision_id}\n"
+                f"Replacement stays active: {result.get('replacement_decision_id')}"
+            )
+        except DecisionRestoreRefused as e:
+            newer = (
+                f" (newer decision: {e.newer_decision_id})"
+                if e.newer_decision_id
+                else ""
+            )
+            return f"Restore refused ({e.code}): {e}{newer}"
+        except Exception as e:
+            logger.error(f"Failed to restore decision: {e}", exc_info=True)
             raise
 
     @mcp.tool(
@@ -305,6 +460,70 @@ def register(mcp):
         except Exception as e:
             logger.error(f"Failed to reinforce decision: {e}", exc_info=True)
             raise
+
+    @mcp.tool(
+        title="Link evidence to a decision",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def decision_link_evidence(decision_id: str, evidence_id: str) -> str:
+        """Link a stored evidence receipt (its node id or `ev:` ref) to a live decision.
+
+        Confidence is unchanged (use decision_reinforce to raise it); linking twice adds nothing.
+        """
+        try:
+            backend = get_backend()
+            result = backend.decision_link_evidence(decision_id, evidence_id)
+        except EvidenceRefused as e:
+            # A store refusal names its cause: decision/evidence not found, wrong type, ended decision.
+            return f"Evidence not linked: {e}"
+        except Exception as e:
+            logger.error(f"Failed to link decision evidence: {e}", exc_info=True)
+            raise
+
+        return (
+            f"Evidence linked: {result.get('evidence_id')} -> {decision_id}\n"
+            f"Evidence count: {len(result.get('evidence_ids') or [])}\n"
+            f"Confidence: {float(result.get('confidence') or 0.0):.2f} (unchanged)"
+        )
+
+    @mcp.tool(
+        title="Record evidence",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def evidence_record(record: Dict[str, Any]) -> str:
+        """Store one checked Compose evidence receipt (an `ev:` record) as an evidence memory.
+
+        `record` is the Compose record as written: id (`ev:` + 16 hex), evidence (kind-specific, with
+        `at` and `by`), checked_at, checks, and optional subject. Saving the same record again is a no-op.
+        Link it to a decision with decision_link_evidence.
+        """
+        try:
+            backend = get_backend()
+            result = backend.evidence_record(record)
+        except EvidenceRefused as e:
+            return f"Evidence not recorded: {e}"
+        except Exception as e:
+            logger.error(f"Failed to record evidence: {e}", exc_info=True)
+            raise
+
+        return (
+            f"Evidence recorded: {result.get('evidence_id')}\n"
+            f"Ref: {result.get('evidence_ref')}\n"
+            f"Kind: {result.get('kind')}\n"
+            f"Checked at: {result.get('checked_at')}"
+        )
 
     @mcp.tool(
         title="Contradict a decision",
@@ -343,21 +562,50 @@ def register(mcp):
         ),
     )
     @graceful
-    def decision_provenance(decision_id: str) -> str:
-        """Get full provenance chain for a decision."""
+    def decision_provenance(
+        decision_id: str,
+        as_of: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
+    ) -> str:
+        """Business validity uses business_scope (exact site) and valid_at.
+
+        Exact activated site entries take precedence, otherwise use sponsor fallback.
+        Omitted valid_at is resolved once at request start. as_of is independent
+        transaction-time history.
+
+        Get full provenance chain for a decision.
+
+        ``as_of`` (ISO 8601; omit for now): the provenance as it stood then; a
+        successor that came later is not listed."""
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
+        as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
-            provenance = backend.decision_provenance(decision_id)
+            provenance = backend.decision_provenance(
+                decision_id, **dated(as_of), **options
+            )
 
             if not provenance or provenance.get("decision") is None:
                 return f"Decision not found: {decision_id}"
 
             parts = [f"Provenance for {decision_id}:"]
             parts.append(f"Decision: {_field(provenance['decision'], 'content')}")
+            parts.append(
+                f"Selected decision: {_field(provenance['decision'], 'decision_id')}"
+            )
+            if diagnostic := resolution_text(provenance["decision"]):
+                parts.append(diagnostic)
             if provenance.get("reasoning_trace"):
                 parts.append(f"Reasoning trace: {provenance['reasoning_trace']}")
             if provenance.get("evidence"):
                 parts.append(f"Evidence: {len(provenance['evidence'])} items")
+                # SM-EVIDENCE-TYPE-1: an evidence-node row names its receipt.
+                for row in provenance["evidence"]:
+                    if isinstance(row, dict) and row.get("evidence_ref"):
+                        parts.append(
+                            f"- {row['evidence_ref']} ({row.get('kind')}, checked {row.get('checked_at')})"
+                        )
             if provenance.get("superseded"):
                 parts.append(f"Superseded: {len(provenance['superseded'])} decisions")
             if provenance.get("superseded_by"):

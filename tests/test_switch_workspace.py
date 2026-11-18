@@ -21,7 +21,7 @@ import pytest
 
 from smartmemory_mcp import workspace_select
 from smartmemory_mcp.backends import dispatch
-from smartmemory_mcp.backends.local import LocalBackend
+from smartmemory_mcp.backends.local import LocalBackend, SaveReturn
 from smartmemory_mcp.backends.remote import RemoteBackend
 from smartmemory_mcp.hosted import identity as hosted_identity
 from smartmemory_mcp.tier import Tier
@@ -135,23 +135,26 @@ def _run_remote(monkeypatch, arg: str) -> tuple[str, bool, str | None]:
 
 
 def _run_hosted(monkeypatch, arg: str) -> tuple[str, bool, str | None]:
-    """WS-ROUTING-5: hosted sends no pick header after a switch; svc-api's resolver routes the next call (by the
-    session lever, or the service's account-default floor when nothing was switched). Returns where the next call
-    landed."""
+    headers: list[str] = []
+
+    def spy(method, url, **kwargs):
+        headers.append((kwargs.get("headers") or {}).get("X-Workspace-Id", ""))
+        return fake_svc_api()(method, url, **kwargs)
+
     harness = _Harness()
-    harness.routing.install(monkeypatch, fake_svc_api())
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", spy)
 
     async def body(client):
         session_id = await harness.session(client)
         result = await harness.call(
             client, session_id, "switch_workspace", {"workspace": arg}
         )
-        harness.routing.resolved.clear()
+        headers.clear()
         await harness.call(client, session_id, "memory_search", {"query": "q"})
         return result
 
     result = harness.run(body)
-    return _text(result), result.get("isError") is True, harness.routing.resolved[0][2]
+    return _text(result), result.get("isError") is True, headers[0]
 
 
 def _run_local(_monkeypatch, arg: str) -> tuple[str, bool, str | None]:
@@ -161,13 +164,11 @@ def _run_local(_monkeypatch, arg: str) -> tuple[str, bool, str | None]:
 
 RUNNERS = {"remote": _run_remote, "hosted": _run_hosted, "local": _run_local}
 
-# backend, argument, switched?, where the NEXT request goes: remote = the X-Workspace-Id it carries (None: no header,
-# the service resolver decides); hosted = the workspace svc-api's resolver routed it to (hosted never sends the pick).
+# backend, argument, switched?, workspace the NEXT request carries (None: no header)
 SWITCH_ROWS = [
     ("remote", "Beta", True, "ws-b"),  # by name, case-insensitive match below
     ("remote", "ws-b", True, "ws-b"),  # by id
-    # unknown: previous stays, and the previous was no pick (the /auth/me default is display only, WS-ROUTING-5)
-    ("remote", "nobody", False, None),
+    ("remote", "nobody", False, "ws-a"),  # unknown: previous stays
     ("hosted", "team-B", True, "team-B"),  # by id
     ("hosted", "personal", True, "team-personal"),  # by name ("Personal")
     ("hosted", "someone-elses-team", False, "team-personal"),
@@ -282,7 +283,7 @@ def test_the_refusal_names_why_the_workspace_list_failed(
 
 # The hosted sibling (review L1): the same reason-carrying refusal. An API-key hosted
 # caller's key reaches svc-api as is, so a key without read:teams gets the 403 below.
-# Columns: the /memory/teams answer (status, body) -> text the refusal must contain.
+# Columns: the /memory/workspaces answer (status, body) -> text the refusal must contain.
 HOSTED_LISTING_ROWS = [
     pytest.param(
         403,
@@ -306,9 +307,7 @@ def test_the_hosted_refusal_names_why_the_workspace_list_failed(
     base = fake_svc_api()
 
     def svc(method, url, **kwargs):
-        if (
-            httpx.URL(url).path == "/memory/workspaces"
-        ):  # WS-ROUTING-5: was /memory/teams
+        if httpx.URL(url).path == "/memory/workspaces":
             return httpx.Response(status, json=body, request=httpx.Request(method, url))
         return base(method, url, **kwargs)
 
@@ -351,7 +350,7 @@ def test_save_as_default_writes_the_config_only_when_asked(monkeypatch) -> None:
 # One row per `memory_migrate` rebuild site. Remote rows start on the configured
 # default ws-a and switch live (unsaved) to Beta (ws-b); local rows start in Lite.
 # Each step is (target, import outcome). After the steps: the last message, where
-# every import landed, and the X-Workspace-Id of the next `memory_add` ([] = no
+# every import landed, and the X-Workspace-Id of the next `memory_save` ([] = no
 # remote request, the write went to Lite).
 REBUILD_ROWS = [
     pytest.param(
@@ -519,10 +518,11 @@ def test_a_backend_rebuild_after_a_live_switch_never_drops_it_silently(
     )
     monkeypatch.setitem(sys.modules, "smartmemory_app.config", config_module)
     local_writes: list[str] = []
+    # 2.0: memory_save's free-text path on Lite is `ingest_with_receipt` (U4.42-FU-TOOLS retired memory_add).
     monkeypatch.setattr(
         LocalBackend,
-        "add",
-        lambda self, content, **kw: local_writes.append(content) or "m-1",
+        "ingest_with_receipt",
+        lambda self, content, **kw: local_writes.append(content) or SaveReturn("m-1"),
     )
 
     service = FakeService()
@@ -620,7 +620,7 @@ def test_a_backend_rebuild_after_a_live_switch_never_drops_it_silently(
         assert expected in message, message
     assert landed == imported_into
     mark = len(service.seen)
-    tool_fn("memory_add")(content="note meant for Beta")
+    tool_fn("memory_save")(content="note meant for Beta")
     assert service.headers_after(mark) == next_header
     assert local_writes == ([] if next_header else ["note meant for Beta"])
     dropped = [
@@ -742,7 +742,7 @@ def test_a_parallel_call_waits_for_the_rebuild_instead_of_building_the_default(
             mark = len(service.seen)
 
             def write() -> None:
-                tool_fn("memory_add")(content="parallel")
+                tool_fn("memory_save")(content="parallel")
                 parallel.extend(service.headers_after(mark))
 
             state["thread"] = threading.Thread(target=write)
@@ -761,19 +761,20 @@ def test_a_parallel_call_waits_for_the_rebuild_instead_of_building_the_default(
 
 
 # MCP-WORKSPACE-ENV-PRECEDENCE-1: the startup precedence on both install shapes, through
-# the real `dispatch.build_backend` and a real `memory_add`. "bare" has no smartmemory
+# the real `dispatch.build_backend` and a real `memory_save`. "bare" has no smartmemory
 # package; "wrapper" uses the real `smartmemory_app.config` (every `pip install
 # smartmemory`) with a config home under tmp_path. Columns: shape, SMARTMEMORY_WORKSPACE_ID,
 # SMARTMEMORY_TEAM_ID, the config file's saved team_id -> the X-Workspace-Id the first
-# write sends (None = no header: the /auth/me default ws-a is display only, WS-ROUTING-5 header rule), and the
-# "differ" WARNING count.
+# write sends (ws-a = the account default from /auth/me), and the "differ" WARNING count.
 ENV_PRECEDENCE_ROWS = [
-    pytest.param("bare", "", "", "", None, 0, id="bare-neither-account-default"),
+    pytest.param("bare", "", "", "", "ws-a", 0, id="bare-neither-account-default"),
     pytest.param("bare", "", "ws-old", "", "ws-old", 0, id="bare-only-old"),
     pytest.param("bare", "ws-new", "", "", "ws-new", 0, id="bare-only-new"),
     pytest.param("bare", "ws-same", "ws-same", "", "ws-same", 0, id="bare-both-equal"),
     pytest.param("bare", "ws-new", "ws-old", "", "ws-new", 1, id="bare-both-differ"),
-    pytest.param("wrapper", "", "", "", None, 0, id="wrapper-neither-account-default"),
+    pytest.param(
+        "wrapper", "", "", "", "ws-a", 0, id="wrapper-neither-account-default"
+    ),
     pytest.param("wrapper", "", "", "ws-saved", "ws-saved", 0, id="wrapper-saved-only"),
     pytest.param(
         "wrapper", "", "ws-old", "ws-saved", "ws-old", 0, id="wrapper-only-old"
@@ -841,7 +842,7 @@ def test_the_workspace_env_precedence_table(
         backend = dispatch.build_backend(dispatch.MODE_REMOTE)
         monkeypatch.setattr(dispatch, "_backend", backend)
         monkeypatch.setattr(common, "_backend", backend)
-        tool_fn("memory_add")(content="x")
+        tool_fn("memory_save")(content="x")
 
     assert service.headers_after(0) == [expected]
     differ = [m for m in _warnings(caplog) if "differ" in m]
@@ -1022,11 +1023,7 @@ def _whoami_hosted(monkeypatch) -> str:
 
 
 WHOAMI_ROWS = [
-    # No pick: the /auth/me default is shown as display only (WS-ROUTING-5), never as the routed workspace.
-    (
-        _whoami_remote,
-        ("Tenant: tenant-1", "account default ws-a", "Backend: remote"),
-    ),
+    (_whoami_remote, ("Tenant: tenant-1", "Workspace: ws-a", "Backend: remote")),
     (_whoami_local, ("Tenant: none", "Workspace: default", "Backend: local")),
     (
         _whoami_hosted,
@@ -1048,8 +1045,10 @@ def test_whoami_names_tenant_and_workspace(monkeypatch, run, expected) -> None:
 
 def test_login_reports_the_workspace(monkeypatch) -> None:
     monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.get", _auth_me)
-    text = RemoteBackend(api_url=API, api_key="").login("sk_test")
-    assert text == "Logged in as dev@test.com, workspace: ws-a"
+    # 2.0: login returns a typed LoginResult (MCP-2.0-LOGIN-KEY-PERSIST-1); main returned the bare message.
+    result = RemoteBackend(api_url=API, api_key="").login("sk_test")
+    assert result.ok is True
+    assert result.message == "Logged in as dev@test.com, workspace: ws-a"
 
 
 # --- 5. the listing: no tenant selector, "team" only on the alias -------------------
@@ -1133,8 +1132,9 @@ def _property_names(schema: Any) -> set[str]:
 
 @pytest.mark.parametrize(
     ("server", "listing", "count"),
-    # WS-ROUTING-5: + list_workspaces on both servers; DHRUV-CODING-RULE-P0-1: + memory_supersede.
-    [("stdio", _stdio_listing, 103), ("hosted", _hosted_listing, 31)],
+    # 2.0 tip registers 103 stdio tools (including the pattern CRUD tools).
+    # This hosted-only port adds one tool: hosted 26 -> 27, stdio unchanged.
+    [("stdio", _stdio_listing, 112), ("hosted", _hosted_listing, 35)],
 )
 def test_the_listing_has_no_tenant_selector_and_team_only_on_the_alias(
     server, listing, count
@@ -1159,3 +1159,205 @@ def test_the_listing_has_no_tenant_selector_and_team_only_on_the_alias(
     assert "deprecated" in (alias["title"] + alias["description"]).lower()
     switch = next(t for t in tools if t["name"] == "switch_workspace")
     assert "workspace" in switch["schema"]["properties"]
+
+
+# GAP 1: an independent workspace must be offered and selected even when its id
+# differs from a Team. Exercise the production hosted ASGI app, in memory only.
+def test_hosted_lists_and_switches_only_the_callers_workspace_ids(monkeypatch) -> None:
+    from ._hosted_fixtures import API_KEY
+
+    harness = _Harness()
+    base = fake_svc_api()
+    listing_headers = []
+
+    def svc(method, url, **kwargs):
+        path = httpx.URL(url).path
+        assert path != "/memory/teams", "Team ids are not workspace ids"
+        if path == "/memory/workspaces":
+            listing_headers.append(kwargs.get("headers") or {})
+            return httpx.Response(
+                200,
+                json={
+                    "workspaces": [
+                        {"workspace_id": "team-personal", "name": "Personal"},
+                        {"workspace_id": "ws-independent", "name": "Independent"},
+                    ]
+                },
+                request=httpx.Request(method, url),
+            )
+        return base(method, url, **kwargs)
+
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", svc)
+
+    async def run(client):
+        session = await harness.session(client)
+        listed = await harness.call(client, session, "list_workspaces")
+        switched = await harness.call(
+            client, session, "switch_workspace", {"workspace": "ws-independent"}
+        )
+        before = await harness.call(client, session, "whoami")
+        saved_before = dict(harness.routing.rows)
+        puts_before = [call for call in harness.routing.calls if call[0] == "PUT"]
+        refused = await harness.call(
+            client, session, "switch_workspace", {"workspace": "ws-foreign-tenant"}
+        )
+        # 2.0's switch is read-exempt so it can recover an unreadable pick.
+        # Prove no mutation of the saved pick, rather than infer it from display text.
+        assert harness.routing.rows == saved_before
+        assert [
+            call for call in harness.routing.calls if call[0] == "PUT"
+        ] == puts_before
+        after = await harness.call(client, session, "whoami")
+        listed_after = await harness.call(client, session, "list_workspaces")
+        return listed, switched, before, refused, after, listed_after
+
+    listed, switched, before, refused, after, listed_after = harness.run(run)
+    assert listed.get("isError") is not True
+    assert "* Personal (team-personal)" in _text(listed)
+    assert "Independent (ws-independent)" in _text(listed)
+    assert "ws-foreign-tenant" not in _text(listed)
+    assert switched.get("isError") is not True
+    assert "ws-independent" in _text(before)
+    assert refused.get("isError") is True
+    assert "You are not a member of workspace" in _text(refused)
+    assert _text(after) == _text(before)
+    assert "* Independent (ws-independent)" in _text(listed_after)
+    assert len(listing_headers) == 4
+    for headers in listing_headers:
+        normalized = {k.lower(): v for k, v in headers.items()}
+        assert normalized["authorization"] == f"Bearer {API_KEY}"
+        assert "x-workspace-id" not in normalized
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "fragment"),
+    [
+        (200, {"workspaces": []}, "You have no workspaces."),
+        (200, {"teams": []}, "unexpected response shape"),
+        (503, {"detail": "down"}, "API error 503"),
+        (
+            403,
+            {"detail": "API key missing required scope: read:teams"},
+            "MCP client config",
+        ),
+    ],
+)
+def test_hosted_list_workspaces_reports_empty_and_failures(
+    monkeypatch, status, body, fragment
+) -> None:
+    harness = _Harness()
+    base = fake_svc_api()
+
+    def svc(method, url, **kwargs):
+        if httpx.URL(url).path == "/memory/workspaces":
+            return httpx.Response(status, json=body, request=httpx.Request(method, url))
+        return base(method, url, **kwargs)
+
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", svc)
+
+    async def run(client):
+        session = await harness.session(client)
+        return await harness.call(client, session, "list_workspaces")
+
+    result = harness.run(run)
+    assert fragment in _text(result)
+    assert (result.get("isError") is True) == (
+        status != 200 or "workspaces" not in body
+    )
+    assert harness.cfg.api_url not in _text(result)
+
+
+# --- WS-ROUTING-5: every write tool's result names the workspace it landed in -----------------------------
+
+
+class _Registry:
+    """A stand-in `mcp` that keeps each registered tool's function by name."""
+
+    def __init__(self) -> None:
+        self.fns: dict[str, Any] = {}
+
+    def tool(self, **_kwargs: Any):
+        def keep(fn):
+            self.fns[fn.__name__] = fn
+            return fn
+
+        return keep
+
+
+def _write_tools() -> dict[str, Any]:
+    from smartmemory_mcp.tools import memory_tools, save_tools
+
+    registry = _Registry()
+    for module in (save_tools, memory_tools):
+        module.register_free(registry)
+        module.register_pro(registry)
+    return registry.fns
+
+
+def _write_service(method: str, url: str, **_kwargs: Any) -> httpx.Response:
+    path = httpx.URL(url).path
+    request = httpx.Request(method, url)
+    if path == "/memory/workspaces":
+        return httpx.Response(200, json={"workspaces": WORKSPACES}, request=request)
+    body: dict[str, Any] = {
+        "/memory/add": {"item_id": "mem-1"},
+        "/memory/ingest": {"item_id": "mem-1", "status": "ingested"},
+        "/memory/ingest/document": {"document_id": "doc-1", "chunk_ids": ["c-1"]},
+        "/memory/ingest/conversation": {
+            "conversation_id": "conv-1",
+            "chunks_ingested": 1,
+            "chunks_failed": 0,
+        },
+        "/memory/mem-1/supersede": {"new_item_id": "mem-2"},
+    }.get(path, {"item_id": "mem-1"})
+    return httpx.Response(200, json=body, request=request)
+
+
+def _text_of(result: Any) -> str:
+    content = getattr(result, "content", None)
+    if content is None:
+        return str(result)
+    return "\n".join(getattr(part, "text", "") for part in content)
+
+
+def test_each_write_tool_names_the_workspace(monkeypatch) -> None:
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", _write_service)
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.get", _auth_me)
+    backend = RemoteBackend(api_url=API, api_key="sk_test", team_id="")
+    monkeypatch.setattr(dispatch, "_backend", backend)
+    monkeypatch.setattr(common, "_backend", backend)
+    assert backend.switch_workspace("Beta").ok
+    tools = _write_tools()
+    turns = [{"role": "user", "content": "u"}, {"role": "assistant", "content": "a"}]
+
+    saved = tools["memory_save"](content="a note")
+    assert "Workspace: Beta (ws-b)" in _text_of(saved)
+    assert saved.structured_content["workspace"] == "Beta (ws-b)"
+    document = tools["memory_save_document"](source="https://example.test/a")
+    assert "Workspace: Beta (ws-b)" in _text_of(document)
+    turn = tools["memory_save_conversation"](turns=turns)
+    assert "Workspace: Beta (ws-b)" in _text_of(turn)
+    transcript = tools["memory_save_conversation"](turns=turns * 2)
+    assert "Workspace: Beta (ws-b)" in _text_of(transcript)
+    assert "Workspace: Beta (ws-b)" in tools["memory_update"](
+        item_id="mem-1", content="x"
+    )
+    assert "Workspace: Beta (ws-b)" in tools["memory_supersede"](
+        item_id="mem-1", content="x", reason="changed"
+    )
+    assert "Workspace: Beta (ws-b)" in tools["memory_delete"](item_id="mem-1")
+
+
+def test_local_write_results_name_the_lite_workspace(monkeypatch) -> None:
+    class _Local(LocalBackend):
+        def __init__(self) -> None:
+            pass
+
+        def delete(self, item_id: str, **_kwargs: Any) -> bool:
+            return True
+
+    monkeypatch.setattr(common, "_backend", _Local())
+
+    assert "Workspace: default (local mode)" in _write_tools()["memory_delete"](
+        item_id="m"
+    )

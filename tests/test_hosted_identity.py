@@ -35,7 +35,8 @@ from smartmemory_mcp.hosted.identity import (
 )
 from smartmemory_mcp.hosted.middleware import HostedIdentityMiddleware
 from smartmemory_mcp.tools import common
-from tests._hosted_fixtures import RoutingSessionStore
+
+from ._hosted_fixtures import RoutingSessionStore
 
 API_URL = "https://api.test"
 OAUTH_BEARER = "oat_upstream_clerk_token_value"
@@ -202,12 +203,16 @@ def _exchange_payload() -> dict[str, Any]:
 class _Harness:
     """A minimal hosted server plus the request plumbing to drive it."""
 
-    def __init__(self, cache: ExchangeCache | None = None) -> None:
+    def __init__(
+        self,
+        cache: ExchangeCache | None = None,
+        routing: RoutingSessionStore | None = None,
+    ) -> None:
         self.exchange_calls: list[str] = []
         self.cache = cache or ExchangeCache()
         self.started: dict[str, anyio.Event] = {}
-        # WS-ROUTING-4: svc-api's routing_sessions lever (the switch is saved there, read back before each call).
-        self.routing = RoutingSessionStore()
+
+        self.routing = routing or RoutingSessionStore()
 
         def handler(request: httpx.Request) -> httpx.Response:
             routed = self.routing.handle(request)
@@ -236,9 +241,7 @@ class _Harness:
             return json.dumps(
                 {
                     "token": backend._session["access_token"],
-                    # WS-ROUTING-5: where this call lands (display); the backend itself holds no pick.
-                    "team_id": current_identity.get().team_id,
-                    "pick": backend._session["team_id"],
+                    "team_id": backend._session["team_id"],
                     "email": backend._session["user_email"],
                     "backend_id": id(backend),
                     "bound": current_identity.get() is not None,
@@ -265,9 +268,7 @@ class _Harness:
             return json.dumps(
                 {
                     "token": backend._session["access_token"],
-                    # WS-ROUTING-5: where this call lands (display); the backend itself holds no pick.
-                    "team_id": current_identity.get().team_id,
-                    "pick": backend._session["team_id"],
+                    "team_id": backend._session["team_id"],
                     "backend_id": id(backend),
                 }
             )
@@ -447,40 +448,28 @@ def test_switching_the_session_team_changes_the_next_call_workspace() -> None:
 
     assert json.loads(_text(before))["team_id"] == OAUTH_WORKSPACE
     assert json.loads(_text(after))["team_id"] == "team-B"
-    assert (
-        json.loads(_text(after))["pick"] == ""
-    )  # the switch is the service's, never a header pick
     # The team switch must not force a second exchange — the identity is cached.
     assert harness.exchange_calls == ["/auth/clerk/oauth-exchange"]
 
 
-def test_a_team_switch_follows_the_caller_and_client_never_another_caller() -> None:
-    # WS-ROUTING-4 (design `### Lever 3`): the selection is keyed by (tenant, user, client_key), NOT by MCP session id,
-    # so a second MCP session of the same caller and client (a reconnect) keeps it, while another caller never sees it.
-    # Before this unit a switch lived in a per-session dict and a reconnect lost it (gap 6).
+def test_a_team_switch_is_shared_by_sessions_of_one_caller_and_client() -> None:
+    """WS-ROUTING parity: the pick is the saved record, so a second MCP session of the same person in the same
+    client sees it (it used to be per session id); another caller never does (test_session_record.py)."""
     harness = _Harness()
 
     async def body(client):
         first = await harness.open_session(client, OAUTH_BEARER)
         second = await harness.open_session(client, OAUTH_BEARER)
-        other_caller = await harness.open_session(client, API_KEY_BEARER)
         await harness.call(client, OAUTH_BEARER, first, "set_team", {"team": "team-B"})
         return (
             await harness.call(client, OAUTH_BEARER, first, "probe"),
             await harness.call(client, OAUTH_BEARER, second, "probe"),
-            await harness.call(client, API_KEY_BEARER, other_caller, "probe"),
         )
 
-    switched, reconnected, other = anyio.run(_run, harness, body)
+    switched, shared = anyio.run(_run, harness, body)
 
     assert json.loads(_text(switched))["team_id"] == "team-B"
-    assert json.loads(_text(reconnected))["team_id"] == "team-B"
-    assert json.loads(_text(other))["team_id"] == API_KEY_WORKSPACE
-    # The switch went to svc-api with the client key, never with the MCP session id.
-    puts = [call for call in harness.routing.calls if call[0] == "PUT"]
-    assert [put[2]["body"] for put in puts] == [
-        {"workspace_id": "team-B", "client_key": "mcp:test"}
-    ]
+    assert json.loads(_text(shared))["team_id"] == "team-B"
 
 
 # --------------------------------------------------------------------------------
@@ -613,11 +602,10 @@ def test_graceful_does_not_swallow_a_hosted_auth_error() -> None:
 
 
 class _FakeContext:
-    def __init__(self, team_id: str | None = None) -> None:
-        self._team_id = team_id
+    """A request context with no MCP session: the client key falls back to `mcp:hosted`."""
 
     async def get_state(self, key: str) -> Any:
-        return self._team_id if key == "team_id" else None
+        return None
 
 
 def _access_token(kind: str = "api_key", token: str = API_KEY_BEARER) -> AccessToken:
@@ -636,8 +624,19 @@ def _access_token(kind: str = "api_key", token: str = API_KEY_BEARER) -> AccessT
     )
 
 
-def _middleware_context(team_id: str | None = None) -> MiddlewareContext[Any]:
-    return MiddlewareContext(message=object(), fastmcp_context=_FakeContext(team_id))
+def _middleware_context() -> MiddlewareContext[Any]:
+    return MiddlewareContext(message=object(), fastmcp_context=_FakeContext())
+
+
+def _offline_middleware(
+    routing: RoutingSessionStore | None = None,
+) -> HostedIdentityMiddleware:
+    """A middleware whose svc-api is the in-memory routing record: no test here may reach the network."""
+    return HostedIdentityMiddleware(
+        _config(),
+        cache=ExchangeCache(),
+        transport=(routing or RoutingSessionStore()).transport(),
+    )
 
 
 def _patch_token(monkeypatch, token: AccessToken | None) -> None:
@@ -648,9 +647,7 @@ def _patch_token(monkeypatch, token: AccessToken | None) -> None:
 
 def test_contextvar_is_reset_after_a_successful_call(monkeypatch) -> None:
     _patch_token(monkeypatch, _access_token())
-    middleware = HostedIdentityMiddleware(
-        _config(), cache=ExchangeCache(), transport=RoutingSessionStore().transport()
-    )
+    middleware = _offline_middleware()
     seen: dict[str, Any] = {}
 
     async def call_next(context):
@@ -664,9 +661,7 @@ def test_contextvar_is_reset_after_a_successful_call(monkeypatch) -> None:
 
 def test_contextvar_is_reset_after_a_failing_call(monkeypatch) -> None:
     _patch_token(monkeypatch, _access_token())
-    middleware = HostedIdentityMiddleware(
-        _config(), cache=ExchangeCache(), transport=RoutingSessionStore().transport()
-    )
+    middleware = _offline_middleware()
 
     async def call_next(context):
         raise ValueError("tool blew up")
@@ -681,9 +676,7 @@ def test_hosted_auth_error_from_the_tool_becomes_an_unauthorized_tool_error(
     monkeypatch,
 ) -> None:
     _patch_token(monkeypatch, _access_token())
-    middleware = HostedIdentityMiddleware(
-        _config(), cache=ExchangeCache(), transport=RoutingSessionStore().transport()
-    )
+    middleware = _offline_middleware()
 
     async def call_next(context):
         raise HostedAuthError("session expired, retry")
@@ -697,9 +690,7 @@ def test_hosted_auth_error_from_the_tool_becomes_an_unauthorized_tool_error(
 
 def test_missing_access_token_is_refused(monkeypatch) -> None:
     _patch_token(monkeypatch, None)
-    middleware = HostedIdentityMiddleware(
-        _config(), cache=ExchangeCache(), transport=RoutingSessionStore().transport()
-    )
+    middleware = _offline_middleware()
 
     async def call_next(context):  # pragma: no cover - must never run
         raise AssertionError("the tool must not be reached")
@@ -712,9 +703,7 @@ def test_missing_access_token_is_refused(monkeypatch) -> None:
 
 def test_missing_fastmcp_context_is_refused(monkeypatch) -> None:
     _patch_token(monkeypatch, _access_token())
-    middleware = HostedIdentityMiddleware(
-        _config(), cache=ExchangeCache(), transport=RoutingSessionStore().transport()
-    )
+    middleware = _offline_middleware()
 
     async def call_next(context):  # pragma: no cover - must never run
         raise AssertionError("the tool must not be reached")
@@ -731,9 +720,7 @@ def test_an_identity_with_no_workspace_is_refused(monkeypatch) -> None:
     token.claims["default_team_id"] = None
     token.claims["active_workspace_id"] = None
     _patch_token(monkeypatch, token)
-    middleware = HostedIdentityMiddleware(
-        _config(), cache=ExchangeCache(), transport=RoutingSessionStore().transport()
-    )
+    middleware = _offline_middleware()
 
     async def call_next(context):  # pragma: no cover - must never run
         raise AssertionError("the tool must not be reached")
@@ -746,26 +733,20 @@ def test_an_identity_with_no_workspace_is_refused(monkeypatch) -> None:
 
 def test_session_team_overrides_the_default_workspace(monkeypatch) -> None:
     _patch_token(monkeypatch, _access_token())
-    store = RoutingSessionStore()
-    store.rows[(API_KEY_BEARER, "mcp:hosted")] = (
-        "team-B"  # a context with no clientInfo uses the fallback key
+    routing = RoutingSessionStore()
+    routing.rows[(API_KEY_BEARER, "mcp:hosted")] = (
+        "team-B"  # the saved pick, as svc-api holds it
     )
-    middleware = HostedIdentityMiddleware(
-        _config(), cache=ExchangeCache(), transport=store.transport()
-    )
+    middleware = _offline_middleware(routing)
     seen: dict[str, Any] = {}
 
     async def call_next(context):
         identity = current_identity.get()
         seen["team_id"] = identity.team_id
-        seen["pick"] = identity.backend._session["team_id"]
-        headers = identity.backend._headers()
-        seen["header"] = headers.get("X-Workspace-Id")
-        seen["client"] = headers.get("X-SM-Client")
+        seen["header_team"] = identity.backend._session["team_id"]
         return "ok"
 
     anyio.run(middleware.on_call_tool, _middleware_context(), call_next)
 
     assert seen["team_id"] == "team-B"
-    # WS-ROUTING-5 header rule: the session pick is applied by svc-api from X-SM-Client, never echoed as the header.
-    assert (seen["pick"], seen["header"], seen["client"]) == ("", None, "mcp:hosted")
+    assert seen["header_team"] == "team-B"

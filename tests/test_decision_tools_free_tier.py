@@ -26,6 +26,7 @@ DECISION_ROWS = (
         {"decision_id": "dec_1", "new_content": "Use SQS", "reason": "scale"},
     ),
     ("decision_retract", {"decision_id": "dec_1", "reason": "obsolete"}),
+    ("decision_restore", {"decision_id": "dec_1", "reason": "wrongly retired"}),
     ("decision_reinforce", {"decision_id": "dec_1", "evidence_id": "mem_1"}),
     ("decision_contradict", {"decision_id": "dec_1", "evidence_id": "mem_1"}),
     ("decision_provenance", {"decision_id": "dec_1"}),
@@ -44,12 +45,18 @@ DECISION_ROWS = (
         {"decision_id": "dec_1", "requirement_id": "req_1", "memory_id": "mem_1"},
     ),
     ("decision_try_activate", {"decision_id": "dec_1"}),
+    # SM-EVIDENCE-TYPE-1
+    (
+        "decision_link_evidence",
+        {"decision_id": "dec_1", "evidence_id": "ev:0123456789abcdef"},
+    ),
+    ("evidence_record", {"record": {"id": "ev:0123456789abcdef"}}),
 )
 DECISION_TOOLS = tuple(name for name, _ in DECISION_ROWS)
 
 # Tools outside the decision suite that were PRO before this change and stay PRO.
 STILL_PRO = (
-    "memory_add",
+    "memory_save_document",  # 2.0: memory_add was folded into memory_save (FREE) and memory_save_document (PRO)
     "code_search",
     "memory_anchor_set",
     "agent_get_recall_profile",

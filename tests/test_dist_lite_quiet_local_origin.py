@@ -4,8 +4,8 @@ MCP local writes previously landed as origin='unknown' (tier 4, hidden from
 recall+search) because LocalBackend.add()/ingest() never set an origin. They
 must tag their own producer:
 
-  memory_add     -> mcp:memory_add     (tier 2, recall+search visible)
-  memory_ingest  -> mcp:memory_ingest  (tier 2; the /remember skill surface)
+  memory_save (raw add and ingest paths) -> mcp:memory_save (tier 2, recall+search visible)
+  (REL-CALLERS-ORIGIN-TAGS-1: was mcp:memory_add / mcp:memory_ingest; those stay registered as legacy)
 
 A caller-supplied origin is never overwritten.
 """
@@ -34,8 +34,8 @@ def test_add_sets_mcp_memory_add_origin():
 
     assert out == "id-1"
     (item,), _ = be._mem.add.call_args
-    assert getattr(item, "origin", None) == "mcp:memory_add", (
-        f"memory_add must tag origin 'mcp:memory_add', got {getattr(item, 'origin', None)!r}"
+    assert getattr(item, "origin", None) == "mcp:memory_save", (
+        f"memory_save must tag origin 'mcp:memory_save', got {getattr(item, 'origin', None)!r}"
     )
 
 
@@ -68,8 +68,8 @@ def test_ingest_passes_mcp_memory_ingest_origin(monkeypatch):
     out = be.ingest("Free-text note.", memory_type="episodic")
 
     assert out == "id-3"
-    assert captured["kwargs"].get("origin") == "mcp:memory_ingest", (
-        f"memory_ingest must pass origin 'mcp:memory_ingest', got {captured['kwargs']!r}"
+    assert captured["kwargs"].get("origin") == "mcp:memory_save", (
+        f"memory_save must pass origin 'mcp:memory_save', got {captured['kwargs']!r}"
     )
 
 

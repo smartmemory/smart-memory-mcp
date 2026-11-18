@@ -13,8 +13,6 @@ import os
 import subprocess
 import sys
 
-import pytest
-
 from smartmemory_mcp.tier import Tier, resolve_tier
 
 MCP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -64,7 +62,9 @@ def _run_snippet(env: dict[str, str]) -> dict:
     )
     # Parse the last line (skip any warnings on stderr)
     output = result.stdout.strip().splitlines()[-1]
-    return json.loads(output)
+    data = json.loads(output)
+    assert "list_workspaces" in data["names"]  # Available on stdio in every tier.
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -109,21 +109,28 @@ class TestResolveTier:
 
 FREE_TOOLS = sorted(
     [
+        "procedure_create",
+        "procedure_get",
+        "procedure_list",
+        "procedure_promote",
+        "procedure_dismiss",
+        "procedure_record_outcome",
         "login",
         "whoami",
+        "list_workspaces",
         "switch_workspace",  # MCP-SWITCH-WORKSPACE-1
         "switch_team",  # deprecated alias of switch_workspace, one release
-        "list_workspaces",  # WS-ROUTING-5
-        "memory_ingest",
+        "create_workspace",  # WS-POLICY-10 B
+        "memory_save",
         "memory_search",
         "memory_recall",
+        "memory_ask",
         "memory_get",
         "memory_explain",  # PLAT-AUDITABLE-MEMORY-1 — FREE by design (positioning wedge)
         "memory_export",
         "memory_import",
         "memory_migrate",
         "memory_auto",  # DIST-AGENT-HOOKS-1
-        "memory_ask",  # DHRUV-HOSTED-MCP-PARITY-1 (a)
         "memory_feedback",  # SELF-IMPROVE-* feedback surface
         "get_working_context",  # CORE-MEMORY-DYNAMICS-1 M1a
         "read_around",  # CORE-RECALL-CENTERED-1 Phase 2
@@ -137,6 +144,7 @@ FREE_TOOLS = sorted(
         "decision_search",
         "decision_supersede",
         "decision_retract",
+        "decision_restore",  # DECISION-RESTORE-ONE-ACTION-1
         "decision_reinforce",
         "decision_contradict",
         "decision_provenance",
@@ -144,41 +152,62 @@ FREE_TOOLS = sorted(
         "decision_create_pending",
         "decision_resolve_requirement",
         "decision_try_activate",
+        "decision_link_evidence",  # SM-EVIDENCE-TYPE-1
+        "evidence_record",  # SM-EVIDENCE-TYPE-1
     ]
 )
 
 
-# tier, env overrides, registered count (DHRUV-CODING-RULE-P0-1 added memory_supersede to PRO and up; MCP-SWITCH-WORKSPACE-1 added switch_workspace
-# to every tier; switch_team stays registered as its deprecated alias; WS-ROUTING-5 added list_workspaces; DHRUV-HOSTED-MCP-PARITY-1 added memory_ask to every tier).
-TIER_COUNTS = [
-    ("FREE", {}, 33),
-    ("PRO", {"SMARTMEMORY_API_KEY": "sk_test_key_123"}, 72),
-    (
-        "PRO_PLUS",
-        {
-            "SMARTMEMORY_API_KEY": "sk_test_key_123",
-            "SMARTMEMORY_MCP_FULL_TOOLS": "true",
-        },
-        103,
-    ),
-]
-
-
 class TestToolRegistration:
-    @pytest.mark.parametrize(("tier", "overrides", "expected"), TIER_COUNTS)
-    def test_tier_tool_count(self, tier, overrides, expected):
-        """Each tier registers exactly its count; FREE is the exact name list and a
-        subset of every paid tier (+transcript_search/_status, DIST-CC-INGEST-1 Phase 4)."""
-        data = _run_snippet(_clean_env(**overrides))
-        assert data["count"] == expected, (
-            f"Expected {expected} {tier} tools, got {data['count']}: {data['names']}"
+    def test_free_tier_tool_count(self):
+        """FREE tier registers exactly 43 tools (DECISION-RESTORE-ONE-ACTION-1 added decision_restore; WS-POLICY-10 added create_workspace; 18 + the 15 decision-suite tools; MCP-SWITCH-WORKSPACE-1 added switch_workspace; SM-EVIDENCE-TYPE-1 added decision_link_evidence + evidence_record)."""
+        env = _clean_env()
+        data = _run_snippet(env)
+        assert data["count"] == 43, (
+            f"Expected 43 FREE tools, got {data['count']}: {data['names']}"
         )
-        if tier == "FREE":
-            assert data["names"] == FREE_TOOLS
-            return
+        assert data["names"] == FREE_TOOLS
+
+    def test_pro_tier_tool_count(self):
+        """PRO tier registers exactly 83 remote tools (+decision_restore DECISION-RESTORE-ONE-ACTION-1; +create_workspace WS-POLICY-10; +transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed)."""
+        env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
+        data = _run_snippet(env)
+        assert data["count"] == 83, (
+            f"Expected 83 remote PRO tools, got {data['count']}: {data['names']}"
+        )
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]
         )
-        assert "memory_ingest_document" in data["names"]
-        missing = sorted(set(FREE_TOOLS) - set(data["names"]))
-        assert not missing, f"FREE tools missing from {tier}: {missing}"
+        assert "memory_save_document" in data["names"]
+        assert "memory_supersede" in data["names"]
+        # Verify FREE tools are a subset of PRO tools
+        for tool in FREE_TOOLS:
+            assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
+
+    def test_pro_plus_tier_tool_count(self):
+        """PRO_PLUS tier registers exactly 120 remote tools (+decision_restore DECISION-RESTORE-ONE-ACTION-1; +create_workspace WS-POLICY-10; +transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed; +4 OUTREACH-MARIUS-HITL-SURFACE-1: review_queue_list/settle, supersession_policy_get/set; +2 part 7: review_approval_get/set)."""
+        env = _clean_env(
+            SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true"
+        )
+        data = _run_snippet(env)
+        assert data["count"] == 120, (
+            f"Expected 120 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
+        )
+        assert {
+            "review_queue_list",
+            "review_queue_settle",
+            "supersession_policy_get",
+            "supersession_policy_set",
+            "review_approval_get",
+            "review_approval_set",
+        } <= set(data["names"])
+        assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
+            data["names"]
+        )
+        assert "memory_save_document" in data["names"]
+        assert "memory_supersede" in data["names"]
+        # Verify FREE tools are a subset of PRO_PLUS tools
+        for tool in FREE_TOOLS:
+            assert tool in data["names"], (
+                f"FREE tool {tool!r} missing from PRO_PLUS tier"
+            )

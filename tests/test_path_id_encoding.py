@@ -10,10 +10,12 @@ These tests assert where the SERVICE routes each request: the URL the real
 service route table, and the only template it may match is the intended one. An id
 that could go anywhere else must be refused before any request is sent.
 
-Route table: the service OpenAPI snapshot when the service repo is next to this one,
-else the checked-in copy `tests/fixtures/service_route_table.json` (kept equal to the
-snapshot by `test_route_table_fixture_matches_service_snapshot`). Regenerate it with
-`python3 tests/test_path_id_encoding.py --write-route-table`.
+Route table: the checked-in `tests/fixtures/service_route_table.json`, generated from
+smart-memory-service origin/2.0 (its `_source` line names the sha). When
+SMARTMEMORY_SERVICE_CHECKOUT points at a service checkout, the table is read from that
+checkout's snapshot instead and `test_route_table_fixture_matches_service_snapshot`
+requires the fixture to equal it. Regenerate with
+`SMARTMEMORY_SERVICE_CHECKOUT=<2.0 checkout> python3 tests/test_path_id_encoding.py --write-route-table`.
 """
 
 from __future__ import annotations
@@ -31,7 +33,12 @@ import pytest
 
 from smartmemory_mcp.backends.path_guard import RESERVED_SEGMENTS, path_id
 from smartmemory_mcp.backends.remote import RemoteBackend
-from smartmemory_mcp.tools import agent_tools, memory_tools
+from smartmemory_mcp.tools import (
+    agent_tools,
+    decision_tools,
+    memory_tools,
+    review_tools,
+)
 
 HERE = Path(__file__).resolve()
 PACKAGE = HERE.parents[1] / "smartmemory_mcp"
@@ -39,6 +46,7 @@ FIXTURE = HERE.parent / "fixtures" / "service_route_table.json"
 SNAPSHOT_REL = "smart-memory-service/tests/contracts/snapshots/openapi_schema.json"
 REMOTE = "backends/remote.py"
 AGENT = "tools/agent_tools.py"
+REVIEW = "tools/review_tools.py"
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options"}
 
 # Service params declared with Starlette's `:path` convertor (regex `.*`, crosses `/`).
@@ -54,6 +62,8 @@ PATH_CONVERTORS = {
 HOSTILE_IDS = [
     "../../health?",
     "a/b",
+    "../x",
+    "%2e%2e",
     "x?y=1",
     "%2e%2e/",
     "#frag",
@@ -85,15 +95,13 @@ NORMAL_IDS = ["3f2b6c1e-8a4d-4f7b-9c2e-1a2b3c4d5e6f", "mem_abc123", "dec_3f2b6c1
 
 
 def _find_snapshot() -> Path | None:
-    # Same override as tests/test_hosted_route_contract.py.
+    # Only an explicit checkout (the same override as tests/test_hosted_route_contract.py).
+    # No sibling auto-discovery: the sibling service checkout may sit on another branch
+    # than service origin/2.0, whose routes this package is checked against.
     env = os.environ.get("SMARTMEMORY_SERVICE_CHECKOUT")
     if env:
         candidate = Path(env) / SNAPSHOT_REL.split("/", 1)[1]
         return candidate if candidate.is_file() else None
-    for parent in HERE.parents:
-        candidate = parent / SNAPSHOT_REL
-        if candidate.is_file():
-            return candidate
     return None
 
 
@@ -167,6 +175,27 @@ def _agent(name, *args):
     return call
 
 
+def _review(name, *args):
+    def call(backend, item_id):
+        mcp = _FakeMCP()
+        review_tools.register(mcp)
+        return mcp.fns[name](item_id, *args)
+
+    return call
+
+
+def _workspace(name, *args):
+    """The settings tools take the workspace id from the session, not from an argument."""
+
+    def call(backend, item_id):
+        backend._session["team_id"] = item_id
+        mcp = _FakeMCP()
+        review_tools.register(mcp)
+        return mcp.fns[name](*args)
+
+    return call
+
+
 # One row per by-id request site: (enclosing function, source file, method, the
 # service route template it must reach, call). The AST guard below fails when a site
 # in the package is missing from this table.
@@ -216,6 +245,13 @@ ROWS = [
         lambda b, i: b.decision_retract(i, "why"),
     ),
     (
+        "decision_restore",
+        REMOTE,
+        "POST",
+        "/memory/decisions/{decision_id}/restore",
+        lambda b, i: b.decision_restore(i, "why"),
+    ),
+    (
         "decision_reinforce",
         REMOTE,
         "POST",
@@ -228,6 +264,13 @@ ROWS = [
         "POST",
         "/memory/decisions/{decision_id}/contradict",
         lambda b, i: b.decision_contradict(i, "ev"),
+    ),
+    (
+        "decision_link_evidence",
+        REMOTE,
+        "POST",
+        "/memory/decisions/{decision_id}/evidence",
+        lambda b, i: b.decision_link_evidence(i, "ev"),
     ),
     (
         "decision_provenance",
@@ -258,6 +301,27 @@ ROWS = [
         lambda b, i: b.decision_try_activate(i),
     ),
     (
+        "pattern_get",
+        REMOTE,
+        "GET",
+        "/memory/patterns/{pattern_id}",
+        lambda b, i: b.pattern_get(i),
+    ),
+    (
+        "pattern_update",
+        REMOTE,
+        "PUT",
+        "/memory/patterns/{pattern_id}",
+        lambda b, i: b.pattern_update(i, title="x"),
+    ),
+    (
+        "pattern_retire",
+        REMOTE,
+        "DELETE",
+        "/memory/patterns/{pattern_id}",
+        lambda b, i: b.pattern_retire(i, "why"),
+    ),
+    (
         "agent_set_recall_profile",
         AGENT,
         "PUT",
@@ -271,7 +335,33 @@ ROWS = [
         "/memory/agents/{agent_id}/recall-profile",
         _agent("agent_get_recall_profile"),
     ),
+    (
+        "review_queue_settle",
+        REVIEW,
+        "POST",
+        "/memory/reasoning/reviews/{review_id}/settle",
+        _review("review_queue_settle", "keep_b", "checked"),
+    ),
+    (
+        "_remote_get",
+        REVIEW,
+        "GET",
+        "/memory/workspaces/{workspace_id}/settings",
+        _workspace("supersession_policy_get"),
+    ),
+    (
+        "_remote_set",
+        REVIEW,
+        "PATCH",
+        "/memory/workspaces/{workspace_id}/settings",
+        _workspace("supersession_policy_set", "propose"),
+    ),
 ]
+
+
+# A row whose route takes a query parameter of its own: the exact query the call sends.
+# Anything else after a `?` is still an id that grew a query string.
+OWN_QUERY = {"pattern_retire": "reason=why"}
 
 
 def _split(template: str) -> tuple[str, str]:
@@ -299,6 +389,8 @@ def wire(monkeypatch):
     backend._session["_bootstrapped"] = True
     monkeypatch.setattr(agent_tools, "get_backend", lambda: backend)
     monkeypatch.setattr(memory_tools, "get_backend", lambda: backend)
+    monkeypatch.setattr(decision_tools, "get_backend", lambda: backend)
+    monkeypatch.setattr(review_tools, "get_backend", lambda: backend)
     return backend, seen
 
 
@@ -343,6 +435,10 @@ def test_every_id_reaches_only_its_own_service_route_or_is_refused(
             if item_id in NORMAL_IDS:
                 bad.append((item_id, "normal id refused"))
             continue
+        own_query = OWN_QUERY.get(name)
+        if own_query and outcome.endswith(f"?{own_query}"):
+            # The route's own param, not the id's.
+            outcome = outcome[: -len(own_query) - 1]
         if routes != [template]:
             bad.append((item_id, outcome, routes))
         if item_id in NORMAL_IDS and outcome != f"{prefix}{item_id}{suffix}":
@@ -350,6 +446,168 @@ def test_every_id_reaches_only_its_own_service_route_or_is_refused(
         if outcome.startswith("/") and "?" in outcome:
             bad.append((item_id, "grew a query string", outcome))
     assert bad == [], f"{name}: {bad}"
+
+
+def _tool(register, name, *rest, **kw):
+    def call(item_id):
+        mcp = _FakeMCP()
+        register(mcp)
+        return mcp.fns[name](item_id, *rest, **kw)
+
+    return call
+
+
+# One row per TOOL whose id argument reaches a request path (the 2.0 tool surface; the
+# hosted allowlist re-registers these same functions): (tool, method, template, call).
+TOOL_ROWS = [
+    (
+        "memory_get",
+        "GET",
+        "/memory/{item_id}",
+        _tool(memory_tools.register_free, "memory_get"),
+    ),
+    (
+        "memory_explain",
+        "GET",
+        "/memory/{item_id}/explain",
+        _tool(memory_tools.register_free, "memory_explain"),
+    ),
+    (
+        "memory_update",
+        "PATCH",
+        "/memory/{item_id}",
+        _tool(memory_tools.register_pro, "memory_update", content="x"),
+    ),
+    (
+        "memory_delete",
+        "DELETE",
+        "/memory/{item_id}",
+        _tool(memory_tools.register_pro, "memory_delete"),
+    ),
+    (
+        "decision_get",
+        "GET",
+        "/memory/decisions/{decision_id}",
+        _tool(decision_tools.register, "decision_get"),
+    ),
+    (
+        "decision_supersede",
+        "POST",
+        "/memory/decisions/{decision_id}/supersede",
+        _tool(decision_tools.register, "decision_supersede", "new", "why"),
+    ),
+    (
+        "decision_retract",
+        "POST",
+        "/memory/decisions/{decision_id}/retract",
+        _tool(decision_tools.register, "decision_retract", "why"),
+    ),
+    (
+        "decision_restore",
+        "POST",
+        "/memory/decisions/{decision_id}/restore",
+        _tool(decision_tools.register, "decision_restore", "why"),
+    ),
+    (
+        "decision_reinforce",
+        "POST",
+        "/memory/decisions/{decision_id}/reinforce",
+        _tool(decision_tools.register, "decision_reinforce", "ev"),
+    ),
+    (
+        "decision_contradict",
+        "POST",
+        "/memory/decisions/{decision_id}/contradict",
+        _tool(decision_tools.register, "decision_contradict", "ev"),
+    ),
+    (
+        "decision_link_evidence",
+        "POST",
+        "/memory/decisions/{decision_id}/evidence",
+        _tool(decision_tools.register, "decision_link_evidence", "ev"),
+    ),
+    (
+        "decision_provenance",
+        "GET",
+        "/memory/decisions/{decision_id}/provenance",
+        _tool(decision_tools.register, "decision_provenance"),
+    ),
+    (
+        "decision_find_conflicts",
+        "POST",
+        "/memory/decisions/{decision_id}/conflicts",
+        _tool(decision_tools.register, "decision_find_conflicts"),
+    ),
+    (
+        "decision_resolve_requirement",
+        "POST",
+        "/memory/decisions/pending/{decision_id}/resolve",
+        _tool(decision_tools.register, "decision_resolve_requirement", "req", "mem"),
+    ),
+    (
+        "decision_try_activate",
+        "POST",
+        "/memory/decisions/pending/{decision_id}/activate",
+        _tool(decision_tools.register, "decision_try_activate"),
+    ),
+    (
+        "agent_set_recall_profile",
+        "PUT",
+        "/memory/agents/{agent_id}/recall-profile",
+        _tool(agent_tools.register, "agent_set_recall_profile", {"decision": 2.0}),
+    ),
+    (
+        "agent_get_recall_profile",
+        "GET",
+        "/memory/agents/{agent_id}/recall-profile",
+        _tool(agent_tools.register, "agent_get_recall_profile"),
+    ),
+]
+TOOL_HOSTILE = ["clear-all", "teams/T1", "../x", "%2e%2e", "a/b", "%2F", ""]
+
+
+@pytest.mark.parametrize(
+    "tool,method,template,call", TOOL_ROWS, ids=[r[0] for r in TOOL_ROWS]
+)
+def test_every_tool_id_is_refused_or_reaches_only_its_own_route(
+    wire, tool, method, template, call
+):
+    _, seen = wire
+    prefix, _ = _split(template)
+    assert (method, template) in ROUTES, f"{tool}: {method} {template} not a route"
+    bad = []
+    for item_id in TOOL_HOSTILE + sorted(RESERVED_SEGMENTS[prefix]):
+        seen.clear()
+        try:
+            call(item_id)
+        except ValueError:
+            if seen:
+                bad.append((item_id, "refused but sent", len(seen)))
+            continue
+        except Exception:
+            pass  # the fake answer's shape is not under test, the request is
+        raw = [r.url.raw_path.decode() for r in seen]
+        if item_id not in RESERVED_SEGMENTS[prefix] or raw:
+            routed = [service_routes(method, r) for r in raw]
+            if routed != [[template]]:
+                bad.append((item_id, raw, routed))
+    assert bad == [], f"{tool}: {bad}"
+
+
+@pytest.mark.parametrize(
+    "name,_file,method,template,call", ROWS, ids=[r[0] for r in ROWS]
+)
+def test_every_reserved_segment_is_refused_at_every_site(
+    wire, name, _file, method, template, call
+):
+    prefix, _ = _split(template)
+    reserved = sorted(RESERVED_SEGMENTS[prefix])
+    sent = [
+        (seg, outcome)
+        for seg, outcome, _ in outcomes(wire, method, template, call, reserved)
+        if outcome != "refused"
+    ]
+    assert sent == [], f"{name}: reserved segments reached the wire: {sent}"
 
 
 # (id, prefix, expected): "refuse", or the exact encoded segment.
@@ -406,7 +664,7 @@ def _static_siblings() -> dict[str, dict[str, set[str]]]:
             rest = template[len(prefix) :] if template.startswith(prefix) else ""
             segment = rest.split("/")[0]
             if segment and "{" not in segment:
-                out.setdefault(prefix, {}).setdefault(method, set()).add(segment)
+                out.setdefault(prefix, {}).setdefault(method, set()).update([segment])
     return out
 
 
@@ -444,7 +702,7 @@ def test_route_table_fixture_matches_service_snapshot():
             r'@router\.(\w+)\(\s*"([^"]*:path\}[^"]*)"', source.read_text()
         ):
             template = re.sub(r":path\}", "}", m.group(2))
-            declared.add((m.group(1).upper(), template))
+            declared.update([(m.group(1).upper(), template)])
     in_table = {(m, t) for m, t in ROUTES}
     prefixed = {
         next((m, t) for m, t in in_table if m == method and t.endswith(tail))

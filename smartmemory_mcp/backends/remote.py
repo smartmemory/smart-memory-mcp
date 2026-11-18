@@ -12,19 +12,54 @@ from smartmemory_mcp.result_labels import supersession_label
 import json
 import logging
 import os
-import re
-from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import httpx
 
-from .interface import BackendCapabilities
+from smartmemory_mcp.tool_trace import tool_headers
+from smartmemory_mcp.tools.common import scoped_options
+
+from .interface import (
+    BackendCapabilities,
+    DecisionAlreadyDecided,
+    DecisionReplaceHeld,
+    DecisionRestoreRefused,
+    EvidenceRefused,
+)
+from .local import SaveReturn
 from .models import CodeIngestResult, MemoryResult, normalize_item, normalize_items
 from .path_guard import path_id
+from .receipts import read_wire_save
 from smartmemory_mcp.workspace_select import SwitchResult, refuse, resolve_workspace
 
 logger = logging.getLogger(__name__)
+
+
+def _raise_recall_conflict(response: httpx.Response) -> None:
+    """Preserve strict read refusals as MCP tool errors, never successful error dicts."""
+    if response.status_code != 409:
+        return
+    try:
+        body = response.json()
+    except ValueError:
+        return
+    detail = body.get("detail") if isinstance(body, dict) else None
+    if isinstance(detail, dict) and detail.get("error") == "recall_conflict":
+        from fastmcp.exceptions import ToolError
+
+        raise ToolError(
+            "recall_conflict: " + str(detail.get("message", "Strict recall refused"))
+        )
+
+
+@dataclass(frozen=True)
+class LoginResult:
+    """Outcome of ``RemoteBackend.login``: ``ok`` only when the service confirmed the key."""
+
+    ok: bool
+    message: str
 
 
 DEFAULT_API_URL = "https://api.smartmemory.ai"
@@ -78,114 +113,37 @@ def env_workspace_id() -> str:
     return env_workspace()[0]
 
 
-# WS-ROUTING-5 header rule (design WS-ROUTING-1 `### The header rule`): `X-Workspace-Id` means an explicit pick (a tool
-# argument, a person-set env/config value, a live switch_workspace on stdio). A server-supplied default
-# (`default_team_id`, `active_workspace_id`) is display-only and never sent as the header; the call carries
-# `X-SM-Client` instead so the service resolver can apply the saved session pick (lever 3) and keep it alive.
+# WS-ROUTING-5 on 2.0 (shape B, s1-chat 2026-11-09): every remote and hosted call names its client in `X-SM-Client`
+# (contract `client_key.grammar`, `mcp:<clientInfo.name>`). It is a hint the 2.0 service ignores and grants nothing; it
+# lets main's `routing_probable_echo_total` and a later resolver tell MCP traffic apart. `X-Workspace-Id` sourcing is
+# unchanged on 2.0: a tool argument, then the saved pick, then the session team. A stdio process has one client and no
+# handshake name at backend build time, so it sends `mcp:stdio`; hosted sets `mcp:<clientInfo.name>` per call.
 CLIENT_KEY_FALLBACK = "mcp:stdio"
-_CLIENT_NAME_DROP = re.compile(r"[^A-Za-z0-9 _.\-]")
-ROUTING_EXPLAIN_PATH = "/memory/routing/explain"
+
+# Where this session's `X-Workspace-Id` came from, as whoami shows it. A tool argument wins for one call only.
+ROUTED_BY_ARGUMENT = "tool argument"
+ROUTED_BY_PICK = "saved pick (switch_workspace)"
+ROUTED_BY_CONFIG = "config/env"
+ROUTED_BY_DEFAULT = "default"
+ROUTED_BY_HOW = {
+    ROUTED_BY_ARGUMENT: "This call only; the next call without one uses the session workspace.",
+    ROUTED_BY_PICK: "Change it with switch_workspace(workspace).",
+    ROUTED_BY_CONFIG: (
+        f"Set by {WORKSPACE_ENV} or the saved smartmemory config; "
+        "switch_workspace(workspace) overrides it for this session."
+    ),
+    ROUTED_BY_DEFAULT: "Your account default; switch_workspace(workspace) picks another.",
+}
+
+
+def routed_by_lines(routed_by: str) -> str:
+    """The whoami `Routed by:` line plus how to change it."""
+    how = ROUTED_BY_HOW.get(routed_by, ROUTED_BY_HOW[ROUTED_BY_PICK])
+    return f"Routed by: {routed_by}\n{how}"
+
+
 # export_okf(workspace_id=LIVE_PICK): send whatever pick is live when the headers are built.
 LIVE_PICK: Any = object()
-MISSING_TEAM_CONTEXT = "missing_team_context"
-# A header-less call that no server lever answers is refused with 400 + `X-SM-Scope-Error: missing_team_context`.
-# The MCP never answers that refusal with a guessed workspace (WS-ROUTING-5 fix round 1): the server owns the floor
-# (WS-ROUTING-5-PRE-1), and the user is told how to pick.
-MISSING_WORKSPACE_HELP = (
-    "No workspace is picked for this call and the service did not choose one (missing_team_context). "
-    "Pick one with switch_workspace(workspace) (list_workspaces() shows yours), or pass workspace_id to this tool."
-)
-
-# Per tool call: where each write went, as the service echoed it (contract `write_response_echo`). A middleware sets
-# a fresh list around one call; `_request` appends to it (a list, so a worker thread's append is seen by the caller).
-WRITE_TARGETS: ContextVar[list[dict[str, Any]] | None] = ContextVar(
-    "smartmemory_write_targets", default=None
-)
-
-
-def client_key_from_name(name: Any, fallback: str = CLIENT_KEY_FALLBACK) -> str:
-    """`mcp:<clientInfo.name>` cut to the contract `client_key.grammar`, else `fallback`."""
-    cleaned = _CLIENT_NAME_DROP.sub("", str(name or "")).strip()[:64].strip()
-    return f"mcp:{cleaned}" if cleaned else fallback
-
-
-def client_name_from_context(context: Any) -> str:
-    """The MCP `initialize` clientInfo name from a FastMCP context, or ""."""
-    try:
-        params = context.session.client_params
-        # The MCP SDK model field is `client_info` (wire name `clientInfo`); older SDKs exposed the camelCase name.
-        info = getattr(params, "client_info", None) or getattr(
-            params, "clientInfo", None
-        )
-        return str(getattr(info, "name", "") or "") if info is not None else ""
-    except (AttributeError, RuntimeError):
-        return ""
-
-
-def is_missing_workspace(response: httpx.Response) -> bool:
-    """True for the service's marked refusal of a call no routing lever answered."""
-    return (
-        response.status_code == 400
-        and response.headers.get("X-SM-Scope-Error") == MISSING_TEAM_CONTEXT
-    )
-
-
-def describe_routing(explain: dict[str, Any] | None, default: str) -> tuple[str, str]:
-    """(workspace label, routed_by explanation) from an explain answer, for whoami on any backend.
-
-    The account default is named for display only: the MCP never sends it as a pick (WS-ROUTING-5).
-    """
-    shown = f"(none picked; account default {default})" if default else "(none picked)"
-    if explain is None:
-        return shown, "unknown (the service has no routing explain)"
-    if not explain:
-        return shown, "unknown (could not ask the service)"
-    workspace_id = explain.get("workspace_id")
-    if not workspace_id:
-        why = explain.get("refusal") or "no lever applies"
-        return (
-            shown,
-            f"refused ({why}); pick with switch_workspace or a workspace_id argument",
-        )
-    name = explain.get("workspace_name")
-    label = (
-        f"{name} ({workspace_id})"
-        if name and name != workspace_id
-        else str(workspace_id)
-    )
-    return label, str(explain.get("routed_by") or "unknown")
-
-
-def record_write_target(echo: dict[str, Any]) -> None:
-    """Append a write's target to the current call's list, when a middleware opened one."""
-    targets = WRITE_TARGETS.get()
-    if targets is not None:
-        targets.append(echo)
-
-
-def format_write_target(
-    targets: list[dict[str, Any]], fallback: dict[str, Any] | None = None
-) -> str:
-    """One result line naming where the call's writes went (the last write wins; notices are listed).
-
-    `fallback` (an explain answer) names the target of a header-less write whose route echoes nothing.
-    """
-    target = targets[-1]
-    if not target.get("workspace_id") and isinstance(fallback, dict):
-        target = fallback
-    workspace_id = target.get("workspace_id") or "(unknown)"
-    name = target.get("workspace_name")
-    label = (
-        f"{name} ({workspace_id})" if name and name != workspace_id else workspace_id
-    )
-    routed_by = target.get("routed_by") or "unknown"
-    line = f"Workspace: {label}, routed by {routed_by}."
-    notices = [
-        n for t in targets for n in (t.get("notices") or []) if isinstance(n, dict)
-    ]
-    for notice in notices:
-        line += f" Notice: {notice.get('code')} ({notice.get('detail', '')})."
-    return line
 
 
 def is_missing_scope(result: Any) -> bool:
@@ -209,9 +167,6 @@ class WriteOutcomeUnknown(RuntimeError):
 
 
 class RemoteBackend(BackendCapabilities):
-    # POST /memory/add defaults use_pipeline=True service-side, so add() runs extraction.
-    add_runs_extraction = True
-    accepts_workspace_argument = True
     """HTTP client implementing MemoryBackend protocol for the hosted SmartMemory API."""
 
     unsupported_capabilities = frozenset(
@@ -227,18 +182,18 @@ class RemoteBackend(BackendCapabilities):
         self._api_url = (
             api_url or os.environ.get("SMARTMEMORY_API_URL", DEFAULT_API_URL)
         ).rstrip("/")
+        team = team_id or env_workspace_id()
         self._session: dict[str, str | bool] = {
             "access_token": api_key or os.environ.get("SMARTMEMORY_API_KEY", ""),
             "refresh_token": "",
-            # The explicit pick (the only value ever sent as X-Workspace-Id): a constructor argument (a live switch
-            # carried over a rebuild, the env, the saved config), a login argument or switch_workspace.
-            "team_id": team_id or env_workspace_id(),
-            # The server's suggestion from /auth/me: display only, never a header (WS-ROUTING-5).
-            "default_team_id": "",
+            "team_id": team,
             "user_email": "",
             "tenant_id": "",
-            "client_key": CLIENT_KEY_FALLBACK,
             "_bootstrapped": False,
+            "client_key": CLIENT_KEY_FALLBACK,
+            # A constructor team is the env or saved config (dispatch.build_backend); none means /auth/me's default.
+            "routed_by": ROUTED_BY_CONFIG if team else ROUTED_BY_DEFAULT,
+            "workspace_name": "",
         }
 
     # --- Session bootstrap -------------------------------------------------------
@@ -261,101 +216,50 @@ class RemoteBackend(BackendCapabilities):
                 user = r.json()
                 self._session["user_email"] = user.get("email", "")
                 self._session["tenant_id"] = user.get("tenant_id") or ""
-                # Display only (WS-ROUTING-5): the discovered default is never copied into the pick.
-                self._session["default_team_id"] = user.get("default_team_id") or ""
+                if not self._session["team_id"]:
+                    discovered = user.get("default_team_id") or ""
+                    if discovered:
+                        self._session["team_id"] = discovered
         except Exception:
             pass  # bootstrap is best-effort
 
-    def set_client_key(self, client_key: str) -> None:
-        """The `X-SM-Client` this backend sends (`mcp:<clientInfo.name>`); the server keys the session pick by it."""
-        self._session["client_key"] = client_key or CLIENT_KEY_FALLBACK
+    def _headers(self, workspace_id: str | None = None) -> dict[str, str]:
+        """Build request headers with auth and workspace context."""
+        self._bootstrap_from_api_key()
+        return {
+            "Authorization": f"Bearer {self._session['access_token']}",
+            "Content-Type": "application/json",
+            "X-Workspace-Id": workspace_id or str(self._session.get("team_id", "")),
+            "X-SM-Client": self.client_key,
+            # INSIGHTS-MCP-TRACES-1: svc-api emits the mcp.<tool> span from these.
+            **tool_headers(),
+        }
 
     @property
     def client_key(self) -> str:
+        """The `X-SM-Client` this backend sends."""
         return str(self._session.get("client_key") or CLIENT_KEY_FALLBACK)
 
-    def _headers(self, workspace_id: str | None = None) -> dict[str, str]:
-        """Build request headers: auth, `X-SM-Client`, and `X-Workspace-Id` only for an explicit pick.
+    def set_client_key(self, client_key: str) -> None:
+        """Name the MCP client (`mcp:<clientInfo.name>`); hosted sets it per call."""
+        self._session["client_key"] = client_key or CLIENT_KEY_FALLBACK
 
-        `workspace_id` is a tool argument; else the session's pick. With neither the header is omitted and the
-        service resolver decides; the displayed account default is never sent (WS-ROUTING-5).
-        """
-        self._bootstrap_from_api_key()
-        headers = {
-            "Authorization": f"Bearer {self._session['access_token']}",
-            "Content-Type": "application/json",
-            "X-SM-Client": self.client_key,
-        }
-        workspace = workspace_id or str(self._session.get("team_id") or "")
-        if workspace:
-            headers["X-Workspace-Id"] = workspace
-        return headers
+    @property
+    def routed_by(self) -> str:
+        """Where the session's `X-Workspace-Id` came from (a `ROUTED_BY_*` value)."""
+        return str(self._session.get("routed_by") or ROUTED_BY_DEFAULT)
 
-    def _explain_routing(self) -> dict[str, Any] | None:
-        """`GET /memory/routing/explain` for this client (header-less), or None when the service has none (too old)."""
-        headers = self._headers()
-        headers.pop("X-Workspace-Id", None)
-        try:
-            r = httpx.get(
-                f"{self._api_url}{ROUTING_EXPLAIN_PATH}",
-                headers=headers,
-                params={"client_key": self.client_key},
-                timeout=15,
-            )
-        except httpx.HTTPError as exc:
-            logger.warning(
-                "Routing explain unreachable (lost=routing display, error=%s)",
-                type(exc).__name__,
-            )
-            return {}
-        if r.status_code == 404:
-            return None
-        try:
-            body = r.json()
-        except ValueError:
-            return {}
-        return body if r.status_code == 200 and isinstance(body, dict) else {}
+    def set_routed_by(self, routed_by: str) -> None:
+        self._session["routed_by"] = routed_by
 
-    def _send(
-        self, method: str, url: str, headers: dict[str, str], **kwargs: Any
-    ) -> httpx.Response:
-        """One request, never retried with a guessed workspace; records where a write went."""
-        response = httpx.request(method, url, headers=headers, **kwargs)
-        self._note_write_target(method, response, headers)
-        return response
-
-    def _note_write_target(
-        self, method: str, response: httpx.Response, headers: dict[str, str]
-    ) -> None:
-        """Record where a successful write went: the service echo, else the header this call sent."""
-        if method.upper() == "GET" or WRITE_TARGETS.get() is None or response.is_error:
-            return
-        body = None
-        if b'"routed_by"' in response.content:
-            try:
-                body = response.json()
-            except ValueError:
-                body = None
-        if isinstance(body, dict) and "routed_by" in body:
-            record_write_target(
-                {
-                    key: body.get(key)
-                    for key in (
-                        "workspace_id",
-                        "workspace_name",
-                        "routed_by",
-                        "notices",
-                    )
-                }
-            )
-        elif "X-Workspace-Id" in headers:
-            record_write_target(
-                {"workspace_id": headers["X-Workspace-Id"], "routed_by": "call"}
-            )
-        else:
-            record_write_target(
-                {}
-            )  # header-less and no echo: the caller's routing answer names it
+    def workspace_label(self, workspace_id: str | None = None) -> str:
+        """The workspace a write lands in: its name when this session knows it, else its id."""
+        active = self.active_workspace_id
+        target = workspace_id or active
+        if not target:
+            return "(none: the service default)"
+        name = str(self._session.get("workspace_name") or "")
+        return f"{name} ({target})" if name and target == active else target
 
     def _request(
         self,
@@ -368,21 +272,27 @@ class RemoteBackend(BackendCapabilities):
         """Execute a request. Unconfirmed adds and hosted auth failures raise explicitly."""
         try:
             headers = kwargs.pop("headers", None) or self._headers(workspace_id)
-            r = self._send(
+            r = httpx.request(
                 method,
                 f"{self._api_url}{path}",
-                headers,
+                headers=headers,
                 timeout=timeout,
                 **kwargs,
             )
             r.raise_for_status()
             return r.json() if r.status_code != 204 else None
-        except (httpx.ReadTimeout, httpx.WriteTimeout, httpx.ReadError,
-                httpx.WriteError, httpx.RemoteProtocolError) as exc:
+        except (
+            httpx.ReadTimeout,
+            httpx.WriteTimeout,
+            httpx.ReadError,
+            httpx.WriteError,
+            httpx.RemoteProtocolError,
+        ) as exc:
             if method.upper() == "POST" and path == "/memory/add":
-                # A lost response is not proof of a failed write. Never retry or
-                # turn this into the generic "backend not reachable" diagnosis.
-                logger.warning("Add receipt lost (outcome=unconfirmed, error=%s)", type(exc).__name__)
+                logger.warning(
+                    "Add receipt lost (outcome=unconfirmed, error=%s)",
+                    type(exc).__name__,
+                )
                 raise WriteOutcomeUnknown() from None
             return {"error": f"Request failed: {exc}"}
         except httpx.ConnectError:
@@ -390,6 +300,7 @@ class RemoteBackend(BackendCapabilities):
                 "error": f"SmartMemory API unreachable at {self._api_url}. Check SMARTMEMORY_API_URL."
             }
         except httpx.HTTPStatusError as e:
+            _raise_recall_conflict(e.response)
             self._on_http_error(e.response)
             if e.response.status_code == 401:
                 self._on_unauthorized(e.response)
@@ -397,12 +308,6 @@ class RemoteBackend(BackendCapabilities):
                 body = e.response.json()
             except ValueError:
                 body = {"detail": e.response.text}
-            if is_missing_workspace(e.response):
-                return {
-                    "error": MISSING_WORKSPACE_HELP,
-                    "status_code": 400,
-                    "body": body,
-                }
             return {
                 "error": f"API error {e.response.status_code}: {e.response.text}",
                 "status_code": e.response.status_code,
@@ -462,6 +367,29 @@ class RemoteBackend(BackendCapabilities):
         if production_only:
             params["production_only"] = "true"
         return self.request("GET", "/memory/code/dead-code", params=params)
+
+    def code_dependencies(
+        self,
+        entity_name: str,
+        direction: str = "both",
+        repo: str | None = None,
+        file_path: str | None = None,
+        item_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Delegate call/import/inheritance tracing to the hosted service.
+
+        file_path and item_id are stored-index selectors sent as query values; they are
+        never read from the MCP server filesystem. Optional selectors go out only when set.
+        """
+        params: dict[str, Any] = {"entity_name": entity_name, "direction": direction}
+        for key, value in (
+            ("repo", repo),
+            ("file_path", file_path),
+            ("item_id", item_id),
+        ):
+            if value:
+                params[key] = value
+        return self.request("GET", "/memory/code/dependencies", params=params)
 
     def ingest_code(
         self,
@@ -638,16 +566,9 @@ class RemoteBackend(BackendCapabilities):
 
     @property
     def active_workspace_id(self) -> str:
-        """For display: this session's pick, else the server's suggested default (never a header by itself)."""
+        """Return the workspace carried by the active remote session."""
         self._bootstrap_from_api_key()
-        return str(
-            self._session.get("team_id") or self._session.get("default_team_id") or ""
-        )
-
-    @property
-    def selected_workspace_id(self) -> str:
-        """The explicit pick only (env, config, switch_workspace, login argument), or "" when the server decides."""
-        return str(self._session.get("team_id") or "")
+        return str(self._session.get("team_id", ""))
 
     def export_okf(self, archive_path: str, workspace_id: Any = LIVE_PICK) -> None:
         """Stream a workspace's OKF archive to disk.
@@ -659,7 +580,7 @@ class RemoteBackend(BackendCapabilities):
         destination = Path(archive_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         if workspace_id is LIVE_PICK:
-            headers = self._headers()
+            headers = self._headers(workspace_id=self.active_workspace_id)
         else:
             headers = self._headers(workspace_id or None)
             if not workspace_id:
@@ -671,8 +592,6 @@ class RemoteBackend(BackendCapabilities):
                 headers=headers,
                 timeout=120,
             ) as response:
-                if is_missing_workspace(response):
-                    raise RuntimeError(MISSING_WORKSPACE_HELP)
                 response.raise_for_status()
                 with destination.open("wb") as handle:
                     for chunk in response.iter_bytes():
@@ -688,13 +607,15 @@ class RemoteBackend(BackendCapabilities):
 
     def import_okf(self, archive_path: str) -> dict[str, Any]:
         """Upload an OKF archive into the active workspace."""
-        headers = self._headers()
+        workspace_id = self.active_workspace_id
+        headers = self._headers(workspace_id=workspace_id)
         headers.pop("Content-Type", None)
         path = Path(archive_path)
         with path.open("rb") as handle:
             result = self._request(
                 "POST",
                 "/memory/okf/import",
+                workspace_id=workspace_id,
                 timeout=300,
                 headers=headers,
                 files={"file": (path.name, handle, "application/gzip")},
@@ -702,6 +623,17 @@ class RemoteBackend(BackendCapabilities):
         if err := self._fmt_error(result):
             raise RuntimeError(err)
         return result or {}
+
+    @staticmethod
+    def _conflict_detail(result: Any, code: str) -> dict[str, Any] | None:
+        """The 409 ``detail`` of an error result when its ``error_code`` is ``code``, else None."""
+        if not isinstance(result, dict) or result.get("status_code") != 409:
+            return None
+        body = result.get("body")
+        detail = body.get("detail") if isinstance(body, dict) else None
+        if isinstance(detail, dict) and detail.get("error_code") == code:
+            return detail
+        return None
 
     @staticmethod
     def _fmt_error(result: Any) -> str | None:
@@ -712,11 +644,18 @@ class RemoteBackend(BackendCapabilities):
 
     # --- Auth --------------------------------------------------------------------
 
-    def login(self, api_key: str | None = None, team_id: str | None = None) -> str:
-        """Set API key and discover user identity from /auth/me."""
+    def login(
+        self, api_key: str | None = None, team_id: str | None = None
+    ) -> LoginResult:
+        """Set API key and discover user identity from /auth/me.
+
+        ``ok`` is True only after /auth/me answered 2xx; callers persist the key on that alone.
+        """
         key = api_key or os.environ.get("SMARTMEMORY_API_KEY", "")
         if not key:
-            return "No API key. Pass api_key or set SMARTMEMORY_API_KEY env var."
+            return LoginResult(
+                False, "No API key. Pass api_key or set SMARTMEMORY_API_KEY env var."
+            )
         self._session["access_token"] = key
         self._session["refresh_token"] = ""
         self._session["user_email"] = ""
@@ -734,18 +673,27 @@ class RemoteBackend(BackendCapabilities):
             user = r.json()
             self._session["user_email"] = user.get("email", "")
             self._session["tenant_id"] = user.get("tenant_id") or ""
-            # A login argument is a pick; the account default is display only (WS-ROUTING-5).
-            if team_id:
-                self._session["team_id"] = team_id
-            self._session["default_team_id"] = user.get("default_team_id") or ""
+            previous_team = str(self._session["team_id"])
+            self._session["team_id"] = (
+                team_id or user.get("default_team_id") or previous_team
+            )
+            if self._session["team_id"] != previous_team:
+                self._session["workspace_name"] = ""
+                self._session["routed_by"] = (
+                    ROUTED_BY_CONFIG if team_id else ROUTED_BY_DEFAULT
+                )
             self._session["_bootstrapped"] = True
         except httpx.HTTPStatusError as e:
-            return f"API key validation failed ({e.response.status_code}): {e.response.text}"
+            return LoginResult(
+                False,
+                f"API key validation failed ({e.response.status_code}): {e.response.text}",
+            )
         except Exception as e:
-            return f"Login failed: {e}"
-        return (
+            return LoginResult(False, f"Login failed: {e}")
+        return LoginResult(
+            True,
             f"Logged in as {self._session['user_email']}, "
-            f"workspace: {self.active_workspace_id or '(chosen by the server)'}"
+            f"workspace: {self._session['team_id']}",
         )
 
     def whoami(self) -> str:
@@ -756,28 +704,14 @@ class RemoteBackend(BackendCapabilities):
             )
         self._bootstrap_from_api_key()
         tenant = self._session.get("tenant_id") or "(unknown: /auth/me did not answer)"
-        workspace, routed = self._routing_lines()
+        workspace = self._session.get("team_id") or "(none: the service default)"
         return (
             f"User: {self._session['user_email'] or '(API key auth)'}\n"
             f"Tenant: {tenant}\n"
-            f"Workspace: {workspace}\n"
-            f"Routed by: {routed}\n"
+            f"Workspace: {self.workspace_label() if self._session.get('team_id') else workspace}\n"
             f"API: {self._api_url}\n"
             f"Backend: remote\n"
-            "Change workspace with switch_workspace(workspace) "
-            f"(save_as_default=True keeps it for new sessions; {WORKSPACE_ENV} overrides both)."
-        )
-
-    def _routing_lines(self) -> tuple[str, str]:
-        """(workspace label, routed_by explanation) for whoami: the pick, else the service's own answer."""
-        pick = self.selected_workspace_id
-        if pick:
-            return (
-                pick,
-                "call (this session's pick: switch_workspace, the env or the saved config)",
-            )
-        return describe_routing(
-            self._explain_routing(), str(self._session.get("default_team_id") or "")
+            f"{routed_by_lines(self.routed_by)}"
         )
 
     def list_workspaces(self) -> list[dict[str, Any]] | None:
@@ -812,6 +746,35 @@ class RemoteBackend(BackendCapabilities):
             )
         return [r for r in rows if isinstance(r, dict) and r.get("workspace_id")], ""
 
+    def create_workspace(
+        self, name: str, description: str | None = None
+    ) -> tuple[dict[str, Any] | None, str]:
+        """`POST /memory/workspaces` with no `team_id`: the caller's own private workspace (WS-POLICY-10 B).
+
+        Returns (the created row, "") or (None, why it failed). Sent without `X-Workspace-Id` (creation is tenant-level)
+        and never changes the session's workspace: the caller switches with `switch_workspace` when it wants to.
+        """
+        headers = self._headers()
+        headers.pop("X-Workspace-Id", None)
+        body: dict[str, Any] = {"name": name}
+        if description is not None:
+            body["description"] = description
+        result = self._request("POST", "/memory/workspaces", headers=headers, json=body)
+        if err := self._fmt_error(result):
+            logger.warning("Workspace create failed: %s", err[:200])
+            return (
+                None,
+                f"could not create the workspace at {self._api_url} ({err[:200]}).",
+            )
+        if not isinstance(result, dict) or not result.get("workspace_id"):
+            logger.warning(
+                "Workspace create returned an unexpected shape: %r", type(result)
+            )
+            return None, (
+                f"could not create the workspace at {self._api_url} (unexpected response shape)."
+            )
+        return result, ""
+
     def resolve_switch(self, workspace: str) -> SwitchResult:
         """Resolve `workspace` against the caller's listing without changing anything.
 
@@ -831,15 +794,26 @@ class RemoteBackend(BackendCapabilities):
         workspace_id, detail = resolve_workspace(rows, workspace, id_key="workspace_id")
         if workspace_id is None:
             return refuse(detail, previous)
+        name = next(
+            (
+                str(r.get("name") or "")
+                for r in rows
+                if str(r.get("workspace_id")) == workspace_id
+            ),
+            "",
+        )
         return SwitchResult(
             ok=True,
             message=f"Switched to workspace: {detail}. The next request uses it.",
             workspace_id=workspace_id,
+            workspace_name=name,
         )
 
-    def set_active_workspace(self, workspace_id: str) -> None:
-        """Make `workspace_id` the `X-Workspace-Id` of this session's next request."""
+    def set_active_workspace(self, workspace_id: str, name: str = "") -> None:
+        """Make `workspace_id` the `X-Workspace-Id` of this session's next request (a saved pick)."""
         self._session["team_id"] = workspace_id
+        self._session["workspace_name"] = name
+        self._session["routed_by"] = ROUTED_BY_PICK
 
     def switch_workspace(self, workspace: str) -> SwitchResult:
         """Point this live session at another of the caller's workspaces.
@@ -851,7 +825,7 @@ class RemoteBackend(BackendCapabilities):
         """
         result = self.resolve_switch(workspace)
         if result.ok:
-            self.set_active_workspace(result.workspace_id)
+            self.set_active_workspace(result.workspace_id, result.workspace_name)
         return result
 
     # --- MemoryBackend protocol: implemented (have REST routes) ------------------
@@ -859,7 +833,13 @@ class RemoteBackend(BackendCapabilities):
     def add(
         self, content: str, memory_type: str = "semantic", **kwargs: Any
     ) -> str | dict:
-        """POST /memory/add. Return an item_id or a terminal held receipt."""
+        """POST /memory/add. Return an item_id or a terminal held receipt (a save receipt reads as its subject id)."""
+        return self.add_with_receipt(content, memory_type, **kwargs).value
+
+    def add_with_receipt(
+        self, content: str, memory_type: str = "semantic", **kwargs: Any
+    ) -> SaveReturn:
+        """POST /memory/add and keep the save receipt when the service returns one (see ``SaveReturn``)."""
         body: dict[str, Any] = {"content": content, "memory_type": memory_type}
         if metadata := kwargs.get("metadata"):
             body["metadata"] = (
@@ -867,19 +847,12 @@ class RemoteBackend(BackendCapabilities):
             )
         if kwargs.get("use_pipeline"):
             body["use_pipeline"] = True
-        result = (
-            self._request(
-                "POST",
-                "/memory/add",
-                workspace_id=kwargs.get("workspace_id") or None,
-                json=body,
-                timeout=120,
-            )
-            or {}
-        )
+        result = self._request("POST", "/memory/add", json=body, timeout=120) or {}
         if isinstance(result, dict):
+            if "schema_version" in result:
+                return read_wire_save(result, op="add")
             if result.get("status") == "held":
-                return result
+                return SaveReturn(result)
             # Surface the failure. The `str(result)` fallback below used to swallow
             # an {"error": ...} response and hand back "{'error': 'API error 500:
             # ...'}" AS THE NEW ITEM ID — reporting a failed write as a successful
@@ -889,12 +862,18 @@ class RemoteBackend(BackendCapabilities):
             item_id = result.get("item_id") or result.get("id")
             if not item_id:
                 raise RuntimeError(f"/memory/add returned no item id: {result!r}")
-            return str(item_id)
-        return str(result)
+            return SaveReturn(str(item_id))
+        return SaveReturn(str(result))
 
-    def get(self, item_id: str, **kwargs: Any) -> MemoryResult | None:
+    def get(
+        self, item_id: str, *, workspace_id: str | None = None, **kwargs: Any
+    ) -> MemoryResult | None:
         """GET /memory/{item_id}. Returns None only when the item genuinely is absent."""
-        result = self._request("GET", f"/memory/{path_id(item_id, under='/memory/')}")
+        result = self._request(
+            "GET",
+            f"/memory/{path_id(item_id, under='/memory/')}",
+            **({"workspace_id": workspace_id} if workspace_id is not None else {}),
+        )
         if result is None:
             return None
         # A 404 IS genuine absence — keep returning None for it. But an API 403/500
@@ -924,7 +903,9 @@ class RemoteBackend(BackendCapabilities):
             raise RuntimeError(err)
         return result
 
-    def update(self, item_id: str, **kwargs: Any) -> dict[str, Any]:
+    def update(
+        self, item_id: str, *, workspace_id: str | None = None, **kwargs: Any
+    ) -> dict[str, Any]:
         """PATCH /memory/{item_id}.
 
         Supports the CORE-CRUD-UPDATE-1 contract: content/metadata/properties/write_mode
@@ -936,7 +917,10 @@ class RemoteBackend(BackendCapabilities):
                 body[key] = kwargs[key]
         return (
             self._request(
-                "PATCH", f"/memory/{path_id(item_id, under='/memory/')}", json=body
+                "PATCH",
+                f"/memory/{path_id(item_id, under='/memory/')}",
+                json=body,
+                **({"workspace_id": workspace_id} if workspace_id is not None else {}),
             )
             or {}
         )
@@ -946,7 +930,7 @@ class RemoteBackend(BackendCapabilities):
     ) -> dict[str, Any]:
         """POST /memory/{item_id}/supersede: a new version, the old one retained.
 
-        ``valid_from`` (ISO date) is the date the new version takes effect; it is
+        ``valid_from`` (ISO datetime) is when the new version takes effect; it is
         sent only when given, so the service keeps its default otherwise.
         """
         body: dict[str, Any] = {
@@ -956,8 +940,12 @@ class RemoteBackend(BackendCapabilities):
         }
         if metadata := kwargs.get("metadata"):
             body["metadata"] = metadata
-        if valid_from := kwargs.get("valid_from"):
-            body["valid_from"] = valid_from
+        body.update(
+            scoped_options(
+                scope_go_lives=kwargs.get("scope_go_lives"),
+                valid_from=kwargs.get("valid_from"),
+            )
+        )
         result = (
             self._request(
                 "POST",
@@ -966,6 +954,8 @@ class RemoteBackend(BackendCapabilities):
             )
             or {}
         )
+        if held := self._conflict_detail(result, "decision_replace_held"):
+            raise DecisionReplaceHeld(str(held.get("message") or held["error_code"]))
         if err := self._fmt_error(result):
             raise RuntimeError(err)
         return result
@@ -981,8 +971,10 @@ class RemoteBackend(BackendCapabilities):
             return False
         return True
 
-    def ask(self, question: str, limit: int = 5, *, reasoning: bool = True) -> dict[str, Any]:
-        """POST /memory/ask, the existing web Answer-mode contract (DIST-LITE-9)."""
+    def ask(
+        self, question: str, limit: int = 5, *, reasoning: bool = True
+    ) -> dict[str, Any]:
+        """POST /memory/ask through the existing authenticated workspace path."""
         body: dict[str, Any] = {"question": question, "limit": limit}
         if reasoning is not True:
             body["reasoning"] = reasoning
@@ -999,7 +991,7 @@ class RemoteBackend(BackendCapabilities):
         to what the SDKs send, so one route body shape serves every caller.
         """
         body: dict[str, Any] = {"budget_tokens": budget_tokens}
-        for key in ("query", "sections", "preset"):
+        for key in ("query", "sections", "preset", "as_of", "fail_if_conflicted"):
             if kwargs.get(key) is not None:
                 body[key] = kwargs[key]
         return self._request("POST", "/memory/recall/pack", json=body)
@@ -1013,7 +1005,11 @@ class RemoteBackend(BackendCapabilities):
         """GET /memory/policy/bundle (GOV-STRATUM-SEAM-1 P1)."""
         params = {
             key: value
-            for key, value in {"workflow": workflow, "domain": domain}.items()
+            for key, value in {
+                "workflow": workflow,
+                "domain": domain,
+                "as_of": kwargs.get("as_of"),
+            }.items()
             if value is not None
         }
         return self._request("GET", "/memory/policy/bundle", params=params)
@@ -1042,10 +1038,10 @@ class RemoteBackend(BackendCapabilities):
         # blueprint C3: a missed allowlist entry is a silent param drop).
         if kwargs.get("as_of_date"):
             body["as_of_date"] = kwargs["as_of_date"]
+        if "fail_if_conflicted" in kwargs:
+            body["fail_if_conflicted"] = kwargs["fail_if_conflicted"]
         if kwargs.get("as_of_strict"):
             body["as_of_strict"] = True
-        if kwargs.get("valid_at"):
-            body["valid_at"] = kwargs["valid_at"]  # DHRUV-CODING-RULE-P0-1: valid time
         if kwargs.get("include_superseded"):
             body["include_superseded"] = True
         if kwargs.get("include_retracted"):
@@ -1064,14 +1060,20 @@ class RemoteBackend(BackendCapabilities):
                 if kwargs.get(k) is not None
             }
         )
+        body.update(
+            scoped_options(
+                business_scope=kwargs.get("business_scope"),
+                valid_at=kwargs.get("valid_at"),
+            )
+        )
         body = self._search_request_body(body)
         # SELF-IMPROVE-6: capture X-Search-Session-Id header from response
         self._last_search_session_id: str | None = None
         try:
-            r = self._send(
+            r = httpx.request(
                 "POST",
                 f"{self._api_url}/memory/search",
-                self._headers(),
+                headers=self._headers(),
                 json=body,
                 timeout=30,
             )
@@ -1085,11 +1087,10 @@ class RemoteBackend(BackendCapabilities):
                 "error": f"SmartMemory API unreachable at {self._api_url}. Check SMARTMEMORY_API_URL."
             }
         except httpx.HTTPStatusError as e:
+            _raise_recall_conflict(e.response)
             self._on_http_error(e.response)
             if e.response.status_code == 401:
                 self._on_unauthorized(e.response)
-            if is_missing_workspace(e.response):
-                raise RuntimeError(MISSING_WORKSPACE_HELP) from e
             if e.response.status_code in (400, 503):
                 try:
                     body = e.response.json()
@@ -1154,9 +1155,7 @@ class RemoteBackend(BackendCapabilities):
     def recall(self, cwd: str | None = None, top_k: int = 10, **kwargs: Any) -> str:
         """Client-side recall — no /memory/recall endpoint in the hosted API."""
         requested = max(1, top_k)
-        # Use the web search route's ranking and full evidence budget. Splitting
-        # recent/semantic searches both underfilled after deduplication and
-        # displaced relevant decisions with unrelated recent notes.
+        # Preserve service ranking and the entire evidence budget in one query.
         results = self.search(cwd or "", top_k=requested)
         seen: set[str] = set()
         items: list[MemoryResult] = []
@@ -1188,7 +1187,20 @@ class RemoteBackend(BackendCapabilities):
     def ingest(
         self, content: str, memory_type: str = "semantic", **kwargs: Any
     ) -> dict[str, Any] | str:
-        """POST /memory/ingest (full pipeline)."""
+        """POST /memory/ingest (full pipeline). Returns the service response, unread."""
+        return self._ingest_raw(content, memory_type, **kwargs)
+
+    def ingest_with_receipt(
+        self, content: str, memory_type: str = "semantic", **kwargs: Any
+    ) -> SaveReturn:
+        """POST /memory/ingest and keep the save receipt when the service returns one (see ``SaveReturn``)."""
+        return read_wire_save(
+            self._ingest_raw(content, memory_type, **kwargs), op="ingest"
+        )
+
+    def _ingest_raw(
+        self, content: str, memory_type: str, **kwargs: Any
+    ) -> dict[str, Any]:
         context: dict[str, Any] = {"memory_type": memory_type}
         # Merge metadata as top-level context keys (service merges context into pipeline state)
         metadata = kwargs.get("metadata")
@@ -1198,13 +1210,7 @@ class RemoteBackend(BackendCapabilities):
         if kwargs.get("origin") and not context.get("origin"):
             context["origin"] = kwargs["origin"]
         body: dict[str, Any] = {"content": content, "context": context}
-        result = self._request(
-            "POST",
-            "/memory/ingest",
-            workspace_id=kwargs.get("workspace_id") or None,
-            timeout=120,
-            json=body,
-        )
+        result = self._request("POST", "/memory/ingest", timeout=120, json=body)
         if err := self._fmt_error(result):
             return {"error": err}
         return result or {}
@@ -1380,11 +1386,31 @@ class RemoteBackend(BackendCapabilities):
             raise RuntimeError(err)
         return result
 
+    def ingest_document_with_receipt(self, source: str, **kwargs: Any) -> SaveReturn:
+        """POST /memory/ingest/document and keep the save receipt when the service returns one."""
+        return read_wire_save(
+            self.ingest_document(source, **kwargs), op="ingest_document"
+        )
+
+    def ingest_conversation_with_receipt(
+        self, turns: list, **kwargs: Any
+    ) -> SaveReturn:
+        """POST /memory/ingest/conversation and keep the save receipt when the service returns one."""
+        return read_wire_save(
+            self.ingest_conversation_sync(turns, **kwargs), op="ingest_conversation"
+        )
+
     # --- MemoryBackend protocol: NOT available in remote mode --------------------
 
     def ingest_structured(
         self, items: list[dict[str, Any]], **kwargs: Any
     ) -> dict[str, Any]:
+        """Not available in remote mode."""
+        raise NotImplementedError("Not available in remote mode. Use local backend.")
+
+    def ingest_structured_with_receipt(
+        self, data: dict[str, Any], schema: str | None = None, **kwargs: Any
+    ) -> SaveReturn:
         """Not available in remote mode."""
         raise NotImplementedError("Not available in remote mode. Use local backend.")
 
@@ -1519,6 +1545,12 @@ class RemoteBackend(BackendCapabilities):
     ) -> Any:
         """Call a decision route, raising loudly on anything but genuine absence."""
         result = self._request(method, path, **kwargs)
+        if decided := self._conflict_detail(result, "already_decided"):
+            raise DecisionAlreadyDecided(
+                str(decided.get("review_id")),
+                decided.get("action"),
+                str(decided.get("outcome") or decided.get("action") or "settled"),
+            )
         if err := self._fmt_error(result):
             if none_on_404 and "API error 404" in err:
                 return None
@@ -1556,16 +1588,24 @@ class RemoteBackend(BackendCapabilities):
             value = kwargs.get(key)
             if value is not None:
                 body[key] = value
+        body.update(scoped_options(scope_go_lives=kwargs.get("scope_go_lives")))
         return self._strip_scope(
             self._decision_request("POST", "/memory/decisions/create", json=body)
         )
 
-    def decision_get(self, decision_id: str) -> dict[str, Any] | None:
-        """GET /memory/decisions/{decision_id}."""
+    def decision_get(
+        self,
+        decision_id: str,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
+    ) -> dict[str, Any] | None:
+        """GET /memory/decisions/{decision_id} (``?as_of=`` when set)."""
         return self._decision_request(
             "GET",
             f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}",
             none_on_404=True,
+            **self._validity_params(as_of, business_scope, valid_at),
         )
 
     def decision_list(
@@ -1574,20 +1614,44 @@ class RemoteBackend(BackendCapabilities):
         decision_type: str | None = None,
         min_confidence: float = 0.0,
         limit: int = 50,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
+        status: str | None = None,
     ) -> list[dict[str, Any]]:
-        """GET /memory/decisions."""
+        """GET /memory/decisions (``status`` is the route's lifecycle filter; omitted means active)."""
         params: dict[str, Any] = {"min_confidence": min_confidence, "limit": limit}
+        if status is not None:
+            params["status"] = status
         if domain is not None:
             params["domain"] = domain
         if decision_type is not None:
             params["decision_type"] = decision_type
+        if as_of is not None:
+            params["as_of"] = as_of
+        params.update(
+            self._validity_params(as_of, business_scope, valid_at).get("params", {})
+        )
         result = self._decision_request("GET", "/memory/decisions", params=params)
         return list(result.get("decisions") or [])
 
-    def decision_search(self, topic: str, limit: int = 20) -> list[dict[str, Any]]:
+    def decision_search(
+        self,
+        topic: str,
+        limit: int = 20,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
+    ) -> list[dict[str, Any]]:
         """GET /memory/decisions/search."""
+        params: dict[str, Any] = {"topic": topic, "limit": limit}
+        if as_of is not None:
+            params["as_of"] = as_of
+        params.update(
+            self._validity_params(as_of, business_scope, valid_at).get("params", {})
+        )
         result = self._decision_request(
-            "GET", "/memory/decisions/search", params={"topic": topic, "limit": limit}
+            "GET", "/memory/decisions/search", params=params
         )
         return list(result.get("decisions") or [])
 
@@ -1601,6 +1665,8 @@ class RemoteBackend(BackendCapabilities):
         rejected_alternatives: list[str] | None = None,
         rationale: str | None = None,
         constraints: list[str] | None = None,
+        scope_go_lives: list[dict[str, Any]] | None = None,
+        valid_from: str | None = None,
     ) -> dict[str, Any] | None:
         """POST /memory/decisions/{decision_id}/supersede."""
         body: dict[str, Any] = {
@@ -1615,6 +1681,9 @@ class RemoteBackend(BackendCapabilities):
             body["rationale"] = rationale
         if constraints is not None:
             body["constraints"] = constraints
+        body.update(
+            scoped_options(scope_go_lives=scope_go_lives, valid_from=valid_from)
+        )
         result = self._decision_request(
             "POST",
             f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/supersede",
@@ -1632,6 +1701,28 @@ class RemoteBackend(BackendCapabilities):
             json={"reason": reason},
         )
         return self._strip_scope(result) if result is not None else None
+
+    def decision_restore(self, decision_id: str, reason: str) -> dict[str, Any] | None:
+        """POST /memory/decisions/{decision_id}/restore (DECISION-RESTORE-ONE-ACTION-1). 404 is None; the route's
+        403/409 refusals raise DecisionRestoreRefused with the detail code; anything else raises RuntimeError."""
+        path = f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/restore"
+        result = self._request("POST", path, json={"reason": reason})
+        if err := self._fmt_error(result):
+            status = result.get("status_code")
+            if status == 404:
+                return None
+            body = result.get("body")
+            detail = body.get("detail") if isinstance(body, dict) else None
+            if status in (403, 409) and isinstance(detail, dict) and detail.get("code"):
+                raise DecisionRestoreRefused(
+                    str(detail["code"]),
+                    str(detail.get("message") or err),
+                    detail.get("newer_decision_id"),
+                )
+            raise RuntimeError(f"POST {path} failed: {err}")
+        if result is None:
+            raise RuntimeError(f"POST {path} failed: empty response from the API")
+        return self._strip_scope(result)
 
     def decision_reinforce(
         self, decision_id: str, evidence_id: str
@@ -1655,13 +1746,67 @@ class RemoteBackend(BackendCapabilities):
             json={"evidence_id": evidence_id},
         )
 
-    def decision_provenance(self, decision_id: str) -> dict[str, Any] | None:
-        """GET /memory/decisions/{decision_id}/provenance."""
+    def _evidence_request(self, method: str, path: str, **kwargs: Any) -> Any:
+        """Call an evidence route (SM-EVIDENCE-TYPE-1). The route's refusals (404 not found, 409 ended decision or a
+        different body, 422 wrong type or a malformed record) raise EvidenceRefused with the route's detail, as local
+        mode does; anything else raises RuntimeError."""
+        result = self._request(method, path, **kwargs)
+        if err := self._fmt_error(result):
+            if result.get("status_code") in (404, 409, 422):
+                body = result.get("body")
+                detail = body.get("detail") if isinstance(body, dict) else None
+                raise EvidenceRefused(detail if isinstance(detail, str) else err)
+            raise RuntimeError(f"{method} {path} failed: {err}")
+        if result is None:
+            raise RuntimeError(f"{method} {path} failed: empty response from the API")
+        return result
+
+    def decision_link_evidence(
+        self, decision_id: str, evidence_id: str
+    ) -> dict[str, Any]:
+        """POST /memory/decisions/{decision_id}/evidence."""
+        return self._evidence_request(
+            "POST",
+            f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/evidence",
+            json={"evidence_id": evidence_id},
+        )
+
+    def evidence_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        """POST /memory/evidence."""
+        return self._evidence_request(
+            "POST", "/memory/evidence", json={"record": record}
+        )
+
+    def decision_provenance(
+        self,
+        decision_id: str,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
+    ) -> dict[str, Any] | None:
+        """GET /memory/decisions/{decision_id}/provenance (``?as_of=`` when set)."""
         return self._decision_request(
             "GET",
             f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/provenance",
             none_on_404=True,
+            **self._validity_params(as_of, business_scope, valid_at),
         )
+
+    @staticmethod
+    def _validity_params(as_of, business_scope, valid_at):
+        params = scoped_options(business_scope=business_scope, valid_at=valid_at)
+        if "business_scope" in params:
+            params["business_scope"] = json.dumps(
+                params["business_scope"], separators=(",", ":")
+            )
+        if as_of is not None:
+            params["as_of"] = as_of
+        return {"params": params} if params else {}
+
+    @staticmethod
+    def _as_of_params(as_of: str | None) -> dict[str, Any]:
+        """``{"params": {"as_of": ...}}`` for a dated GET, ``{}`` otherwise (the request stays as before)."""
+        return {} if as_of is None else {"params": {"as_of": as_of}}
 
     def decision_find_conflicts(self, decision_id: str) -> dict[str, Any] | None:
         """POST /memory/decisions/{decision_id}/conflicts."""
@@ -1713,3 +1858,138 @@ class RemoteBackend(BackendCapabilities):
             json={},
         )
         return bool(result.get("activated"))
+
+    # -- Plans, anchors, failure journal (SM-LOCAL-TOOLS-1) --
+    #
+    # Patterns moved to the REST client at the end of this class (SM-PATTERN-CRUD-1).
+    # Remote mode still does not run most of these. Before, the tools built a core manager over
+    # this wrapper: the writes stopped at ``ingest_structured`` (this same message) and the list
+    # reads raised AttributeError on ``_graph``; those now give this one message. The two reads
+    # that reached the service through ``get``/``search`` keep that path unchanged. The service
+    # has the routes (memory_service/api/routes/{patterns,plans,anchors,failures}.py); a client
+    # for them here is its own unit.
+
+    def _not_in_remote_mode(self, *args: Any, **kwargs: Any) -> NoReturn:
+        raise NotImplementedError("Not available in remote mode. Use local backend.")
+
+    plan_create = plan_active = plan_update_task = _not_in_remote_mode
+    anchor_set = anchor_list = anchor_clear = anchor_graduate = _not_in_remote_mode
+    anchor_check_drift = log_failure = _not_in_remote_mode
+
+    def plan_get(self, plan_id: str) -> dict[str, Any] | None:
+        """PlanManager over this wrapper, as the tool ran it before (a ``get`` by id)."""
+        from smartmemory.plans.manager import PlanManager
+
+        return PlanManager(self).get(plan_id)
+
+    def check_failure(
+        self, error_type: str, context: str, top_k: int = 3
+    ) -> list[dict[str, Any]]:
+        """FailureJournal over this wrapper, as the tool ran it before (a ``search``)."""
+        from smartmemory.plans.failure_journal import FailureJournal
+
+        return FailureJournal(self).check_before_retry(error_type, context, top_k)
+
+    # -- Adherence patterns over /memory/patterns (SM-PATTERN-CRUD-1, OWNER D-0089) --
+    #
+    # The REST routes, never core: same loud-failure rule as the decision block
+    # (absence is None, anything else raises), server-only identity stripped from the
+    # responses. ``pattern_seed`` reads the client's MEMORY.md dir HERE (links confined
+    # to the dir, pattern_seed_reader.py) and sends text only; the server never sees a path.
+
+    _PATTERN_EDITOR = "mcp:remote"
+
+    def pattern_query(
+        self,
+        scope: str | None = None,
+        severity: str | None = None,
+        free_text: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """GET /memory/patterns (filters conjunctive; the route caps limit at 500)."""
+        params: dict[str, Any] = {"limit": max(1, min(int(limit), 500))}
+        if scope is not None:
+            params["scope"] = scope
+        if severity is not None:
+            params["severity"] = severity
+        if free_text is not None:
+            params["q"] = free_text
+        result = self._decision_request("GET", "/memory/patterns", params=params)
+        return list(result.get("patterns") or [])
+
+    def pattern_get(self, pattern_id: str) -> dict[str, Any] | None:
+        """GET /memory/patterns/{id}; None on 404."""
+        result = self._decision_request(
+            "GET",
+            f"/memory/patterns/{path_id(pattern_id, under='/memory/patterns/')}",
+            none_on_404=True,
+        )
+        return None if result is None else result.get("pattern")
+
+    def pattern_list(self, limit: int = 200) -> list[dict[str, Any]]:
+        """GET /memory/patterns with no filters."""
+        return self.pattern_query(limit=limit)
+
+    def pattern_create(
+        self,
+        title: str,
+        content: str,
+        severity: str = "warn",
+        scope: list[str] | None = None,
+        examples: list[dict[str, Any]] | None = None,
+        rationale: str = "",
+    ) -> dict[str, Any]:
+        """POST /memory/patterns; the server stamps ``updated_by = rest:<user>``."""
+        body = {
+            "title": title,
+            "content": content,
+            "severity": severity,
+            "scope": list(scope or []),
+            "examples": list(examples or []),
+            "rationale": rationale,
+            "source": self._PATTERN_EDITOR,
+        }
+        result = self._decision_request("POST", "/memory/patterns", json=body)
+        return result["pattern"]
+
+    def pattern_update(
+        self, pattern_id: str, /, **fields: Any
+    ) -> dict[str, Any] | None:
+        """PUT /memory/patterns/{id}; None on 404. A protected field is the route's 422 (raises)."""
+        body = dict(fields, updated_by=self._PATTERN_EDITOR)
+        result = self._decision_request(
+            "PUT",
+            f"/memory/patterns/{path_id(pattern_id, under='/memory/patterns/')}",
+            none_on_404=True,
+            json=body,
+        )
+        return None if result is None else result.get("pattern")
+
+    def pattern_retire(
+        self, pattern_id: str, reason: str = "retired via MCP"
+    ) -> dict[str, Any] | None:
+        """DELETE /memory/patterns/{id} (soft retract); None on 404."""
+        result = self._decision_request(
+            "DELETE",
+            f"/memory/patterns/{path_id(pattern_id, under='/memory/patterns/')}",
+            none_on_404=True,
+            params={"reason": reason},
+        )
+        return None if result is None else self._strip_scope(result)
+
+    def pattern_seed(self, directory: str) -> dict[str, Any]:
+        """Read <directory>/MEMORY.md here, POST /memory/patterns/seed with the text only."""
+        from .pattern_seed_reader import read_memory_dir
+
+        index_text, files, refused = read_memory_dir(Path(directory) / "MEMORY.md")
+        body = {
+            "index_text": index_text,
+            "files": files,
+            "refused": refused,
+            "source_prefix": f"{self._PATTERN_EDITOR}:memory_md",
+        }
+        result = self._decision_request("POST", "/memory/patterns/seed", json=body)
+        return {
+            "created": list(result.get("created") or []),
+            "skipped": list(result.get("skipped") or []),
+        }

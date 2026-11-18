@@ -86,15 +86,17 @@ def register(mcp):
                     type(item).__name__,
                 )
                 continue
-            metadata = item.get("metadata") or {}
-            if not isinstance(metadata, dict):
+            raw_metadata = item.get("metadata") or {}
+            metadata = raw_metadata
+            if not isinstance(raw_metadata, dict):
                 log.warning(
                     "code_effects item %s has %s metadata, not a dict; its effects "
                     "bundle was not read",
                     item.get("item_id"),
-                    type(metadata).__name__,
+                    type(raw_metadata).__name__,
                 )
                 metadata = {}
+                raw_metadata = None  # malformed: model_item must not warn again
             bundle = metadata.get("effects_bundle")
             if isinstance(bundle, str):
                 try:
@@ -104,7 +106,7 @@ def register(mcp):
                         "Uploaded effects evidence corrupt, bundle could not be decoded"
                     )
                     raise ValueError("Corrupt uploaded effects bundle") from exc
-            out = model_item(item)
+            out = model_item(item, raw_metadata)
             if bundle is not None:
                 out["metadata"] = {"effects_bundle": bundle}
             items.append(out)

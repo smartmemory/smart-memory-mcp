@@ -29,24 +29,25 @@ SNAPSHOT = SERVICE_REPO / "tests" / "contracts" / "snapshots" / "openapi_schema.
 # The route each hosted tool reaches, read off the backend method it calls.
 # `None` means the tool makes no svc-api call of its own.
 TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
-    "memory_ingest": ("post", "/memory/ingest"),
+    "memory_save": ("post", "/memory/ingest"),  # pending: POST /memory/add
     "memory_search": ("post", "/memory/search"),
     # The hosted variant always takes RemoteBackend.recall, which is search.
     "memory_recall": ("post", "/memory/search"),
-    "memory_ask": ("post", "/memory/ask"),
     "read_around": ("post", "/memory/read-around"),
     "memory_get": ("get", "/memory/{item_id}"),
     "memory_explain": ("get", "/memory/{memory_id}/explain"),
     "memory_recall_pack": ("post", "/memory/recall/pack"),
     "memory_policy_bundle": ("get", "/memory/policy/bundle"),
-    "memory_add": ("post", "/memory/add"),
     "memory_update": ("patch", "/memory/{item_id}"),
+    "memory_ask": ("post", "/memory/ask"),
     "memory_supersede": ("post", "/memory/{item_id}/supersede"),
     "memory_delete": ("delete", "/memory/{item_id}"),
     "memory_list": ("get", "/memory/list"),
     "memory_stats": ("get", "/memory/health"),
-    "memory_distill": ("post", "/memory/add"),
-    "memory_ingest_conversation": ("post", "/memory/ingest/conversation"),
+    "memory_save_conversation": (
+        "post",
+        "/memory/ingest/conversation",
+    ),  # a turn pair: POST /memory/add
     "memory_search_by_metadata": ("get", "/memory/by-metadata"),
     "memory_feedback": ("post", "/memory/result-feedback"),
     "code_effects": ("get", "/memory/list"),
@@ -57,13 +58,19 @@ TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
     "agent_set_recall_profile": ("put", "/memory/agents/{agent_id}/recall-profile"),
     "agent_get_recall_profile": ("get", "/memory/agents/{agent_id}/recall-profile"),
     "reasoning_query_traces": ("post", "/memory/search"),
-    # WS-ROUTING-5: the switch and the listing read workspaces, not the caller's Teams (MCP-TOOL-SURFACE-1 s2).
     "switch_workspace": ("get", "/memory/workspaces"),
     "switch_team": (
         "get",
         "/memory/workspaces",
     ),  # deprecated alias of switch_workspace
     "list_workspaces": ("get", "/memory/workspaces"),
+    "create_workspace": ("post", "/memory/workspaces"),  # WS-POLICY-10 B: no team_id
+    "decision_create": ("post", "/memory/decisions/create"),
+    "decision_supersede": ("post", "/memory/decisions/{decision_id}/supersede"),
+    "decision_get": ("get", "/memory/decisions/{decision_id}"),
+    "decision_list": ("get", "/memory/decisions"),
+    "decision_search": ("get", "/memory/decisions/search"),
+    "decision_provenance": ("get", "/memory/decisions/{decision_id}/provenance"),
     "whoami": None,  # session state only
 }
 

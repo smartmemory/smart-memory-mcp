@@ -77,27 +77,38 @@ def test_decision_create_builds_manager_with_local_sm_not_wrapper():
     assert "dec_abc123" in out
 
 
-def test_decision_list_builds_queries_with_local_sm_not_wrapper():
+def test_decision_list_builds_queries_with_local_sm_not_wrapper(tmp_path):
+    from smartmemory.decisions.queries import DecisionQueries
+    from smartmemory.pipeline.config import PipelineConfig
+    from smartmemory.tools.factory import create_lite_memory
+
     tools = _tools()
-    backend = _local_backend()
+    memory = create_lite_memory(
+        data_dir=str(tmp_path / "test_scoped_r1_local_queries"),
+        pipeline_profile=PipelineConfig.lite_hermetic(),
+        spawn_worker=False,
+    )
+    backend = _local_backend(memory)
     captured = {}
+    original_init = DecisionQueries.__init__
 
-    class _FakeQueries:
-        def __init__(self, mem):
-            captured["mem"] = mem
+    def capture_queries(self, mem):
+        captured["mem"] = mem
+        original_init(self, mem)
 
-        def get_active_decisions(self, **kw):
-            return []
+    try:
+        with (
+            patch(
+                "smartmemory_mcp.tools.decision_tools.get_backend", return_value=backend
+            ),
+            patch.object(DecisionQueries, "__init__", capture_queries),
+        ):
+            out = tools["decision_list"]()
 
-    with (
-        patch("smartmemory_mcp.tools.decision_tools.get_backend") as gb,
-        patch("smartmemory.decisions.queries.DecisionQueries", _FakeQueries),
-    ):
-        gb.return_value = backend
-        out = tools["decision_list"]()
-
-    assert captured.get("mem") is backend._mem
-    assert out == "No active decisions found."
+        assert captured.get("mem") is backend._mem
+        assert out == "No active decisions found."
+    finally:
+        memory.close()
 
 
 def test_local_backend_never_hands_the_wrapper_to_residuation():

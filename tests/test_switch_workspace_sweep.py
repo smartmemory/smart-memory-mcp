@@ -21,11 +21,11 @@ from typing import Any
 import httpx
 import pytest
 
-from smartmemory_mcp.backends.local import LocalBackend
+from smartmemory_mcp.backends.local import LocalBackend, SaveReturn
 from smartmemory_mcp.tools import portability_tools
 
-from ._tools import tool_fn
 from .test_hosted_tools_allowlist import _Harness, _text, fake_svc_api
+from ._tools import tool_fn
 from .test_switch_workspace import (  # noqa: F401  (_isolate is an autouse fixture)
     API,
     FakeService,
@@ -81,7 +81,15 @@ class _StdioServiceWithTeams(FakeService):
 
 def _hosted(monkeypatch, caplog, _tmp_path, arg: str):
     harness = _Harness()
-    harness.routing.install(monkeypatch, _svc_with_teams())
+    headers = []
+    base = _svc_with_teams()
+
+    def svc(method, url, **kwargs):
+        if httpx.URL(url).path == "/memory/search":
+            headers.append((kwargs.get("headers") or {}).get("X-Workspace-Id"))
+        return base(method, url, **kwargs)
+
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", svc)
 
     async def body(client):
         session_id = await harness.session(client)
@@ -90,12 +98,11 @@ def _hosted(monkeypatch, caplog, _tmp_path, arg: str):
         result = await harness.call(
             client, session_id, "switch_workspace", {"workspace": arg}
         )
-        harness.routing.resolved.clear()
         await harness.call(client, session_id, "memory_search", {"query": "q"})
         return result
 
     reply = _text(harness.run(body))
-    lands = harness.routing.resolved[0][2] if harness.routing.resolved else None
+    lands = headers[0] if headers else None
     return reply, lands, _warnings(caplog)
 
 
@@ -113,7 +120,6 @@ def _stdio(monkeypatch, caplog, _tmp_path, arg: str):
 MIGRATES = {
     "pick-then-round-trip": ("Beta", None, ["local", "remote"]),
     "switch-during-export-then-local": ("Beta", "Alpha", ["local"]),
-    "switch-during-export-no-pick-then-local": (None, "Alpha", ["local"]),
     "switch-during-export-then-round-trip": ("Beta", "Alpha", ["local", "remote"]),
     # The switch commits before the export builds its headers (M1): the export must still read ws-b.
     "switch-before-export-headers-then-local": ("Beta", "Alpha", ["local"]),
@@ -137,7 +143,12 @@ def _migrate(monkeypatch, caplog, tmp_path, arg: str):
         sys.modules, "smartmemory_app", types.ModuleType("smartmemory_app")
     )
     monkeypatch.setitem(sys.modules, "smartmemory_app.config", config_module)
-    monkeypatch.setattr(LocalBackend, "add", lambda self, content, **kw: "m-1")
+    # 2.0: memory_save's free-text path on Lite is `ingest_with_receipt` (U4.42-FU-TOOLS retired memory_add).
+    monkeypatch.setattr(
+        LocalBackend,
+        "ingest_with_receipt",
+        lambda self, content, **kw: SaveReturn("m-1"),
+    )
 
     service = FakeService()
     _remote(monkeypatch, service)
@@ -189,7 +200,7 @@ def _migrate(monkeypatch, caplog, tmp_path, arg: str):
     if "headers" in arg:
         assert exported_from == ["ws-b"], exported_from
     mark = len(service.seen)
-    tool_fn("memory_add")(content="after the migrate")
+    tool_fn("memory_save")(content="after the migrate")
     headers = service.headers_after(mark)
     return reply, (headers[0] if headers else "local"), _warnings(caplog)
 
@@ -254,12 +265,13 @@ ROWS = [
     ),
     # item 5, stdio: the same split
     ("stdio", "Beta", ("Switched to workspace: Beta (ws-b)",), (), "ws-b", ""),
+    # 2.0 has no WS-ROUTING-5 header rule: after a refused switch the next request still names the account default.
     (
         "stdio",
         "team-ops",
         ("Workspace not switched",),
         ("Switched",),
-        None,
+        "ws-a",
         "Workspace switch refused",
     ),
     # item 8: a switch, then a successful round trip, comes back to the switched workspace
@@ -283,17 +295,8 @@ ROWS = [
         "local",
         "switch_workspace during the export was not kept",
     ),
-    (
-        "migrate",
-        "switch-during-export-no-pick-then-local",
-        (
-            "Workspace is now default (local mode).",
-            "Your switch to ws-a during the export was not kept",
-        ),
-        (),
-        "local",
-        "switch_workspace during the export was not kept",
-    ),
+    # "switch-during-export-no-pick-then-local" is NOT on 2.0 (FWD-MERGE-4): without WS-ROUTING-5's header rule a
+    # remote session always carries a workspace, so a "no pick" park cannot occur.
     # item 8: the round trip returns the data to where it came from (ws-b), which the move to local named
     (
         "migrate",

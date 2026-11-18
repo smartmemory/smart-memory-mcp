@@ -16,10 +16,11 @@ from fastmcp.exceptions import ToolError
 from key_value.aio.protocols.key_value import AsyncKeyValue
 from mcp.types import ToolAnnotations
 
-from ..backends.remote import MISSING_TEAMS_SCOPE, describe_routing
+from ..backends.remote import MISSING_TEAMS_SCOPE, routed_by_lines
 from ..health import register_health
 from ..instructions import HOSTED_INSTRUCTIONS
 from ..tools.common import get_backend, graceful
+from ..tool_trace import ToolTraceMiddleware
 from ..tools.lexical_contract import validate_channel_weights
 from .auth import build_auth
 from .config import HostedConfig
@@ -29,6 +30,7 @@ from .middleware import HostedIdentityMiddleware, HostedSessionSelectionError
 from .ratelimit import hosted_asgi_middleware
 from ..workspace_select import (
     ALIAS_NOTICE,
+    format_created_workspace,
     format_workspace_rows,
     refuse,
     resolve_workspace,
@@ -77,7 +79,7 @@ def build_hosted_server(
         SERVER_NAME,
         instructions=HOSTED_INSTRUCTIONS,
         auth=auth,
-        middleware=[identity_middleware],
+        middleware=[identity_middleware, ToolTraceMiddleware()],
         # The hosted variants of memory_search and memory_recall deliberately
         # supersede the ones their module registers. "replace" is fastmcp's
         # supported route for that (`local_provider.py:186-200`); there is no
@@ -119,21 +121,17 @@ def _register_hosted_tools(
         if identity is None:
             raise ToolError("Unauthorized: no identity bound to this call")
         verified = identity.verified
-        # The middleware already read the service's routing answer (WS-ROUTING-4/5) before building this call's backend.
-        workspace, routed = describe_routing(
-            identity.routing, verified.active_workspace_id or identity.team_id
-        )
+        # The middleware already read the saved pick (SM20-WS-ROUTING-PARITY-1) before building this call's backend.
+        team_id = identity.team_id
         return "\n".join(
             [
                 f"User: {verified.email or verified.user_id}",
                 f"User ID: {verified.user_id}",
                 f"Tenant: {verified.tenant_id}",
-                f"Workspace: {workspace}",
-                f"Routed by: {routed}",
+                f"Workspace: {team_id}",
                 f"Auth: {verified.kind}",
                 "Backend: hosted (mcp.smartmemory.ai)",
-                "Change workspace with switch_workspace(workspace); list them with list_workspaces(). "
-                "A switch is saved for you and this MCP client and lapses after a day without writes.",
+                routed_by_lines(identity.backend.routed_by),
             ]
         )
 
@@ -154,6 +152,34 @@ def _register_hosted_tools(
         if rows is None:
             raise ToolError(f"Could not list your workspaces: {why}")
         return format_workspace_rows(rows, identity.team_id if identity else "")
+
+    @mcp.tool(
+        name="create_workspace",
+        title="Create private workspace",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def hosted_create_workspace(
+        name: str, ctx: Context, description: Optional[str] = None
+    ) -> str:
+        """Create a private workspace that only you can see (no Team), and return its id.
+
+        Does not switch this session: call switch_workspace with the returned id
+        to write there. Agent keys and workspace-bound keys are refused by the server.
+        """
+        if not name or not name.strip():
+            raise ToolError("Could not create the workspace: name is required.")
+        backend = get_backend()
+        row, why = backend.create_workspace(name.strip(), description)
+        if row is None:
+            # The hosted api_url is the internal svc-api address: never shown to a hosted caller.
+            why = why.replace(f" at {backend._api_url}", "")
+            raise ToolError(f"Could not create the workspace: {why}")
+        return format_created_workspace(row)
 
     async def switch_session_workspace(ref: str, ctx: Context) -> str:
         """The one hosted switch: membership-checked, saved server-side (WS-ROUTING-4).
@@ -191,9 +217,9 @@ def _register_hosted_tools(
     async def hosted_switch_workspace(workspace: str, ctx: Context) -> str:
         """Switch to another workspace you belong to, by id or name.
 
-        The selection is saved for you and this MCP client: it survives a
-        reconnect, lapses after a day without writes, and never leaks into
-        another user's calls. On failure the previous workspace stays active.
+        The selection is saved server-side for you and this MCP client: it
+        survives a reconnect and a server restart, and never leaks into another
+        user's calls. On failure the previous workspace stays active.
         """
         return await switch_session_workspace(workspace, ctx)
 
@@ -233,16 +259,18 @@ def _register_hosted_tools(
         cite: bool = False,
         as_of_date: Optional[str] = None,
         as_of_strict: bool = False,
-        valid_at: Optional[str] = None,
+        fail_if_conflicted: bool = False,
         include_superseded: bool = False,
         include_retracted: bool = False,
         include_archived: bool = False,
+        business_scope: Optional[dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ):
         """Search memories using semantic similarity with optional hybrid mode.
 
-        valid_at (ISO-8601) asks what was IN FORCE ON that date ("which rule
-        applied on April 10?"). as_of_date asks what had been RECORDED BY that
-        instant. Both together are an AND.
+        valid_at (ISO datetime) asks what was in force on that date.
+        as_of_date asks what had been recorded by then. Both together are an AND.
+        business_scope selects an exact site with sponsor fallback.
 
         Hosted note: `cite=True` is not available — citation formatting runs in
         the `smartmemory` core package, which the hosted server does not ship.
@@ -266,10 +294,12 @@ def _register_hosted_tools(
             cite=False,
             as_of_date=as_of_date,
             as_of_strict=as_of_strict,
-            valid_at=valid_at,
+            fail_if_conflicted=fail_if_conflicted,
             include_superseded=include_superseded,
             include_retracted=include_retracted,
             include_archived=include_archived,
+            business_scope=business_scope,
+            valid_at=valid_at,
         )
 
     original_recall = originals["memory_recall"]

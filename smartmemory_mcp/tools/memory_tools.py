@@ -7,13 +7,52 @@ from typing import Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 
+from smartmemory_mcp.backends.interface import DecisionReplaceHeld
+from smartmemory_mcp.backends.models import (
+    none_found,
+    partial_note,
+    partial_reasons,
+    validated_carrier,
+)
 from smartmemory_mcp.tools.search_window import with_search_window
 from smartmemory_mcp.result_labels import supersession_label
 
-from .common import get_backend, graceful
+try:
+    from smartmemory.refusal_logging import (
+        mark_refusal_logged,
+        refusal_logged,
+        refusal_text,
+    )
+
+    _HAS_CORE = True
+except ImportError:  # remote-only install: no core, no logged mark
+    _HAS_CORE = False
+
+
+from .common import (
+    checked_as_of,
+    dated,
+    get_backend,
+    name_workspace,
+    target_workspace,
+    graceful,
+    scoped_options,
+    refuse_scoped_options,
+    resolution_text,
+    read_metadata,
+    _UNSET,
+)
 from .lexical_contract import validate_channel_weights
 
 logger = logging.getLogger(__name__)
+
+
+def _core_marks() -> bool:
+    """Core is importable, so its read gate is bound (always on) and errors carry its refusal mark (U5.21).
+
+    False only on a remote-only install, which has no core: there each failure is logged here as before.
+    """
+    return _HAS_CORE
 
 
 _CREATED_AT_MAX_LEN = 40
@@ -116,6 +155,7 @@ _MODEL_ITEM_FIELDS = frozenset(
         "memory_type",
         "content",
         "score",
+        "matched_by",
         "confidence",
         "stale",
         "superseded",
@@ -123,19 +163,36 @@ _MODEL_ITEM_FIELDS = frozenset(
         "derived_from",
         "reference",
         "as_of_resolution",
+        "conflict",
         "valid_at_resolution",
         "score_breakdown",
+        # U5.22: extraction status of a pending/merged hit (gate-ON arm only).
+        "read_status",
     }
 )
 
 
-def model_item(item: Dict[str, Any]) -> Dict[str, Any]:
-    """Model-facing copy of a read-tool item: its own fields, ``metadata`` emptied."""
-    return {
+def model_item(item: Dict[str, Any], metadata: Any = _UNSET) -> Dict[str, Any]:
+    """Model-facing copy of a read-tool item: its own fields, ``metadata`` emptied.
+
+    ``metadata``: the caller's already-validated ``read_metadata`` result (``None``
+    = malformed, already warned), so one item never warns twice in one call."""
+    out = {
         key: {} if key == "metadata" else value
         for key, value in item.items()
         if key == "metadata" or key in _MODEL_ITEM_FIELDS
     }
+    if "read_status" in out:
+        status = validated_carrier(out["read_status"], item.get("item_id"))
+        if status is None:
+            del out["read_status"]
+        else:
+            out["read_status"] = status
+    if metadata is _UNSET:
+        metadata = read_metadata(item, "model_item")
+    if resolution := (metadata or {}).get("scoped_validity_resolution"):
+        out["scoped_validity_resolution"] = resolution
+    return out
 
 
 def model_items(items: List[Any], tool: str) -> List[Dict[str, Any]]:
@@ -279,7 +336,10 @@ def _build_working_context(
 
     decision_id = _uuid.uuid4().hex
     fetch_k = max(k * 5, k)
-    raw = list(backend.search(query, top_k=fetch_k) or [])
+    found = backend.search(query, top_k=fetch_k)
+    # U5.21 (C8): the call's completeness is read off its own return, before ``list(...)`` makes a plain list again.
+    partial = partial_reasons(found)
+    raw = list(found or [])
 
     items: List[Dict[str, Any]] = []
     tokens_used = 0
@@ -290,26 +350,28 @@ def _build_working_context(
         if max_tokens is not None and tokens_used + item_tokens > max_tokens:
             break
         activation_score = compute_activation_score(row)
-        items.append(
-            _strip_identity_metadata(
-                {
-                    "item_id": row.get("item_id"),
-                    "content": content,
-                    "memory_type": row.get("memory_type"),
-                    "metadata": row.get("metadata") or {},
-                    "via_supersession_of": row.get("via_supersession_of"),
-                    "score_breakdown": {
-                        "activation": activation_score,
-                        "relevance": float(row.get("score") or 0.0),
-                        "recency": 1.0,
-                        "centrality": 1.0,
-                        "anchor_forced": False,
-                        "session_pin_boost": 0.0,
-                        "freshness_boost": 0.0,
-                    },
-                }
-            )
+        entry = _strip_identity_metadata(
+            {
+                "item_id": row.get("item_id"),
+                "content": content,
+                "memory_type": row.get("memory_type"),
+                "metadata": row.get("metadata") or {},
+                "via_supersession_of": row.get("via_supersession_of"),
+                "score_breakdown": {
+                    "activation": activation_score,
+                    "relevance": float(row.get("score") or 0.0),
+                    "recency": 1.0,
+                    "centrality": 1.0,
+                    "anchor_forced": False,
+                    "session_pin_boost": 0.0,
+                    "freshness_boost": 0.0,
+                },
+            }
         )
+        status = validated_carrier(row.get("read_status"), row.get("item_id"))
+        if status is not None:
+            entry["read_status"] = status
+        items.append(entry)
         tokens_used += item_tokens
 
     if max_tokens is not None and raw and not items:
@@ -318,7 +380,7 @@ def _build_working_context(
             f"budget_too_small: max_tokens={max_tokens} cannot fit the smallest item"
         )
 
-    return {
+    response = {
         "decision_id": decision_id,
         "items": [model_item(item) for item in items] if model_facing else items,
         "drift_warnings": [],
@@ -327,6 +389,13 @@ def _build_working_context(
         "tokens_budget": max_tokens,
         "deprecation": None,
     }
+    if partial:
+        # Added only to a partial answer (never to a complete one): an empty ``items`` is then not read as "nothing".
+        response["partial_answer"] = {
+            "reasons": list(partial),
+            "note": partial_note(partial),
+        }
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -359,6 +428,12 @@ def _relative_age(dt) -> str:
         return ""
 
 
+def found_by_text(item: Dict[str, Any], sep: str) -> str:
+    """CLAIMS-BUILD-21: ``found by: lexical, semantic`` for a result that names its lanes, else nothing."""
+    lanes = item.get("matched_by")
+    return f"{sep}found by: {', '.join(lanes)}" if lanes else ""
+
+
 def _format_catalog(query: str, results: list) -> str:
     """Format search results as a compact ranked catalog."""
     if not results:
@@ -366,7 +441,7 @@ def _format_catalog(query: str, results: list) -> str:
 
     lines = [f"Memory catalog for '{query}' — {len(results)} results", "─" * 43]
     for i, item in enumerate(results, 1):
-        meta = item["metadata"] or {}
+        meta = read_metadata(item, "memory_search catalog")  # once per item
 
         # Content only: metadata text (title) is not copied (MCP-MEMGET-META-1).
         content = str(item["content"]).replace("\n", " ")
@@ -376,14 +451,17 @@ def _format_catalog(query: str, results: list) -> str:
         mtype = item["memory_type"]
         score = item.get("score")
         score_str = f"  {score:.3f}" if score is not None else ""
+        score_str += found_by_text(item, "  ")
         age_str = _relative_age(item.get("created_at"))
-        stale = meta.get("stale", False)
-        stale_str = "  ⚠ stale" if stale else ""
+        # Malformed metadata (meta is None): the stale marker is left out.
+        stale_str = "  ⚠ stale" if (meta or {}).get("stale", False) else ""
 
         lines.append(
             f"{i}. {item_id}  {mtype}{score_str}  {age_str}{stale_str}{supersession_label(item)}"
         )
         lines.append(f"   {snippet}")
+        if diagnostic := resolution_text(item, meta):
+            lines.append(f"   {diagnostic}")
         lines.append("")
 
     lines.append("─" * 43)
@@ -391,19 +469,23 @@ def _format_catalog(query: str, results: list) -> str:
     return "\n".join(lines)
 
 
-def _format_turn_content(user_turn: str, assistant_turn: str) -> str:
-    """Format a user/assistant turn pair for storage."""
-    return f"USER: {user_turn.strip()}\nASSISTANT: {assistant_turn.strip()}"
-
-
 def _format_recall(
-    query: str, results: list, session_id: str = None, drift_warnings: list = None
+    query: str,
+    results: list,
+    session_id: str = None,
+    drift_warnings: list = None,
+    partial: tuple = (),
 ) -> str:
-    """Format recalled turns as a prompt-ready context string."""
+    """Format recalled turns as a prompt-ready context string.
+
+    ``partial``: why core called the answer partial (U5.21), appended so a partial answer is never read as complete.
+    """
     if not results:
         if session_id:
-            return "No prior turns found for this session."
-        return f"No prior turns found for: {query}"
+            return none_found(
+                "No prior turns found for this session.", "prior turns", partial
+            )
+        return none_found(f"No prior turns found for: {query}", "prior turns", partial)
 
     lines = [f"Relevant prior context for '{query}':", ""]
     for i, item in enumerate(results, 1):
@@ -438,22 +520,10 @@ def _format_recall(
                 f"  [{severity}] {acontent} (drift={dscore:.2f}, missing: {missing_str})"
             )
 
+    if partial:
+        lines.append("")
+        lines.append(partial_note(partial))
     return "\n".join(lines)
-
-
-def _workspace_kwargs(backend: Any, workspace_id: Optional[str]) -> dict[str, str]:
-    """The backend kwarg for a write tool's `workspace_id` argument (WS-ROUTING-5: a tool argument is a pick).
-
-    Omitted or blank: no kwarg, so the write routes by the selection. Lite has no workspaces: refused, never dropped.
-    """
-    workspace = (workspace_id or "").strip()
-    if not workspace:
-        return {}
-    if not getattr(backend, "accepts_workspace_argument", False):
-        raise ValueError(
-            "Lite (local mode) has no workspaces: omit workspace_id, everything is in one local store."
-        )
-    return {"workspace_id": workspace}
 
 
 # ---------------------------------------------------------------------------
@@ -463,47 +533,6 @@ def _workspace_kwargs(backend: Any, workspace_id: Optional[str]) -> dict[str, st
 
 def register_free(mcp):
     """Register FREE-tier memory tools (ingest, search, recall, get)."""
-
-    @mcp.tool(
-        title="Ingest a memory",
-        annotations=ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=False,
-            openWorldHint=False,
-        ),
-    )
-    @graceful
-    def memory_ingest(
-        content: str,
-        memory_type: str = "semantic",
-        workspace_id: Optional[str] = None,
-    ) -> str:
-        """Store what the user said and extract entities, dates and relations from it.
-
-        Use this for facts, events, plans and anything naming people, places,
-        organizations or dates. Runs the full extraction pipeline.
-
-        If the new note changes, reverses or replaces an earlier one, do not
-        ingest it alone: call ``memory_supersede`` on that earlier note so the
-        old version is retained and marked replaced.
-
-        ``workspace_id``: write to this workspace for this call only (an explicit
-        pick); omit it to write where your current selection routes.
-        """
-        backend = get_backend()
-        result = backend.ingest(
-            content, memory_type=memory_type, **_workspace_kwargs(backend, workspace_id)
-        )
-        if isinstance(result, dict):
-            if result.get("status") == "held":
-                return f"Memory held: {result.get('reason')}. Details: {result.get('reasons', [])}"
-            if "error" in result:
-                return f"Ingest failed: {result['error']}"
-            item_id = result.get("item_id", "unknown")
-        else:
-            item_id = str(result)
-        return f"Memory ingested (pipeline). Item ID: {item_id}"
 
     @mcp.tool(
         title="Search memories",
@@ -530,30 +559,35 @@ def register_free(mcp):
         cite: bool = False,
         as_of_date: Optional[str] = None,
         as_of_strict: bool = False,
-        valid_at: Optional[str] = None,
+        fail_if_conflicted: bool = False,
         include_superseded: bool = False,
         include_retracted: bool = False,
         include_archived: bool = False,
         since: Optional[str] = None,
         until: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ):
         """Search memories using semantic similarity with optional hybrid mode.
+
+        fail_if_conflicted refuses supported disagreements in the returned pool.
+        Conflict warnings identify scoped peers, without deciding which claim is true.
 
         hop_strategy: consensus follows entities several top results agree on; relevance
         follows best-result entities and one-off bridges; semantic asks an LLM.
         since/until: ISO-8601 or relative (7d, 24h, 30m), echoed as an absolute window.
 
-        Two different dates, do not mix them up:
-        - valid_at (ISO-8601) asks what was IN FORCE ON that date: the rule or
-          fact whose effective period covers it, even if it was written down
-          later. Use it for "which rule applied on April 10?". A result with no
-          effective date of its own counts from the day it was recorded and is
-          labelled valid_at_resolution="created_at_fallback".
-        - as_of_date (ISO-8601) asks what had been RECORDED BY that instant:
-          transaction time, what the system believed then.
-        Both together mean in force on valid_at AND recorded by as_of_date.
+        valid_at (ISO datetime) asks what was in force on that date.
+        as_of_date asks what had been recorded by that instant. Both together
+        are an AND. A missing effective date may be labelled
+        valid_at_resolution="created_at_fallback".
 
-        include_superseded keeps replaced items
+        business_scope selects an exact site and valid_at selects business validity.
+        Activated exact site entries win, otherwise use sponsor fallback. The backend
+        resolves an omitted valid_at once at request start.
+
+        as_of_date (ISO-8601) travels transaction time: what the system
+        believed at that instant. include_superseded keeps replaced items
         visible in results (PLAT-AUDITABLE-MEMORY-1). include_retracted keeps
         WITHDRAWN beliefs visible (CORE-RETRACTED-RECALL-1) — a separate
         lifecycle state with no replacement, not covered by include_superseded.
@@ -570,6 +604,7 @@ def register_free(mcp):
         believed then. Set as_of_strict to refuse a partial history outright
         rather than receive labelled results (gap #2).
         """
+        options = scoped_options(business_scope=business_scope, valid_at=valid_at)
         # Search failures must become MCP errors, including connection failures.
         validate_channel_weights(channel_weights)
         backend = get_backend()
@@ -578,6 +613,7 @@ def register_free(mcp):
         # The old 3x inflated shown_ids for feedback, diluting selection_rate.
         results = backend.search(
             query,
+            **options,
             top_k=top_k,
             memory_type=memory_type,
             enable_hybrid=enable_hybrid,
@@ -589,7 +625,7 @@ def register_free(mcp):
             budget_ms=budget_ms,
             as_of_date=as_of_date,
             as_of_strict=as_of_strict,
-            valid_at=valid_at,
+            **({"fail_if_conflicted": True} if fail_if_conflicted else {}),
             include_superseded=include_superseded,
             include_retracted=include_retracted,
             include_archived=include_archived,
@@ -599,6 +635,9 @@ def register_free(mcp):
                 if v is not None
             },
         )
+        # U5.21 (C8): read the call's completeness off its own return, before the tier filter and the slice below
+        # make plain lists again.
+        partial = partial_reasons(results)
 
         # CORE-ORIGIN-1: apply search tier policy
         try:
@@ -611,15 +650,20 @@ def register_free(mcp):
         results = results[:top_k]
 
         if not results:
+            # A partial answer with nothing visible is not "no results": it says it was partial and why.
+            message = none_found(
+                f"No results found for query: {query}", "results", partial
+            )
             if cite:
                 # RECALL-CITATIONS-1: distinguish "no results" from "no citations requested"
                 return {
                     "items": [],
                     "footnote_block": "",
                     "citations": [],
-                    "message": f"No results found for query: {query}",
+                    "message": message,
+                    **({"partial": list(partial)} if partial else {}),
                 }
-            return f"No results found for query: {query}"
+            return message
 
         # RECALL-CITATIONS-1: when cite=True, return structured payload with
         # pre-formatted footnote_block ready for the consuming agent to paste.
@@ -637,6 +681,7 @@ def register_free(mcp):
                 ],
                 "citations": citations,
                 "footnote_block": footnote_block,
+                **({"partial": list(partial)} if partial else {}),
             }
 
         # SELF-IMPROVE-6: capture search_session_id from backend (RemoteBackend stores it
@@ -647,18 +692,22 @@ def register_free(mcp):
 
         if catalog_mode:
             catalog = _format_catalog(query, results)
+            if partial:
+                catalog += f"\n\n{partial_note(partial)}"
             if session_id_from_search:
                 catalog += f"\n\nsearch_session_id: {session_id_from_search}"
             return catalog
 
         output = [f"Found {len(results)} results for '{query}':\n"]
         for i, item in enumerate(results, 1):
+            # Backends return normalized memory dictionaries.
             content = str(item["content"])
             preview = content[:200] + "..." if len(content) > 200 else content
             item_id = item["item_id"]
             mtype = item["memory_type"]
             score = item.get("score")
             score_str = f" (score: {score:.3f})" if score is not None else ""
+            score_str += found_by_text(item, " ")
 
             # CORE-PROPS-1: confidence display
             confidence = item.get("confidence")
@@ -685,7 +734,11 @@ def register_free(mcp):
                 f"{supersession_label(item)}"
             )
             output.append(f"   {preview}\n")
+            if diagnostic := resolution_text(item):
+                output.append(diagnostic)
 
+        if partial:
+            output.append(partial_note(partial))
         if session_id_from_search:
             output.append(f"\nsearch_session_id: {session_id_from_search}")
         return "\n".join(output)
@@ -701,7 +754,12 @@ def register_free(mcp):
     )
     @graceful
     def memory_recall(
-        query: str, session_id: Optional[str] = None, top_k: int = 10, cite: bool = False
+        query: str,
+        session_id: Optional[str] = None,
+        top_k: int = 10,
+        cite: bool = False,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ):
         """**Deprecated:** Use ``get_working_context``.
 
@@ -710,6 +768,7 @@ def register_free(mcp):
         post-filters cross-type results through ``_LEGACY_RECALL_TYPE_SCOPE``
         to preserve the pre-shim ``memory_type="working"`` scope.
         """
+        refuse_scoped_options(business_scope, valid_at)
         global _RECALL_DEPRECATION_WARNED
         if not _RECALL_DEPRECATION_WARNED:
             logger.warning(
@@ -726,7 +785,14 @@ def register_free(mcp):
         if hasattr(backend, "recall") and not session_id:
             result = backend.recall(cwd=query, top_k=top_k)
             if isinstance(result, str):
-                return result
+                # U5.21 (C8): the text is the plain str it always was, and a partial answer rides on it. Empty is not
+                # "no memories" when core said the answer was partial.
+                partial_text = partial_reasons(result)
+                if not partial_text:
+                    return result
+                if not result.strip():
+                    return none_found(result, "memories", partial_text)
+                return f"{result}\n\n{partial_note(partial_text)}"
 
         # Delegate to the surfacing helper, then apply legacy-scope post-filter.
         # Over-fetch aggressively (10x, clamp to contract max 100) so the
@@ -772,6 +838,7 @@ def register_free(mcp):
             filtered = scoped
 
         final = filtered[:top_k]
+        partial = (response.get("partial_answer") or {}).get("reasons") or []
 
         # RECALL-CITATIONS-1: structured response with footnote block when cite=True.
         # Empty result set still returns citations=[] (never omitted) so consumers
@@ -788,9 +855,12 @@ def register_free(mcp):
                 "citations": citations,
                 "footnote_block": build_footnote_block(final),
                 "session_id": session_id,
+                **({"partial": list(partial)} if partial else {}),
             }
 
-        return _format_recall(query, final, session_id=session_id)
+        return _format_recall(
+            query, final, session_id=session_id, partial=tuple(partial)
+        )
 
     @mcp.tool(
         title="Get working context",
@@ -955,7 +1025,10 @@ def register_free(mcp):
     @mcp.tool(
         title="Answer a question from memory",
         annotations=ToolAnnotations(
-            readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False,
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
         ),
     )
     @graceful
@@ -999,6 +1072,10 @@ def register_free(mcp):
         query: Optional[str] = None,
         sections: Optional[list] = None,
         preset: Optional[str] = None,
+        as_of: Optional[str] = None,
+        fail_if_conflicted: bool = False,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ) -> dict:
         """Assemble the most useful context that fits in a token budget.
 
@@ -1013,8 +1090,13 @@ def register_free(mcp):
         small budget (~300 tokens) at session start for an L1 orientation card (active
         plan, anchors, workspace topics, last-session headline) — the default sections go
         degenerate at that size. Use ``get_working_context`` for the L2 drill-in.
+        ``as_of`` (ISO 8601; omit for now) answers every section as of that instant:
+        nothing created later; a section that cannot (active plan, anchors) is left
+        out and named in ``manifest.dropped_sections``.
         Returns ``{block, manifest}``.
         """
+        refuse_scoped_options(business_scope, valid_at)
+        as_of = checked_as_of(as_of)
         if not isinstance(budget_tokens, int) or budget_tokens < 1:
             return {"error": "`budget_tokens` must be an integer >= 1."}
         if preset is not None:
@@ -1033,7 +1115,12 @@ def register_free(mcp):
 
         backend = get_backend()
         return backend.recall_pack(
-            budget_tokens=budget_tokens, query=query, sections=sections, preset=preset
+            budget_tokens=budget_tokens,
+            query=query,
+            sections=sections,
+            preset=preset,
+            **({"fail_if_conflicted": True} if fail_if_conflicted else {}),
+            **dated(as_of),
         )
 
     @mcp.tool(
@@ -1049,14 +1136,23 @@ def register_free(mcp):
     def memory_policy_bundle(
         workflow: Optional[str] = None,
         domain: Optional[str] = None,
+        as_of: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ) -> dict:
         """Compile active workspace decisions into a Stratum policy bundle.
 
         ``workflow`` is echoed in the selector for the runner. ``domain`` narrows
-        the source decisions. The returned JSON is the policy-exchange contract
-        bundle and is identical for local and hosted backends.
+        the source decisions. ``as_of`` (ISO 8601; omit for now) compiles the
+        decisions active at that instant and the bundle echoes it. The returned
+        JSON is the policy-exchange contract bundle and is identical for local
+        and hosted backends.
         """
-        return get_backend().policy_bundle(workflow=workflow, domain=domain)
+        refuse_scoped_options(business_scope, valid_at)
+        as_of = checked_as_of(as_of)
+        return get_backend().policy_bundle(
+            workflow=workflow, domain=domain, **dated(as_of)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1066,53 +1162,6 @@ def register_free(mcp):
 
 def register_pro(mcp):
     """Register PRO-tier memory tools."""
-
-    @mcp.tool(
-        title="Add a memory",
-        annotations=ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=False,
-            openWorldHint=False,
-        ),
-    )
-    @graceful
-    def memory_add(
-        content: str,
-        memory_type: str = "semantic",
-        metadata: Optional[Dict[str, Any]] = None,
-        tags: Optional[List[str]] = None,
-        workspace_id: Optional[str] = None,
-    ) -> str:
-        """Store a memory with explicit metadata or tags.
-
-        On the hosted/remote service this runs the same extraction pipeline as
-        memory_ingest. In local mode it stores the text as-is, with no entity, date
-        or decision extraction; prefer memory_ingest there.
-
-        ``workspace_id``: write to this workspace for this call only (an explicit
-        pick); omit it to write where your current selection routes.
-        """
-        backend = get_backend()
-        if not getattr(backend, "add_runs_extraction", False):
-            logger.warning(
-                "memory_add: %s stores without the extraction pipeline; no entities, "
-                "dates, relations or Decision nodes will be extracted from this item "
-                "(use memory_ingest for extraction)",
-                type(backend).__name__,
-            )
-        item_metadata = metadata or {}
-        if tags:
-            item_metadata["tags"] = tags
-        item_id = backend.add(
-            content,
-            memory_type=memory_type,
-            metadata=item_metadata,
-            **_workspace_kwargs(backend, workspace_id),
-        )
-        if isinstance(item_id, dict) and item_id.get("status") == "held":
-            return f"Memory held: {item_id.get('reason')}. Details: {item_id.get('reasons', [])}"
-        return f"Memory added (direct). Item ID: {item_id}"
 
     @mcp.tool(
         title="Update a memory",
@@ -1133,16 +1182,16 @@ def register_pro(mcp):
     ) -> str:
         """Edit a memory item in place (CORE-CRUD-UPDATE-1). Keeps no history.
 
-        The old text is overwritten and nothing records that it was ever there.
-        To change or reverse a rule, decision or instruction, use
-        ``memory_supersede`` instead: it keeps the old version and closes it.
-        Use this tool only to fix a typo or tweak metadata.
+        To change or reverse a rule saved as a decision, use ``decision_supersede``. To
+        replace any other memory, use ``memory_supersede`` so the old version is retained.
+        Use this tool for typo fixes or metadata edits.
 
         - ``content``/``metadata``: convenience — folded into the properties dict.
         - ``properties``: advanced — direct node-property update. Takes precedence.
         - ``write_mode``: "merge" (default) or "replace".
         """
         backend = get_backend()
+        workspace = target_workspace(backend)
         result = backend.update(
             item_id,
             content=content,
@@ -1150,7 +1199,9 @@ def register_pro(mcp):
             properties=properties,
             write_mode=write_mode,
         )
-        return str(result) if result else f"Updated: {item_id}"
+        return name_workspace(
+            str(result) if result else f"Updated: {item_id}", workspace
+        )
 
     @mcp.tool(
         title="Supersede a memory",
@@ -1168,21 +1219,33 @@ def register_pro(mcp):
         reason: str,
         metadata: Optional[Dict[str, Any]] = None,
         valid_from: Optional[str] = None,
-    ) -> str:
+        scope_go_lives: Optional[list[dict[str, Any]]] = None,
+    ) -> str | dict[str, Any]:
         """Replace a memory with a new version, keeping the old one as history.
 
-        Use this to change or reverse an existing rule, decision or instruction.
-        The old item stays retrievable, marked replaced; the new one is the live
-        version. ``reason`` says why it changed. ``valid_from`` (ISO date, e.g.
-        2026-04-20) is when the new version takes effect; the old version's
-        validity ends on that date.
+        Not for decisions: to change or reverse a decision or rule use ``decision_supersede``.
+        In a workspace that holds rule changes for a person this call refuses a decision, with
+        a message saying so, and writes nothing.
+        The old version is retained as replaced history. History visibility
+        follows the normal search gates. ``reason`` says why it changed.
+        ``valid_from`` (ISO datetime, e.g.
+        2026-04-20T00:00:00Z) is when the new version takes effect. The old version's
+        validity ends on that date. ``scope_go_lives`` schedules a scoped amendment
+        and returns the accepted schedule and recording time.
         """
+        options = scoped_options(scope_go_lives=scope_go_lives, valid_from=valid_from)
         backend = get_backend()
-        result = backend.supersede(
-            item_id, content, reason, metadata=metadata, valid_from=valid_from
-        )
+        workspace = target_workspace(backend)
+        try:
+            result = backend.supersede(
+                item_id, content, reason, metadata=metadata, **options
+            )
+        except DecisionReplaceHeld as refused:
+            return str(refused)
+        if result and result.get("status") == "scheduled":
+            return name_workspace(result, workspace)
         new_id = (result or {}).get("new_item_id", "unknown")
-        return f"Superseded: {item_id} -> {new_id}"
+        return name_workspace(f"Superseded: {item_id} -> {new_id}", workspace)
 
     @mcp.tool(
         title="Delete a memory",
@@ -1197,8 +1260,12 @@ def register_pro(mcp):
     def memory_delete(item_id: str) -> str:
         """Delete a memory item by ID."""
         backend = get_backend()
+        workspace = target_workspace(backend)
         success = backend.delete(item_id)
-        return f"Deleted: {item_id}" if success else f"Failed to delete: {item_id}"
+        return name_workspace(
+            f"Deleted: {item_id}" if success else f"Failed to delete: {item_id}",
+            workspace,
+        )
 
     @mcp.tool(
         title="Clear all memories",
@@ -1241,6 +1308,7 @@ def register_pro(mcp):
         memory_search_by_metadata, whose endpoint is deprecated (GRAPH-API-1l).
         """
         backend = get_backend()
+        partial: tuple[str, ...] = ()
         try:
             result = backend.list_memories(
                 limit=limit,
@@ -1249,11 +1317,18 @@ def register_pro(mcp):
                 metadata_value=metadata_value,
             )
         except Exception as exc:
+            # U5.21 (C1): a core refusal is logged once, by the site that raised it (its mark on the exception),
+            # and the text is rendered bounded. Without core (remote-only) every failure is logged here.
+            gate_on = _core_marks()
+            if gate_on and refusal_logged(exc):
+                raise
             logger.warning(
                 "Memory list unavailable; page items and corpus total were lost because the "
                 "backend list call failed: %s",
-                exc,
+                refusal_text(exc) if gate_on else exc,
             )
+            if gate_on:
+                mark_refusal_logged(exc)
             raise
 
         # Handle both list and dict responses
@@ -1288,11 +1363,19 @@ def register_pro(mcp):
                 )
         elif isinstance(result, list):
             items = result
-            total = None
-            logger.warning(
-                "Memory list total is unavailable; corpus size was lost because the backend "
-                "returned only a page list."
+            partial = partial_reasons(result)
+            # A frozen local walk (LOCAL-FROZEN-PAGE-1) hands its fixed total along on the page it returns.
+            carried = getattr(result, "total", None)
+            total = (
+                carried
+                if isinstance(carried, int) and not isinstance(carried, bool)
+                else None
             )
+            if total is None:
+                logger.warning(
+                    "Memory list total is unavailable; corpus size was lost because the backend "
+                    "returned only a page list."
+                )
         else:
             logger.warning(
                 "Memory list unavailable; page items and corpus total were lost because the "
@@ -1309,7 +1392,9 @@ def register_pro(mcp):
                     f"No memories returned for this page (offset {offset}); "
                     f"{total} memories exist."
                 )
-            return "No memories returned; total unavailable."
+            return none_found(
+                "No memories returned; total unavailable.", "memories", partial
+            )
 
         if total is None:
             output = [f"Returned {len(items)} memories; total unavailable:\n"]
@@ -1322,6 +1407,9 @@ def register_pro(mcp):
             preview = content[:100] + "..." if len(content) > 100 else content
             output.append(f"- [{item_id}] ({mtype}): {preview}")
 
+        if partial:
+            output.append("")
+            output.append(partial_note(partial))
         return "\n".join(output)
 
     @mcp.tool(
@@ -1399,90 +1487,6 @@ def register_pro(mcp):
         return "\n".join(output)
 
     @mcp.tool(
-        title="Distill a conversation turn",
-        annotations=ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=False,
-            openWorldHint=False,
-        ),
-    )
-    @graceful
-    def memory_distill(
-        user_turn: str, assistant_turn: str, session_id: Optional[str] = None
-    ) -> str:
-        """Ingest a conversation turn pair into pending memory for later recall."""
-        backend = get_backend()
-        content = _format_turn_content(user_turn, assistant_turn)
-        meta: Dict[str, Any] = {"role": "turn", "distill_version": "1"}
-        if session_id:
-            meta["conversation_id"] = session_id
-        item_id = backend.add(content, memory_type="pending", metadata=meta)
-        if isinstance(item_id, dict) and item_id.get("status") == "held":
-            return f"Turn held: {item_id.get('reason')}. Details: {item_id.get('reasons', [])}"
-        return f"Turn stored: {item_id}"
-
-    @mcp.tool(
-        title="Ingest a conversation",
-        annotations=ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=False,
-            openWorldHint=False,
-        ),
-    )
-    @graceful
-    def memory_ingest_conversation(
-        turns: list,
-        session_boundaries: Optional[list] = None,
-        conversation_id: Optional[str] = None,
-        session_dates: Optional[list] = None,
-        turns_per_chunk: int = 15,
-        max_chunk_chars: int = 12000,
-    ) -> str:
-        """Ingest a conversation as session chunks with full pipeline processing (RLM-1g).
-
-        Groups turns into sessions (by explicit boundaries or auto-chunking),
-        runs each chunk through the full extraction pipeline, and creates
-        a conversation container node with PART_OF edges.
-
-        Args:
-            turns: List of dicts with "role"/"speaker" and "content" keys.
-            session_boundaries: Turn indices where sessions start (e.g. [0, 50, 120]).
-            conversation_id: User-supplied ID (auto-generated if None).
-            session_dates: ISO date per session for metadata.
-            turns_per_chunk: Max turns per auto-chunk (default 15).
-            max_chunk_chars: Safety split for oversized chunks (default 12000).
-        """
-        backend = get_backend()
-        response = backend.ingest_conversation_sync(
-            turns=turns,
-            session_boundaries=session_boundaries,
-            conversation_id=conversation_id,
-            session_dates=session_dates,
-            turns_per_chunk=turns_per_chunk,
-            max_chunk_chars=max_chunk_chars,
-        )
-        from dataclasses import asdict
-
-        r = asdict(response) if hasattr(response, "__dataclass_fields__") else response
-        if isinstance(r, dict):
-            held_chunks = [
-                chunk
-                for chunk in r.get("chunk_results", [])
-                if chunk.get("status") == "held"
-            ]
-            ingested = r.get("chunks_ingested", 0)
-            failed = r.get("chunks_failed", 0) - len(held_chunks)
-            message = f"Conversation {r.get('conversation_id', '')}: {ingested} chunks ingested, {failed} failed."
-            if held_chunks:
-                message += f" {len(held_chunks)} held: " + ", ".join(
-                    str(chunk.get("reason")) for chunk in held_chunks
-                )
-            return message
-        return f"Conversation ingest result: {r}"
-
-    @mcp.tool(
         title="Search memories with graph traversal",
         annotations=ToolAnnotations(
             readOnlyHint=True,
@@ -1493,36 +1497,38 @@ def register_pro(mcp):
     )
     @graceful
     def memory_search_advanced(
-        query: str, algorithm: str = "query_traversal", max_results: int = 15
+        query: str,
+        algorithm: str = "query_traversal",
+        max_results: int = 15,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ) -> str:
         """Advanced search using Similarity Graph Traversal (SSG) algorithms."""
-        try:
-            from smartmemory.retrieval.ssg_traversal import SimilarityGraphTraversal
-        except ImportError:
-            return "Advanced search requires local backend with smartmemory installed."
-
+        refuse_scoped_options(business_scope, valid_at)
         backend = get_backend()
         mem = getattr(backend, "_mem", None)
         if mem is None:
             return "Advanced search requires local backend."
-
-        ssg = SimilarityGraphTraversal(mem)
-        if algorithm == "query_traversal":
-            results = ssg.query_traversal(query, max_results=max_results)
-        elif algorithm == "triangulation_fulldim":
-            results = ssg.triangulation_fulldim(query, max_results=max_results)
-        else:
+        if algorithm not in ("query_traversal", "triangulation_fulldim"):
             return f"Unknown algorithm: {algorithm}. Use 'query_traversal' or 'triangulation_fulldim'"
+
+        # SM-LOCAL-TOOLS-1: through the facade, which runs SSG inside the memory's own context.
+        # Building SimilarityGraphTraversal here, outside any facade call, gave it the
+        # process-default FalkorDB vector store (no graph name under Lite: CORE-GRAPHCONFIG-1).
+        results = mem.similarity_graph_traversal(
+            query, algorithm=algorithm, max_results=max_results
+        )
 
         if not results:
             return f"No results found for query: {query}"
 
         output = [f"SSG ({algorithm}) found {len(results)} results for '{query}':\n"]
         for i, item in enumerate(results, 1):
-            content = str(item["content"])
+            # The facade returns MemoryItems, not dicts.
+            content = str(item.content)
             preview = content[:200] + "..." if len(content) > 200 else content
-            item_id = item["item_id"]
-            mtype = item["memory_type"]
+            item_id = item.item_id
+            mtype = item.memory_type
             output.append(f"{i}. [{item_id}] ({mtype}){supersession_label(item)}")
             output.append(f"   {preview}\n")
 
@@ -1545,8 +1551,11 @@ def register_pro(mcp):
         top_k: int = 10,
         since: Optional[str] = None,
         until: Optional[str] = None,
+        business_scope: Optional[Dict[str, Any]] = None,
+        valid_at: Optional[str] = None,
     ) -> str:
         """Search memories by exact metadata key-value match."""
+        refuse_scoped_options(business_scope, valid_at)
         backend = get_backend()
         results = backend.search_by_metadata(
             metadata_key,

@@ -1,286 +1,361 @@
-"""WS-ROUTING-4 (lever 3): the hosted workspace switch lives in svc-api's `routing_sessions`, not in this process.
+"""The hosted workspace pick is a server-side record, not process memory (SM20-WS-ROUTING-PARITY-1, shape B).
 
-Before this unit a hosted `switch_workspace` was a per-MCP-session dict in the middleware: a reconnect (new MCP
-session id) or a restart of the hosted process lost it (WS-ROUTING-1 gap 6). Now the switch is a
-`PUT /memory/routing/session` and every tool call reads it back with `GET /memory/routing/explain?client_key=...`.
-
-Every row drives the real hosted ASGI app over MCP: switch, optionally restart (a fresh app and middleware against the
-same svc-api record), open a NEW MCP session, then call `memory_search` and read the workspace header svc-api got.
+`switch_team` writes `PUT /memory/routing/session`; the middleware reads `GET /memory/routing/session` before it
+builds each call's backend and sends the pick as `X-Workspace-Id`. A pick never expires: 200 with `workspace_id` null
+means never picked (default workspace, no WARNING); an unreadable pick refuses the call (`switch_workspace` and its alias `switch_team` excepted). svc-api is a `RoutingSessionStore` behind an
+`httpx.MockTransport`: it outlives middleware instances the way the Mongo record outlives a process.
 """
 
 from __future__ import annotations
 
+import json
 import logging
-import pathlib
-from dataclasses import dataclass
 from typing import Any
 
 import anyio
-import httpx
 import pytest
 
-from smartmemory_mcp.hosted import identity as hosted_identity
-from smartmemory_mcp.hosted.exchange import ExchangeCache
-from smartmemory_mcp.hosted.server import hosted_asgi_app
+from smartmemory_mcp.hosted.middleware import HostedIdentityMiddleware
 
-from ._hosted_fixtures import (
-    API_KEY,
-    INITIALIZE_BODY,
-    RoutingSessionStore,
-    auth_me_transport,
-    hosted_config,
-    mcp_headers,
-    memory_store,
+from ._hosted_fixtures import API_KEY, RoutingSessionStore
+from .test_hosted_identity import (
+    OAUTH_BEARER,
+    OAUTH_WORKSPACE,
+    SM_JWT,
+    _Harness,
+    _run,
+    _text,
 )
-from .test_hosted_tools_allowlist import _decode, _text, fake_svc_api
+from .test_hosted_tools_allowlist import _Harness as _ServerHarness
+from .test_hosted_tools_allowlist import fake_svc_api
 
-DEFAULT = "team-personal"  # ME_PAYLOAD default_team_id
-
-
-@pytest.fixture(autouse=True)
-def _restore_hosted_mode():
-    """`build_hosted_server` flips a process-global; put it back for other files."""
-    before = hosted_identity.hosted_mode_enabled()
-    try:
-        yield
-    finally:
-        hosted_identity.set_hosted_mode(before)
-
-
-class _Hosted:
-    """One hosted process. `explain_status` replaces the explain answer (svc-api failing or too old)."""
-
-    def __init__(self, store: RoutingSessionStore, faults: dict[str, int]) -> None:
-        auth = auth_me_transport().handler
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            status = faults.get("explain")
-            if status and request.url.path == "/memory/routing/explain":
-                store.calls.append(
-                    ("GET", request.url.path, {"headers": dict(request.headers)})
-                )
-                return httpx.Response(status, json={"detail": "fault"})
-            routed = store.handle(request)
-            return routed if routed is not None else auth(request)
-
-        self.app = hosted_asgi_app(
-            hosted_config(),
-            redis_store=memory_store(),
-            exchange_cache=ExchangeCache(),
-            api_transport=httpx.MockTransport(handler),
-        )
-
-    async def session(self, client: httpx.AsyncClient) -> str:
-        response = await client.post(
-            "/mcp", headers=mcp_headers(API_KEY), json=INITIALIZE_BODY
-        )
-        assert response.status_code == 200, response.text
-        session_id = response.headers["mcp-session-id"]
-        await client.post(
-            "/mcp",
-            headers={**mcp_headers(API_KEY), "mcp-session-id": session_id},
-            json={"jsonrpc": "2.0", "method": "notifications/initialized"},
-        )
-        return session_id
-
-    async def call(
-        self, client: httpx.AsyncClient, session_id: str, name: str, arguments: dict
-    ) -> dict[str, Any]:
-        response = await client.post(
-            "/mcp",
-            headers={**mcp_headers(API_KEY), "mcp-session-id": session_id},
-            json={
-                "jsonrpc": "2.0",
-                "id": 7,
-                "method": "tools/call",
-                "params": {"name": name, "arguments": arguments},
-            },
-        )
-        assert response.status_code == 200, response.text
-        payload = _decode(response)
-        assert "result" in payload, payload
-        return payload["result"]
-
-
-async def _in(hosted: _Hosted, body):
-    async with (
-        hosted.app.router.lifespan_context(hosted.app),
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=hosted.app), base_url="https://mcp.test"
-        ) as client,
-    ):
-        return await body(client)
-
-
-@dataclass(frozen=True)
-class Row:
-    id: str
-    switch_to: str | None  # the switch_workspace argument (None: no switch)
-    store: dict  # RoutingSessionStore kwargs (forbidden workspaces, bound bearers)
-    restart: bool  # the later call runs in a fresh hosted process
-    explain_fault: int | None  # explain answers this status AFTER the switch
-    switch_error: str | None  # substring of the refused switch's text
-    call_error: str | None  # substring of the later call's error text (fail closed)
-    # (workspace, routed_by) svc-api's resolver gave the later call (None: no svc-api call happened). WS-ROUTING-5:
-    # a switch reaches svc-api as the session lever (no header, X-SM-Client), never as X-Workspace-Id.
-    routed: tuple[str, str] | None
-    warning: str | None  # substring of a WARNING the middleware logged
-
-
-ROWS = [
-    Row(
-        "reconnect_keeps_the_switch",
-        "team-B",
-        {},
-        False,
-        None,
-        None,
-        None,
-        ("team-B", "session"),
-        None,
-    ),
-    Row(
-        "restart_keeps_the_switch",
-        "team-B",
-        {},
-        True,
-        None,
-        None,
-        None,
-        ("team-B", "session"),
-        None,
-    ),
-    # No pick and the floor off: no header; the service floors to the account default (WS-ROUTING-5-PRE-1 target).
-    Row(
-        "no_switch_uses_the_default",
-        None,
-        {},
-        False,
-        None,
-        None,
-        None,
-        (DEFAULT, "account_default"),
-        None,
-    ),
-    Row(
-        "refused_403_leaves_the_previous",
-        "team-B",
-        {"forbidden": ("team-B",)},
-        False,
-        None,
-        "not a member",
-        None,
-        (DEFAULT, "account_default"),
-        "status=403",
-    ),
-    Row(
-        "bound_key_409_leaves_the_previous",
-        "team-B",
-        {"bound": (API_KEY,)},
-        False,
-        None,
-        "bound to one workspace",
-        None,
-        (DEFAULT, "account_default"),
-        "status=409",
-    ),
-    Row(
-        "explain_5xx_fails_closed",
-        "team-B",
-        {},
-        False,
-        503,
-        None,
-        "workspace selection",
-        None,
-        "status=503",
-    ),
-    # Review H1: an explain the MCP cannot read never turns the default into a pick; the service still applies the
-    # saved switch (the write is header-less), so it lands in team-B.
-    Row(
-        "explain_404_keeps_the_switch_with_warning",
-        "team-B",
-        {},
-        False,
-        404,
-        None,
-        None,
-        ("team-B", "session"),
-        "no routing explain",
-    ),
-    Row(
-        "explain_401_is_unauthorized",
-        "team-B",
-        {},
-        False,
-        401,
-        None,
-        "Unauthorized",
-        None,
-        "401",
-    ),
+# One row per scenario. `steps` run in order on a fresh server (instance 1); `restart` then builds a NEW server
+# instance on the same record store and a NEW MCP session id before the final probe. `team` is the workspace the
+# final probe's backend (and so its X-Workspace-Id) carries; `no_warning` asserts nothing at WARNING was logged.
+ROWS: list[dict[str, Any]] = [
+    {
+        "id": "switch-then-next-call",
+        "steps": ["B"],
+        "restart": False,
+        "store": {},
+        "team": "team-B",
+        "puts": 1,
+    },
+    {
+        "id": "restart-new-instance-new-session",
+        "steps": ["B"],
+        "restart": True,
+        "store": {},
+        "team": "team-B",
+        "puts": 1,
+    },
+    {
+        "id": "no-switch-default",
+        "steps": [],
+        "restart": True,
+        "store": {},
+        "team": OAUTH_WORKSPACE,
+        "puts": 0,
+    },
+    {
+        "id": "non-member-refused-nothing-stored",
+        "steps": ["B"],
+        "restart": True,
+        "store": {"forbidden": ("team-B",)},
+        "team": OAUTH_WORKSPACE,
+        "puts": 1,
+        "refused": True,
+    },
+    {
+        "id": "absent-null-uses-default-without-a-warning",
+        "steps": [],
+        "restart": True,
+        "store": {},
+        "team": OAUTH_WORKSPACE,
+        "no_warning": True,
+    },
 ]
 
 
-@pytest.mark.parametrize("row", ROWS, ids=[row.id for row in ROWS])
-def test_the_hosted_switch_is_the_server_record(row: Row, monkeypatch, caplog) -> None:
-    # The service knows this caller's account default (ME_PAYLOAD), its flag-off floor once WS-ROUTING-5-PRE-1 lands.
-    store = RoutingSessionStore(**{"default_team_id": DEFAULT, **row.store})
-    faults: dict[str, int] = {}
-    store.install(monkeypatch, fake_svc_api())
-    first = _Hosted(store, faults)
+@pytest.mark.parametrize("row", ROWS, ids=[row["id"] for row in ROWS])
+def test_the_pick_lives_in_the_server_record(row: dict[str, Any], caplog) -> None:
+    store = RoutingSessionStore(**row["store"])
+    harness = _Harness(routing=store)
+    if "seed" in row:
+        store.rows[(SM_JWT, "mcp:test")] = row["seed"]
 
-    async def switch(client):
-        session_id = await first.session(client)
-        return await first.call(
-            client, session_id, "switch_workspace", {"workspace": row.switch_to}
-        )
+    async def first(client):
+        session = await harness.open_session(client, OAUTH_BEARER)
+        outcomes = []
+        for team in row["steps"]:
+            outcomes.append(
+                await harness.call(
+                    client, OAUTH_BEARER, session, "set_team", {"team": f"team-{team}"}
+                )
+            )
+        return session, outcomes
 
-    switched = anyio.run(_in, first, switch) if row.switch_to else None
-    if row.switch_error:
-        assert switched.get("isError") is True and row.switch_error in _text(
-            switched
-        ), _text(switched)
-    elif switched is not None:
-        assert switched.get("isError") is not True, _text(switched)
+    session, outcomes = anyio.run(_run, harness, first)
+    final = harness
+    if row["restart"]:
+        final = _Harness(
+            routing=store
+        )  # a new process: new middleware, new exchange cache
 
-    if row.explain_fault:
-        faults["explain"] = row.explain_fault
-    later = _Hosted(store, faults) if row.restart else first
-    store.resolved.clear()
+    caplog.set_level(logging.WARNING)
 
-    async def search(client):
-        session_id = await later.session(client)  # a NEW MCP session id every time
-        return await later.call(client, session_id, "memory_search", {"query": "q"})
+    async def probe(client):
+        # The restarted server has never seen the old session id: open a new one, as a reconnecting client does.
+        probe_session = await final.open_session(client, OAUTH_BEARER)
+        assert not row["restart"] or probe_session != session
+        return await final.call(client, OAUTH_BEARER, probe_session, "probe")
 
-    with caplog.at_level(logging.WARNING, logger="smartmemory_mcp.hosted.middleware"):
-        result = anyio.run(_in, later, search)
+    result = anyio.run(_run, final, probe)
 
-    if row.call_error:
-        assert result.get("isError") is True and row.call_error in _text(result), _text(
-            result
-        )
-    else:
-        assert result.get("isError") is not True, _text(result)
-    assert (store.resolved[0][2:] if store.resolved else None) == row.routed
-    if row.warning:
-        assert any(row.warning in record.getMessage() for record in caplog.records), [
-            r.getMessage() for r in caplog.records
+    assert result.get("isError") is not True
+    assert json.loads(_text(result))["team_id"] == row["team"]
+    puts = [call for call in store.calls if call[0] == "PUT"]
+    assert len(puts) == row.get("puts", 0)
+    if row.get("refused"):
+        assert outcomes[0]["isError"] is True
+        assert store.rows == {}
+    if row.get("no_warning"):
+        assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+# One row per way the saved pick cannot be read. The call is refused with the error text, and no backend call is made
+# (neither to the default workspace nor anywhere else). `store` is the RoutingSessionStore failure knob.
+READ_FAILURE_ROWS: list[dict[str, Any]] = [
+    {
+        "id": "b-unreachable",
+        "store": {"get_raises": True},
+        "reason": "svc-api unreachable",
+    },
+    {
+        "id": "c-non-200-503",
+        "store": {"get_status": 503},
+        "reason": "svc-api answered 503",
+    },
+    {
+        "id": "c-non-200-404",
+        "store": {"get_status": 404},
+        "reason": "svc-api answered 404",
+    },
+    {
+        "id": "d-non-json-body",
+        "store": {"get_text": "<html>oops</html>"},
+        "reason": "non-JSON body",
+    },
+    {
+        "id": "d-body-not-a-dict",
+        "store": {"get_json": ["team-B"]},
+        "reason": "unexpected body",
+    },
+]
+
+
+@pytest.mark.parametrize(
+    "row", READ_FAILURE_ROWS, ids=[row["id"] for row in READ_FAILURE_ROWS]
+)
+def test_an_unreadable_pick_fails_closed(row: dict[str, Any]) -> None:
+    store = RoutingSessionStore(**row["store"])
+    harness = _Harness(routing=store)
+    store.rows[(SM_JWT, "mcp:test")] = "team-B"
+
+    async def body(client):
+        session = await harness.open_session(client, OAUTH_BEARER)
+        return [
+            await harness.call(client, OAUTH_BEARER, session, tool)
+            for tool in ("probe_call", "probe")
         ]
-    # The selection read carries the caller's bearer only, never a workspace header (it must not route itself).
-    reads = [call for call in store.calls if call[0] == "GET"]
-    assert reads, "every hosted call reads the selection from svc-api"
-    assert all("x-workspace-id" not in call[2]["headers"] for call in reads)
-    if row.switch_to and not row.explain_fault:
-        assert all(call[2]["client_key"] == "mcp:test" for call in reads)
+
+    results = anyio.run(_run, harness, body)
+
+    for result in results:
+        assert result["isError"] is True
+        text = _text(result)
+        assert "could not read your saved workspace pick" in text
+        assert row["reason"] in text
+        assert "retry, or run switch_workspace" in text
+    # no tool body ran, so no call reached svc-api for any workspace (the exchange itself is the only other call)
+    assert "/memory/mem-1" not in harness.exchange_calls
 
 
-def test_no_process_local_session_dict_survives() -> None:
-    """The per-MCP-session dict is gone: the only home of a hosted switch is svc-api's record."""
-    package = pathlib.Path(__file__).resolve().parents[1] / "smartmemory_mcp"
-    hits = [
-        str(path)
-        for path in package.rglob("*.py")
-        if "_session_teams" in path.read_text(encoding="utf-8")
-    ]
-    assert hits == []
+def test_the_read_is_bearer_only_and_the_write_names_the_client_key() -> None:
+    store = RoutingSessionStore()
+    harness = _Harness(routing=store)
+
+    async def body(client):
+        session = await harness.open_session(client, OAUTH_BEARER)
+        await harness.call(
+            client, OAUTH_BEARER, session, "set_team", {"team": "team-B"}
+        )
+        await harness.call(client, OAUTH_BEARER, session, "probe")
+
+    anyio.run(_run, harness, body)
+
+    kinds = [call[0] for call in store.calls]
+    # the switch call itself reads first (the middleware runs before the tool), then PUT, then the probe reads
+    assert kinds == ["GET", "PUT", "GET"]
+    put, get = store.calls[1][1], store.calls[2][1]
+    assert put["body"] == {"workspace_id": "team-B", "client_key": "mcp:test"}
+    assert get["client_key"] == "mcp:test"
+    for call in (put, get):
+        assert call["headers"]["authorization"].startswith("Bearer ")
+        assert "x-workspace-id" not in call["headers"]
+
+
+def test_no_per_process_session_dict_is_left() -> None:
+    harness = _Harness()
+
+    assert not hasattr(harness.middleware, "_session_teams")
+    assert not hasattr(HostedIdentityMiddleware, "_session_teams")
+
+
+def test_a_refused_switch_is_surfaced_by_the_hosted_tool_and_changes_nothing(
+    monkeypatch,
+) -> None:
+    """The server says 403 even though /memory/teams listed the workspace (membership changed meanwhile)."""
+    harness = _ServerHarness()
+    harness.routing.forbidden.add("team-B")
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", fake_svc_api())
+
+    async def body(client):
+        session_id = await harness.session(client)
+        switched = await harness.call(
+            client, session_id, "switch_team", {"team_id": "team-B"}
+        )
+        who = await harness.call(client, session_id, "whoami")
+        return switched, who
+
+    switched, who = harness.run(body)
+
+    assert switched["isError"] is True
+    assert "you are not a member of that workspace" in _text(switched)
+    assert "team-personal" in _text(who)
+    assert harness.routing.rows == {}
+
+
+# A caller removed from workspace REV whose saved pick still names it (the routing record outlives the membership).
+# `check` picks the assertion: the switch to a still-member workspace succeeds and saves the new pick (d), and the
+# listing that switch_team preflights carries no stale X-Workspace-Id (e).
+# Both switch names run each row (FWD-MERGE-4: switch_workspace is the tool, switch_team its deprecated alias).
+SWITCH_CALLS = [("switch_workspace", "workspace"), ("switch_team", "team_id")]
+REVOKED_ROWS: list[dict[str, str]] = [
+    {"id": f"{case}-{tool}", "check": check, "tool": tool, "param": param}
+    for case, check in (
+        ("d-switch-away-from-revoked-pick-succeeds", "switched"),
+        ("e-team-listing-omits-the-stale-header", "no-stale-header"),
+    )
+    for tool, param in SWITCH_CALLS
+]
+
+
+@pytest.mark.parametrize("row", REVOKED_ROWS, ids=[row["id"] for row in REVOKED_ROWS])
+def test_a_revoked_pick_does_not_block_the_switch_tools(
+    row: dict[str, str], monkeypatch
+) -> None:
+    harness = _ServerHarness()
+    harness.routing.rows[(API_KEY, "mcp:test")] = "team-REV"
+    team_headers: list[dict[str, str]] = []
+    monkeypatch.setattr(
+        "smartmemory_mcp.backends.remote.httpx.request",
+        fake_svc_api(revoked=("team-REV",), team_headers=team_headers),
+    )
+
+    async def body(client):
+        session_id = await harness.session(client)
+        switched = await harness.call(
+            client, session_id, row["tool"], {row["param"]: "team-B"}
+        )
+        who = await harness.call(client, session_id, "whoami")
+        return switched, who
+
+    switched, who = harness.run(body)
+
+    if row["check"] == "switched":
+        assert switched.get("isError") is not True, _text(switched)
+        puts = [call for call in harness.routing.calls if call[0] == "PUT"]
+        assert [put[1]["body"]["workspace_id"] for put in puts] == ["team-B"]
+        assert harness.routing.rows[(API_KEY, "mcp:test")] == "team-B"
+        assert "team-B" in _text(who)
+    else:
+        assert team_headers
+        assert all("x-workspace-id" not in sent for sent in team_headers)
+
+
+# The switch tools are the ones that run when the pick cannot be read: they write a new pick.
+SWITCH_EXEMPT_ROWS: list[dict[str, Any]] = [
+    {"id": f"{case}-{tool}", "store": store, "tool": tool, "param": param}
+    for case, store in (
+        ("e-unreachable", {"get_raises": True}),
+        ("e-503", {"get_status": 503}),
+        ("e-non-json", {"get_text": "not json"}),
+    )
+    for tool, param in SWITCH_CALLS
+]
+
+
+@pytest.mark.parametrize(
+    "row", SWITCH_EXEMPT_ROWS, ids=[row["id"] for row in SWITCH_EXEMPT_ROWS]
+)
+def test_the_switch_tools_run_when_the_pick_cannot_be_read(
+    row: dict[str, Any], monkeypatch
+) -> None:
+    harness = _ServerHarness()
+    harness.routing.get_raises = row["store"].get("get_raises", False)
+    harness.routing.get_status = row["store"].get("get_status", 200)
+    harness.routing.get_text = row["store"].get("get_text")
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", fake_svc_api())
+
+    async def body(client):
+        session_id = await harness.session(client)
+        return await harness.call(
+            client, session_id, row["tool"], {row["param"]: "team-B"}
+        )
+
+    switched = harness.run(body)
+
+    assert switched.get("isError") is not True, _text(switched)
+    puts = [call for call in harness.routing.calls if call[0] == "PUT"]
+    assert [put[1]["body"]["workspace_id"] for put in puts] == ["team-B"]
+    assert [
+        call for call in harness.routing.calls if call[0] == "GET"
+    ] == []  # the exemption skips the read
+
+
+def test_a_pick_older_than_24_hours_still_routes(monkeypatch) -> None:
+    """Fold-in, shape-B form (WS-ROUTING-5): the 24 h lapse is gone on 2.0, so this is green on the current code.
+
+    Switch, move the wall clock 25 h on, reconnect with a new MCP session: the next write still carries the pick.
+    """
+    import time
+
+    harness = _ServerHarness()
+    sent: list[str] = []
+
+    def spy(method, url, **kwargs):
+        sent.append((kwargs.get("headers") or {}).get("X-Workspace-Id", ""))
+        return fake_svc_api()(method, url, **kwargs)
+
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", spy)
+    real_time = time.time
+
+    async def body(client):
+        first = await harness.session(client)
+        switched = await harness.call(
+            client, first, "switch_workspace", {"workspace": "team-B"}
+        )
+        monkeypatch.setattr(time, "time", lambda: real_time() + 25 * 3600)
+        later = await harness.session(client)
+        sent.clear()
+        saved = await harness.call(client, later, "memory_save", {"content": "a note"})
+        return switched, later != first, saved
+
+    switched, reconnected, saved = harness.run(body)
+
+    assert switched.get("isError") is not True, _text(switched)
+    assert reconnected
+    assert saved.get("isError") is not True, _text(saved)
+    assert sent and set(sent) == {"team-B"}
+    assert saved["structuredContent"]["workspace"] == "team-B"

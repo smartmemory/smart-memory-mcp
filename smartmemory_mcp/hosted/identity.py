@@ -50,12 +50,8 @@ class HostedIdentity:
     """Request-scoped identity. `backend` is required, never rebuilt downstream."""
 
     verified: VerifiedIdentity
-    # For display (whoami, a switch refusal): where a header-less write from this call lands. Never sent as
-    # X-Workspace-Id by itself (WS-ROUTING-5 header rule).
     team_id: str
     backend: HostedRemoteBackend
-    # The service's `GET /memory/routing/explain` answer read before this call, or None (service too old).
-    routing: dict | None = None
 
 
 # Set by HostedIdentityMiddleware for the duration of one tool call and reset in
@@ -113,10 +109,6 @@ def build_hosted_backend(
     RemoteBackend constructor's environment fallbacks (`remote.py:28-36`) can
     never engage in hosted mode. `_bootstrapped` is pre-set so the `/auth/me`
     bootstrap never runs against another tenant's default team.
-
-    WS-ROUTING-5: the backend holds NO pick. `team_id` here is only what the call displays; the verified account
-    default is display only and never a header, so a hosted call
-    carries `X-Workspace-Id` only from a tool argument. The session pick is applied by the service from `X-SM-Client`.
     """
     from .backend import HostedRemoteBackend
     from .exchange import DEFAULT_EXCHANGE_CACHE
@@ -139,10 +131,7 @@ def build_hosted_backend(
         {
             "_bootstrapped": True,
             "user_email": verified.email,
-            # Cleared explicitly after construction: the RemoteBackend constructor falls back to the process env
-            # for an empty team, and the hosted container's env must never become a caller's pick.
-            "team_id": "",
-            "default_team_id": verified.active_workspace_id or resolved_team,
+            "team_id": resolved_team,
         }
     )
     return backend

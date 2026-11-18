@@ -1,9 +1,9 @@
 """SmartMemory Unified MCP Server.
 
 Tiered tool registration:
-  FREE  (31 tools) — no login required, includes the decision suite
-  PRO   (69 tools) — after smartmemory login
-  PRO+  (100 tools) — PRO + SMARTMEMORY_MCP_FULL_TOOLS=true
+  FREE  (41 tools) — no login required, includes the decision suite
+  PRO   (81 tools) — after smartmemory login
+  PRO+  (116 tools) — PRO + SMARTMEMORY_MCP_FULL_TOOLS=true
 (Counts are cumulative registered tools, asserted by tests/test_tier_registration.py.)
 
 Backend is independent of tier:
@@ -24,9 +24,9 @@ from smartmemory_mcp.backends.remote import (
     env_workspace,
 )
 from smartmemory_mcp.capabilities import BackendCapabilityMiddleware
-from smartmemory_mcp.routing_middleware import RemoteRoutingMiddleware
 from smartmemory_mcp.health import register_health
 from smartmemory_mcp.instructions import LOCAL_INSTRUCTIONS
+from smartmemory_mcp.tool_trace import ToolTraceMiddleware
 from smartmemory_mcp.tier import Tier, resolve_tier, store_api_key
 from smartmemory_mcp.tools.common import commit_if_current, get_backend, graceful
 
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("smartmemory", instructions=LOCAL_INSTRUCTIONS)
 mcp.add_middleware(BackendCapabilityMiddleware())
-mcp.add_middleware(RemoteRoutingMiddleware())
+mcp.add_middleware(ToolTraceMiddleware())
 
 # Set when the PRO-tier transcript tools register, so `main()` knows whether the
 # search-model warm-up is worth scheduling (FREE tier has no transcript_search).
@@ -64,12 +64,12 @@ def login(api_key: str) -> str:
     temp = RemoteBackend(api_key=api_key)
     result = temp.login(api_key)
 
-    if "error" in result.lower() if isinstance(result, str) else False:
-        return result
+    # Store the key only after the service confirmed it: a failed login keeps the prior key.
+    if not result.ok:
+        return result.message
 
-    # Store key for future sessions
     store_api_key(api_key)
-    return f"{result}\nRestart MCP server to unlock PRO tools."
+    return f"{result.message}\nRestart MCP server to unlock PRO tools."
 
 
 @mcp.tool(
@@ -144,7 +144,10 @@ def _switch_workspace(workspace: str, save_as_default: bool = False) -> str:
     if not result.ok:
         return result.message
     if not commit_if_current(
-        backend, lambda: backend.set_active_workspace(result.workspace_id)
+        backend,
+        lambda: backend.set_active_workspace(
+            result.workspace_id, result.workspace_name
+        ),
     ):
         return refuse(
             "memory_migrate replaced the backend while this switch was looking up "
@@ -242,6 +245,39 @@ def list_workspaces() -> str:
     return format_workspace_rows(rows, backend.active_workspace_id)
 
 
+@mcp.tool(
+    title="Create private workspace",
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    ),
+)
+@graceful
+def create_workspace(name: str, description: str | None = None) -> str:
+    """Create a private workspace that only you can see (no Team), and return its id.
+
+    Does not switch this session: call switch_workspace with the returned id to
+    write there. Agent keys and workspace-bound keys are refused by the server.
+    """
+    from smartmemory_mcp.backends.local import LocalBackend
+    from smartmemory_mcp.workspace_select import format_created_workspace
+
+    backend = get_backend()
+    if isinstance(backend, LocalBackend):
+        return (
+            "Lite (local mode) has no workspaces: everything is in one local store. "
+            "Use remote mode (smartmemory setup --mode remote) for workspaces."
+        )
+    if not name or not name.strip():
+        return "Could not create the workspace: name is required."
+    row, why = backend.create_workspace(name.strip(), description)
+    if row is None:
+        return f"Could not create the workspace: {why}"
+    return format_created_workspace(row)
+
+
 @mcp.tool(title="Switch team (deprecated)", annotations=_SWITCH_ANNOTATIONS)
 @graceful
 def switch_team(team_id: str) -> str:
@@ -265,12 +301,15 @@ def _register_tools():
     # FREE tier (always registered)
     from smartmemory_mcp.tools import (
         decision_tools,
+        procedure_tools,
         memory_tools,
         portability_tools,
         lifecycle_tools,
+        save_tools,
     )
 
     memory_tools.register_free(mcp)
+    save_tools.register_free(mcp)
     memory_tools.register_feedback(mcp)
     portability_tools.register(mcp)
     lifecycle_tools.register(mcp)
@@ -278,6 +317,7 @@ def _register_tools():
     # Python SDK where add_decision needs no key. Only this suite moved; the rest of
     # the PRO block below is unchanged.
     decision_tools.register(mcp)
+    procedure_tools.register(mcp)
 
     # PRO tier
     if tier >= Tier.PRO:
@@ -289,7 +329,7 @@ def _register_tools():
             anchor_tools,
             plan_tools,
             agent_tools,
-            structured_tools,
+            save_tools,
             pattern_tools,
             peer_tools,
             transcript_tools,
@@ -300,7 +340,7 @@ def _register_tools():
         anchor_tools.register(mcp)
         plan_tools.register(mcp)
         agent_tools.register(mcp)
-        structured_tools.register(mcp)
+        save_tools.register_pro(mcp)
         pattern_tools.register(mcp)
         peer_tools.register(mcp)
         transcript_tools.register(mcp)
@@ -312,6 +352,7 @@ def _register_tools():
         from smartmemory_mcp.tools import (
             evolution_tools,
             reasoning_tools,
+            review_tools,
             insight_tools,
             dev_tools,
             zettel_tools,
@@ -319,6 +360,7 @@ def _register_tools():
 
         evolution_tools.register(mcp)
         reasoning_tools.register(mcp)
+        review_tools.register(mcp)  # OUTREACH-MARIUS-HITL-SURFACE-1
         insight_tools.register(mcp)
         dev_tools.register(mcp)
         zettel_tools.register(mcp)
@@ -400,6 +442,20 @@ if not hosted_mode_requested():
 # ---------------------------------------------------------------------------
 
 
+def _bind_local_billing_mode() -> None:
+    """Lite is local end to end: bind ``billing.mode=local`` (keeps an operator's explicit choice).
+
+    Needs core 2.0 (``smartmemory.billing.mode``). An older core has no billing module, so say what is lost and go on."""
+    try:
+        from smartmemory.billing.mode import bind_local_mode_for_lite
+    except ImportError:
+        logger.warning(
+            "core without smartmemory.billing; billing mode not bound for Lite"
+        )
+        return
+    bind_local_mode_for_lite()
+
+
 def main():
     if hosted_mode_requested():
         from smartmemory_mcp.hosted.config import HostedConfig
@@ -407,6 +463,8 @@ def main():
 
         run_hosted(HostedConfig.from_env())
         return
+
+    _bind_local_billing_mode()
 
     # Warm the search models before serving. `transcript_search` reranks, and a cold
     # cross-encoder returns UNRANKED results for the first query of the process — which

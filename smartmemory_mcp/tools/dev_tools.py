@@ -6,7 +6,8 @@ from typing import List, Optional
 
 from mcp.types import ToolAnnotations
 
-from .common import get_backend, graceful
+from ..backends.models import none_found, partial_note, partial_reasons
+from .common import get_backend, graceful, read_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -100,13 +101,19 @@ def register(mcp):
         """Search past development decisions by keyword, feature, or time range."""
         backend = get_backend()
         results = backend.search(query, top_k=limit * 2, memory_type="decision")
+        partial = partial_reasons(
+            results
+        )  # before anything copies the rows: the carrier is the call's own return
 
         if not results:
-            return f"No decisions found for query: {query}"
+            return none_found(
+                f"No decisions found for query: {query}", "decisions", partial
+            )
 
         filtered = []
         for item in results:
-            meta = item["metadata"]
+            raw_meta = read_metadata(item, "dev")  # once per item; None = malformed
+            meta = raw_meta or {}
 
             if feature_id and meta.get("feature_id") != feature_id:
                 continue
@@ -126,7 +133,7 @@ def register(mcp):
                     except (ValueError, TypeError):
                         pass
 
-            filtered.append(item)
+            filtered.append((item, raw_meta))
             if len(filtered) >= limit:
                 break
 
@@ -136,13 +143,20 @@ def register(mcp):
                 filters.append(f"feature_id={feature_id}")
             if since:
                 filters.append(f"since={since}")
-            return (
-                f"No decisions found for query: {query} (filters: {', '.join(filters)})"
+            return none_found(
+                f"No decisions found for query: {query} (filters: {', '.join(filters)})",
+                "decisions",
+                partial,
             )
 
         output = [f"Found {len(filtered)} decisions for '{query}':\n"]
-        for i, item in enumerate(filtered, 1):
-            meta = item["metadata"]
+        for i, (item, meta) in enumerate(filtered, 1):
+            if meta is None:
+                # Malformed metadata: keep the content, omit title/date/feature/rationale.
+                snippet = str(item.get("content", "")).replace("\n", " ")[:150]
+                output.append(f"{i}. [{item['item_id']}] {snippet}")
+                output.append("")
+                continue
             title = meta.get("title", "Untitled")
             rationale = meta.get("rationale", "")
             recorded_at = meta.get("recorded_at", "unknown")
@@ -156,6 +170,9 @@ def register(mcp):
                 preview = rationale[:150] + "..." if len(rationale) > 150 else rationale
                 output.append(f"   Rationale: {preview}")
             output.append("")
+
+        if partial:
+            output.append(partial_note(partial))
 
         return "\n".join(output)
 
@@ -237,10 +254,18 @@ def register(mcp):
         output = []
 
         session_results = backend.search(topic, top_k=sessions, memory_type="episodic")
+        session_partial = partial_reasons(session_results)
+        # Validate each item's metadata once; every later read reuses the result.
+        session_metas = [read_metadata(it, "dev") for it in session_results or []]
         if session_results:
             output.append(f"=== Recent Sessions ({len(session_results)}) ===\n")
             for i, item in enumerate(session_results, 1):
-                meta = item["metadata"]
+                meta = session_metas[i - 1]
+                if meta is None:
+                    # Malformed metadata: content only, no date or next steps.
+                    output.append(f"{i}. {str(item['content'])[:200]}")
+                    output.append("")
+                    continue
                 summary = meta.get("summary", str(item["content"])[:200])
                 recorded_at = meta.get("recorded_at", "unknown")
                 next_steps = meta.get("next_steps", [])
@@ -249,20 +274,34 @@ def register(mcp):
                 if next_steps:
                     output.append(f"   Next steps: {'; '.join(next_steps)}")
                 output.append("")
+            if session_partial:
+                output.append(partial_note(session_partial) + "\n")
         else:
-            output.append("No recent sessions found.\n")
+            output.append(
+                none_found(
+                    "No recent sessions found.", "recent sessions", session_partial
+                )
+                + "\n"
+            )
 
         decision_results = []
         if include_decisions:
-            decision_results = (
-                backend.search(topic, top_k=3, memory_type="decision") or []
-            )
+            found = backend.search(topic, top_k=3, memory_type="decision")
+            decision_partial = partial_reasons(found)
+            decision_results = found or []
+            decision_metas = [read_metadata(d, "dev") for d in decision_results]
             if decision_results:
                 output.append(f"=== Related Decisions ({len(decision_results)}) ===\n")
                 for i, item in enumerate(decision_results, 1):
-                    meta = item["metadata"]
-                    title = meta.get("title", "Untitled")
-                    rationale = meta.get("rationale", "")
+                    meta = decision_metas[i - 1]
+                    if meta is None:
+                        # Malformed metadata: content only, no title or rationale.
+                        output.append(f"{i}. {str(item['content'])[:100]}")
+                        output.append("")
+                        continue
+                    # SM-LOCAL-TOOLS-1: a decision stores rationale=None when it has none.
+                    title = meta.get("title") or "Untitled"
+                    rationale = meta.get("rationale") or ""
                     preview = (
                         rationale[:100] + "..." if len(rationale) > 100 else rationale
                     )
@@ -271,20 +310,32 @@ def register(mcp):
                     if preview:
                         output.append(f"   Rationale: {preview}")
                     output.append("")
+                if decision_partial:
+                    output.append(partial_note(decision_partial) + "\n")
             else:
-                output.append("No related decisions found.\n")
+                output.append(
+                    none_found(
+                        "No related decisions found.",
+                        "related decisions",
+                        decision_partial,
+                    )
+                    + "\n"
+                )
 
         context_parts = []
         if session_results:
-            latest = session_results[0]
-            latest_meta = latest["metadata"]
-            context_parts.append(f"Last session: {latest_meta.get('summary', 'N/A')}")
-            ns = latest_meta.get("next_steps", [])
-            if ns:
-                context_parts.append(f"Pending: {'; '.join(ns)}")
+            latest_meta = session_metas[0]
+            if latest_meta is not None:
+                context_parts.append(
+                    f"Last session: {latest_meta.get('summary', 'N/A')}"
+                )
+                ns = latest_meta.get("next_steps", [])
+                if ns:
+                    context_parts.append(f"Pending: {'; '.join(ns)}")
         if include_decisions and decision_results:
-            titles = [d["metadata"].get("title", "?") for d in decision_results[:3]]
-            context_parts.append(f"Relevant decisions: {', '.join(titles)}")
+            titles = [m.get("title", "?") for m in decision_metas[:3] if m is not None]
+            if titles:
+                context_parts.append(f"Relevant decisions: {', '.join(titles)}")
 
         if context_parts:
             output.append("=== Suggested Context ===\n")

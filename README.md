@@ -63,6 +63,22 @@ The `smartmemory` CLI config's `mode = "local"` is not an opt-in for the MCP; it
 logged once. The transcript tools (`transcript_search` and friends) read a local
 store, so they still open it in-process on first use, with a WARNING.
 
+## Local session rule checks
+
+`memory_get_violation_patterns(memory_dir=..., rule_type="feedback")` compiles
+local `feedback_*.md` Detection patterns with core's adherence compiler. It
+returns the existing record list and logs each unusable rule by name. Invalid
+regexes and discarded entries produce coverage warnings. Files must be regular
+files in the selected directory. `rule_type` is a literal filename prefix.
+The tool is unavailable in hosted mode.
+
+For the orient hook, set `SMARTMEMORY_RULES_DIR` to the session's local rule
+directory. The hook loads the catalog once and asks the session to check each
+draft. A deterministic advisory check is available with
+`python -m smartmemory.adherence.session --check`, reading JSON with `response`
+and `recent_user_turns` from stdin. It does not call a service or write a store.
+The checker ships in core's `smartmemory.adherence.session` module.
+
 ## Hosted mode
 
 `--hosted` serves the multi-tenant, OAuth-protected endpoint that runs at
@@ -73,6 +89,13 @@ core SmartMemory instance.
 
 Hosted search and recall ask the service to exclude speculative-derived memories
 server-side, while retaining client-side tier filtering as defence in depth.
+
+Hosted mode serves an explicit tool allowlist (`smartmemory_mcp/hosted/tools.py`).
+The adherence pattern tools are not on it: `pattern_seed` reads a MEMORY.md
+directory on the client's own disk, which a hosted server does not have, and
+`pattern_query/get/list` and `pattern_create/update/retire` are not yet audited
+for hosted. In stdio and `--http` modes all seven work, locally against your own
+store or remotely through `/memory/patterns` (the seed sends file text, never a path).
 
 ```bash
 SMARTMEMORY_MCP_MODE=hosted smartmemory-mcp
@@ -137,17 +160,34 @@ Code indexing reports clean, partial and failed file counts plus acceptance, sta
 
 Local `code_effects(directory, repo_name=None)` scans Python effects through the shared engine without opening a memory store. Hosted `code_effects(repo, source_snapshot, limit=20, offset=0)` reads uploaded `fa_snapshot` records in the selected workspace. It accepts no filesystem path. Upload the engine's `snapshot_record` payload through existing declared-record ingestion first. Repository rules belong in the scanned checkout's `.smartmemory-effects.json`.
 
-Hosted mode advertises 31 tools, an explicit allowlist rather than a tier:
+Stdio advertises 41 tools in FREE, 81 in PRO and 120 in PRO+ (counts pinned by `tests/test_tier_registration.py`). PRO+ includes the conflict review queue (`review_queue_list`, `review_queue_settle`), the supersession policy (`supersession_policy_get`, `supersession_policy_set`) and who may approve reviews (`review_approval_get`, `review_approval_set`). On a local store the policy and approval tools read and set the store's own settings, and may only tighten them. By default only a person approves a review, so the assistant's settle call is refused until a person sets approval to anyone. `list_workspaces` is available in every tier.
 
-`memory_ingest` `memory_search` `memory_recall` `memory_ask` `read_around` `memory_get`
-`memory_explain` `memory_recall_pack` `memory_policy_bundle` `memory_add`
-`memory_update` `memory_supersede` `memory_delete` `memory_list` `memory_stats` `memory_distill`
-`memory_ingest_conversation` `memory_search_by_metadata` `memory_feedback`
+Hosted mode advertises 35 tools, an explicit allowlist rather than a tier:
+
+`memory_save` `memory_search` `memory_recall` `read_around` `memory_get`
+`memory_explain` `memory_ask` `memory_recall_pack` `memory_policy_bundle`
+`memory_update` `memory_supersede` `memory_delete` `memory_list` `memory_stats`
+`memory_save_conversation` `memory_search_by_metadata` `memory_feedback`
 `code_search` `code_dead_code` `code_dependencies` `code_upload` `code_effects`
 `agent_set_recall_profile` `agent_get_recall_profile` `reasoning_query_traces`
-`whoami` `list_workspaces` `switch_workspace`
+`decision_create` `decision_supersede` `decision_get` `decision_list`
+`decision_search` `decision_provenance` `review_queue_list` `review_queue_settle`
+`whoami` `list_workspaces` `switch_workspace` `switch_team`
 
-`memory_update` edits in place and keeps no history; to change or reverse a rule use `memory_supersede(item_id, content, reason, valid_from=...)`, and ask `memory_search(query, valid_at="2026-04-10")` which rule was in force on a date (1.5.25).
+When a workspace asks a person first (supersession policy `propose`), `decision_supersede`
+answers "held for review" with a review id and the old rule stays in force. The assistant
+tells the user the change is waiting for a person and never settles it itself. A person settles it
+in the review queue (`review_queue_list` shows what is waiting). `review_queue_settle` records that
+person's decision (`keep_b` accepts, `keep_a` rejects); in a person-only workspace an agent's call is refused.
+Sending the same change again after it was decided answers "already decided: <outcome> (review <id>)".
+`memory_supersede` on a decision in such a workspace shows the refusal ("use `decision_supersede`") and writes nothing.
+Hosted, both review tools act on the signed-in workspace and the service records the signed-in
+caller as the one who settled. `decision_list(status=...)` reads `superseded` (replaced) and
+`retracted` rules as well as the ones in force (`active`, the default).
+
+Hosted search and decision reads accept `business_scope` and `valid_at`.
+Omitting both selects the sponsor rule effective now. `scope_go_lives` on
+creation or supersession schedules sponsor or exact-site activation dates.
 
 Deprecated: `switch_team` (an alias of `switch_workspace`, removed in the next
 release).
@@ -172,13 +212,11 @@ quietly ignoring the request:
   alternative recall path builds a working context through the core activation
   scorer.
 
-`list_workspaces()` lists the workspaces you can use (`GET /memory/workspaces`).
 `switch_workspace(workspace)` changes the workspace by id or name, with no
-restart. The switch is saved server-side for you and this MCP client (1.5.24),
-so it survives a reconnect or a restart of the hosted server and lapses after a
-day without writes. It validates membership against the API and never leaks into
-another user's calls. A refused switch names the workspace still in use. Every
-write result ends with the line `Workspace: <name> (<id>), routed by <lever>.` Listing your workspaces needs an API key with the `read:teams`
+restart. The pick is saved server-side for you and this MCP client, so it
+survives a reconnect and a server restart (SM20-WS-ROUTING-PARITY-1). It
+validates membership against the API and never leaks into another user's calls. A refused switch names the workspace
+still in use. Listing your workspaces needs an API key with the `read:teams`
 scope (a key with only `read:memories` is told so and keeps its workspace).
 `whoami` shows the user, tenant and workspace. The tenant comes from
 your credential and is never a tool argument.
@@ -235,6 +273,48 @@ Quiesce old writers before first-open indexing. Verify the engine capability pin
 
 Keep your existing local `smartmemory` connection. Add `claude mcp add --transport http smartmemory-company https://mcp.smartmemory.ai/mcp` and authenticate with your own company-org login. Check `whoami` for the expected tenant, use `switch_workspace` with the project's paired Workspace ID, then check again. Recheck after reconnect because selection is session-scoped. The owner and Kyle authenticate separately. No local-memory upload or local backend switch is needed. Hosted Team responses use `team_id`. Independent Workspace selection is outside this change. Live OAuth and two-user access acceptance remain required.
 
-`memory_ask(question, limit=5, reasoning=True)` uses the web app's Answer mode and returns the answer, evidence, reasoning, and relations.
+`memory_ask(question, limit=5, reasoning=True)` answers through the selected backend. Remote and hosted calls use the authenticated `/memory/ask` route with the active workspace. The published response follows `DIST-LITE-9/ask-contract.json`.
 
-A lost add receipt reports an unconfirmed write outcome. The memory may already exist. Check search or the memory list before retrying. Adds allow 120 seconds for the extraction pipeline, matching ingestion.
+`memory_supersede` accepts `scope_go_lives` or the legacy `valid_from`. A scheduled amendment returns its accepted receipt, including `status`, `scope_go_lives` and `recorded_at`, as defined in `SM-SCOPED-VALIDITY-1/scoped-validity-contract.json`. Undated replacements retain the existing confirmation.
+
+If an add loses its response after submission, `WriteOutcomeUnknown` means the memory may have been saved. Check `memory_search` or `memory_list` before retrying to avoid duplicates. The client does not retry the write. Recall uses the full query budget and returns full evidence content.
+
+
+### Reader recall presets (SM-RECALL-PROFILES-1)
+
+Use `recall_pack(preset="brief")` in core or `memory_recall_pack(preset="brief")`
+over MCP. A reader preset selects ordered sections and a default token budget.
+Pass `budget_tokens` to override the default.
+
+| Preset | Default tokens | Sections in priority order |
+|---|---:|---|
+| `brief` | 2000 | constraints, active_plan, anchors, learned, tier1_user |
+| `resume` | 3000 | active_plan, anchors, last_session, snapshot, constraints, learned |
+| `review` | 4000 | constraints, learned, tier1_user, notes |
+| `pane` | 600 | constraints, active_plan, anchors, last_session |
+
+`preset` and explicit `sections` are mutually exclusive. Calls without a reader
+preset, including `wakeup`, still require an explicit budget. The manifest names
+the preset, resolved budget and section caps. Budget loss and sections unavailable
+for `as_of` reads retain their WARNING logs and manifest accounting. Search agent
+recall profiles continue to control memory-type weights independently.
+
+MCP expands the four reader presets into the existing `sections` and `cap_tokens`
+request fields for local, remote and hosted calls. Remote and hosted use requires
+the SM-LEARNED-TOOLS-1 service dependency for learned and constraint sections.
+## Human procedure tools
+
+SM-PROCEDURE-TYPE-1 and SM-PROCEDURE-MCP-1 add six stdio tools in every tier:
+
+- `procedure_create(name, steps, expected_outcome, description="", preconditions=None, candidate=False)`
+- `procedure_list(task=None, status="active", limit=20)`
+- `procedure_get(procedure_id)`
+- `procedure_promote(procedure_id)`
+- `procedure_dismiss(procedure_id, reason="")`
+- `procedure_record_outcome(procedure_id, success, note="")`
+
+Both local and remote stdio modes need a matching `smartmemory-core` installation containing `smartmemory.procedures.human`. These paired post-cut branches must be used together until released. Hosted exposure awaits its explicit surface audit.
+
+Procedures are structured human runbooks with ordered steps, preconditions and expected outcomes. Create active runbooks or candidates, explicitly promote candidates and dismiss obsolete procedures. Task filtering matches active runbooks by token overlap. Recorded successes reinforce confidence and failures weaken it, with the latest 20 outcomes returned. These candidate IDs name saved human runbooks. Ingestion recipe cluster IDs belong to the existing REST recipe workflow.
+
+The backend supplies workspace authority. The tools accept no workspace, tenant or user override. Remote mode reuses existing scoped REST CRUD with direct add, preserving the procedure body. No steps are executed by these tools.

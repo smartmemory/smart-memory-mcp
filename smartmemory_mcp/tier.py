@@ -88,8 +88,17 @@ def store_api_key(key: str) -> None:
         return
 
     _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _KEY_FILE.write_text(key, encoding="utf-8")
-    _KEY_FILE.chmod(0o600)
+    # Create 0600 before any bytes land, then replace atomically: no wide-mode window, and a
+    # crash mid-write leaves the prior key intact.
+    tmp = _KEY_FILE.with_name(f"{_KEY_FILE.name}.{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(key)
+        os.replace(tmp, _KEY_FILE)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def resolve_tier() -> Tier:

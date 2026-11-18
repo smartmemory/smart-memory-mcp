@@ -7,7 +7,8 @@ from typing import Any, Optional
 
 from mcp.types import ToolAnnotations
 
-from .common import get_backend, graceful
+from ..backends.models import none_found, partial_note, partial_reasons
+from .common import get_backend, graceful, metadata_dict
 
 logger = logging.getLogger(__name__)
 
@@ -189,12 +190,14 @@ def register(mcp):
             if isinstance(result, dict) and "error" in result:
                 return f"Error: {result['error']}"
             items = result if isinstance(result, list) else []
+            partial: tuple[str, ...] = ()  # the remote answer carries no core coverage
         else:
             # Local: search memory items with code type
             results = backend.search(query, top_k=limit, memory_type="code")
+            partial = partial_reasons(results)
             items = []
             for item in results or []:
-                meta = item["metadata"]
+                meta = metadata_dict(item, "code")
                 if entity_type and meta.get("entity_type") != entity_type:
                     continue
                 if repo and meta.get("repo") != repo:
@@ -228,7 +231,9 @@ def register(mcp):
                 )
 
         if not items:
-            return f"No code entities found for: {query}"
+            return none_found(
+                f"No code entities found for: {query}", "code entities", partial
+            )
 
         lines = [f"Found {len(items)} code entities for '{query}':\n"]
         for i, item in enumerate(items, 1):
@@ -269,6 +274,8 @@ def register(mcp):
             if evidence:
                 line += "\n   Evidence: " + json.dumps(evidence, ensure_ascii=False)
             lines.append(line)
+        if partial:
+            lines.append(partial_note(partial))
         return "\n".join(lines)
 
     @mcp.tool(
@@ -463,24 +470,21 @@ def register(mcp):
             if value
         }
 
-        if backend.supports("request"):
-            params: dict[str, Any] = {"repo": repo, "limit": limit}
-            if exclude_decorators:
-                params["exclude_decorators"] = exclude_decorators
-            params.update({key: "true" for key in options})
-            result = backend.request("GET", "/memory/code/dead-code", params=params)
-            if isinstance(result, dict) and "error" in result:
-                return f"Error: {result['error']}"
-            if not isinstance(result, dict):
-                return "Unexpected response from API"
-            dead = result.get("dead_functions", [])
-            count = result.get("count", len(dead))
-        else:
-            result = backend.code_dead_code(
-                repo=repo, exclude_decorators=exclude_decorators, limit=limit, **options
+        if not backend.supports("code_dead_code"):
+            logger.warning(
+                "code_dead_code: %s has no dead-code analysis, nothing was analyzed",
+                type(backend).__name__,
             )
-            dead = result.get("dead_functions", [])
-            count = result.get("count", len(dead))
+            return "Dead-code analysis is unavailable on this backend."
+        result = backend.code_dead_code(
+            repo=repo, exclude_decorators=exclude_decorators, limit=limit, **options
+        )
+        if isinstance(result, dict) and "error" in result:
+            return f"Error: {result['error']}"
+        if not isinstance(result, dict):
+            return "Unexpected response from API"
+        dead = result.get("dead_functions", [])
+        count = result.get("count", len(dead))
 
         note = f" (options: {', '.join(sorted(options))})" if options else ""
         if not dead:
@@ -526,28 +530,19 @@ def register(mcp):
         """
         backend = get_backend()
 
-        if backend.supports("request"):
-            params: dict[str, Any] = {
-                "entity_name": entity_name,
-                "direction": direction,
-            }
-            if repo:
-                params["repo"] = repo
-            if file_path:
-                params["file_path"] = file_path
-            if item_id:
-                params["item_id"] = item_id
-            result = backend.request("GET", "/memory/code/dependencies", params=params)
-        elif backend.supports("code_dependencies"):
-            result = backend.code_dependencies(
-                entity_name=entity_name,
-                direction=direction,
-                repo=repo,
-                file_path=file_path,
-                item_id=item_id,
+        if not backend.supports("code_dependencies"):
+            logger.warning(
+                "code_dependencies: %s has no dependency analysis, nothing was traced",
+                type(backend).__name__,
             )
-        else:
             return "Dependency analysis is unavailable on this backend."
+        result = backend.code_dependencies(
+            entity_name=entity_name,
+            direction=direction,
+            repo=repo,
+            file_path=file_path,
+            item_id=item_id,
+        )
         if isinstance(result, dict) and "error" in result:
             return f"Error: {result['error']}"
         if not isinstance(result, dict):

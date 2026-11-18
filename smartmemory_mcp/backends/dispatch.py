@@ -90,6 +90,8 @@ def set_process_mode(mode: str, workspace_id: str | None = None) -> None:
         reset_backend()
         if workspace_id and mode == MODE_REMOTE:
             _backend = build_backend(MODE_REMOTE, team_id=workspace_id)
+            # A carried live workspace is the session's pick, not the configured one (whoami `Routed by:`).
+            _backend.set_active_workspace(workspace_id)
 
 
 def _app_config():

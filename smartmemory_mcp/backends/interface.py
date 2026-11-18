@@ -8,38 +8,60 @@ from .models import MemoryResult
 
 
 # MCP-LOCAL-BROKEN-TOOLS-1: tools that register but only error in local mode.
-# tool name -> the bug that breaks it. Each tool is its own capability (named after
+# tool name -> the bug that breaks it. Empty since SM-LOCAL-TOOLS-1 fixed all fourteen; the
+# mechanism stays for the next one. Each tool is its own capability (named after
 # the tool, not a backend method): LocalBackend declares them unsupported, remote and
 # hosted backends keep them. Delete a row here when its bug is fixed; the tool comes
 # back in local mode with no other change. Tool names in capabilities.TOOL_CAPABILITIES.
-LOCAL_BROKEN_TOOLS: dict[str, str] = {
-    "memory_search_advanced": "CORE-GRAPHCONFIG-1: no graph name configured for main",
-    "memory_policy_bundle": "Policy compilation requires a scoped workspace_id (needs hosted)",
-    "pattern_list": "'LocalBackend' object has no attribute '_graph'",
-    "pattern_query": "'LocalBackend' object has no attribute '_graph'",
-    "memory_plan_active": "'LocalBackend' object has no attribute '_graph'",
-    "memory_anchor_list": "'LocalBackend' object has no attribute '_graph'",
-    "memory_anchor_check_drift": "'LocalBackend' object has no attribute '_graph'",
-    "dev_load_context": "object of type 'NoneType' has no len() (decision with no rationale)",
-    "zettel_clusters": "ZettelMemory.__init__() got an unexpected keyword argument 'memory'",
-    "zettel_backlinks": "ZettelMemory.__init__() got an unexpected keyword argument 'memory'",
-    "zettel_connections": "ZettelMemory.__init__() got an unexpected keyword argument 'memory'",
-    "zettel_discover": "ZettelMemory.__init__() got an unexpected keyword argument 'memory'",
-    "memory_plan_create": "'LocalBackend' object has no attribute 'update_properties' (with tasks)",
-    "memory_log_failure": "object of type 'MemoryItem' has no len()",
-}
+LOCAL_BROKEN_TOOLS: dict[str, str] = {}
+
+
+class EvidenceRefused(ValueError):
+    """SM-EVIDENCE-TYPE-1: the store refused an evidence write or link, with the cause in the message.
+
+    Local mode re-raises core's ValueError as this; remote mode raises it for the route's 404/409/422. A path-guard
+    refusal (``path_guard.path_id``) stays a plain ValueError, so the tools render only store refusals as text.
+    """
+
+
+class DecisionRestoreRefused(ValueError):
+    """DECISION-RESTORE-ONE-ACTION-1: the store refused a restore; ``code`` is one of the contract refusal codes
+    (not_owner, not_retired, scheduled, replaced_again, replacement_unreadable). ``not_found`` is returned as None."""
+
+    def __init__(
+        self, code: str, message: str = "", newer_decision_id: str | None = None
+    ):
+        super().__init__(message or code)
+        self.code = code
+        self.newer_decision_id = newer_decision_id
+
+
+class DecisionAlreadyDecided(ValueError):
+    """A re-sent decision change whose review is already settled: nothing is held, the outcome stands.
+
+    Local mode re-raises core's ``AlreadyDecided`` as this; remote mode raises it for the 409 ``already_decided``.
+    """
+
+    def __init__(self, review_id: str, action: str | None, outcome: str):
+        super().__init__(f"already decided: {outcome} (review {review_id})")
+        self.review_id = review_id
+        self.action = action
+        self.outcome = outcome
+
+
+class DecisionReplaceHeld(RuntimeError):
+    """A general replace (``memory_supersede``) named a decision in a workspace that holds rule changes for a person.
+
+    Nothing was written. ``str(self)`` is the store's own refusal ("use decision_supersede, which files the review"),
+    shown to the assistant as is. Local mode re-raises core's ``GeneralReplaceRefused`` as this; remote mode raises it
+    for the 409 ``decision_replace_held``.
+    """
 
 
 class BackendCapabilities:
     """Central capability check, including explicitly unsupported operations."""
 
     unsupported_capabilities: frozenset[str] = frozenset()
-    # Whether `add()` runs entity/date/decision extraction (MCP-CAPTURE-ROUTING-1).
-    # False is the safe default: memory_add then warns that extraction was skipped.
-    add_runs_extraction: bool = False
-    # Whether a write tool's `workspace_id` argument reaches the service as `X-Workspace-Id` (WS-ROUTING-5).
-    # Lite has no workspaces, so its tools refuse the argument instead of dropping it.
-    accepts_workspace_argument: bool = False
 
     @classmethod
     def supports(cls, method: str) -> bool:
@@ -104,6 +126,12 @@ class MemoryBackend(Protocol):
         """Full provenance answer for one memory (PLAT-AUDITABLE-MEMORY-1 explain contract)."""
         ...
 
+    def ask(
+        self, question: str, limit: int = 5, *, reasoning: bool = True
+    ) -> dict[str, Any]:
+        """Answer with workspace evidence (DIST-LITE-9 ask-contract.json)."""
+        ...
+
     def recall(self, cwd: str | None = None, top_k: int = 10, **kwargs: Any) -> str:
         """Recall recent and relevant memories, formatted as markdown."""
         ...
@@ -139,6 +167,35 @@ class MemoryBackend(Protocol):
         self, data: dict[str, Any], schema: str | None = None, **kwargs: Any
     ) -> str:
         """Ingest structured data with an optional schema."""
+        ...
+
+    # --- Receipt-reading saves (U4.42-FU-TOOLS): the save tools' one seam ---------
+    # Each returns a ``SaveReturn``: the legacy value on the legacy arm, the receipt plus its summary on the receipt arm.
+
+    def add_with_receipt(
+        self, content: str, memory_type: str = "semantic", **kwargs: Any
+    ) -> Any:
+        """``add`` that keeps the save receipt."""
+        ...
+
+    def ingest_with_receipt(
+        self, content: str, memory_type: str = "semantic", **kwargs: Any
+    ) -> Any:
+        """``ingest`` that keeps the save receipt."""
+        ...
+
+    def ingest_structured_with_receipt(
+        self, data: dict[str, Any], schema: str | None = None, **kwargs: Any
+    ) -> Any:
+        """``ingest_structured`` that keeps the save receipt."""
+        ...
+
+    def ingest_document_with_receipt(self, source: str, **kwargs: Any) -> Any:
+        """``ingest_document`` that keeps the save receipt."""
+        ...
+
+    def ingest_conversation_with_receipt(self, turns: list, **kwargs: Any) -> Any:
+        """``ingest_conversation_sync`` that keeps the save receipt."""
         ...
 
     def ingest_document(
@@ -290,8 +347,14 @@ class MemoryBackend(Protocol):
         """Create a decision. Returns at least decision_id/decision_type/confidence."""
         ...
 
-    def decision_get(self, decision_id: str) -> dict[str, Any] | None:
-        """Full `Decision.to_dict()`, or None when the decision does not exist."""
+    def decision_get(
+        self,
+        decision_id: str,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Full `Decision.to_dict()`, or None when the decision does not exist (at `as_of` when set)."""
         ...
 
     def decision_list(
@@ -300,12 +363,25 @@ class MemoryBackend(Protocol):
         decision_type: str | None = None,
         min_confidence: float = 0.0,
         limit: int = 50,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
+        status: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Active decisions, filtered."""
+        """Decisions in one lifecycle state, filtered: `status` None or "active" (default), "superseded",
+        "retracted" or "pending" (OUTREACH-MARIUS-HITL-SURFACE-1 p4). `as_of` lists the ones that held that
+        state at that instant (SM-ASOF-DECISIONS-1)."""
         ...
 
-    def decision_search(self, topic: str, limit: int = 20) -> list[dict[str, Any]]:
-        """Active decisions related to a topic."""
+    def decision_search(
+        self,
+        topic: str,
+        limit: int = 20,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Active decisions related to a topic (active at `as_of` when set)."""
         ...
 
     def decision_supersede(
@@ -318,12 +394,19 @@ class MemoryBackend(Protocol):
         rejected_alternatives: list[str] | None = None,
         rationale: str | None = None,
         constraints: list[str] | None = None,
+        scope_go_lives: list[dict[str, Any]] | None = None,
+        valid_from: str | None = None,
     ) -> dict[str, Any] | None:
         """{old_decision_id, new_decision_id, status}, or None when absent."""
         ...
 
     def decision_retract(self, decision_id: str, reason: str) -> dict[str, Any] | None:
         """{decision_id, status}, or None when the decision does not exist."""
+        ...
+
+    def decision_restore(self, decision_id: str, reason: str) -> dict[str, Any] | None:
+        """DECISION-RESTORE-ONE-ACTION-1: {decision_id, status, replacement_decision_id}, None when absent; a refusal
+        raises DecisionRestoreRefused."""
         ...
 
     def decision_reinforce(
@@ -338,8 +421,33 @@ class MemoryBackend(Protocol):
         """{decision_id, confidence, contradiction_count}, or None when absent."""
         ...
 
-    def decision_provenance(self, decision_id: str) -> dict[str, Any] | None:
-        """{decision, reasoning_trace, evidence, superseded, superseded_by}, or None when absent."""
+    def decision_link_evidence(
+        self, decision_id: str, evidence_id: str
+    ) -> dict[str, Any]:
+        """SM-EVIDENCE-TYPE-1: link a stored evidence node (node id or ``ev:`` ref) to a live decision.
+
+        {decision_id, evidence_id (the node id), evidence_ids, confidence}; confidence is unchanged. Raises
+        EvidenceRefused naming the refusal: decision or evidence not found, a node of another type, an ended decision.
+        """
+        ...
+
+    def decision_provenance(
+        self,
+        decision_id: str,
+        as_of: str | None = None,
+        business_scope: dict[str, Any] | None = None,
+        valid_at: str | None = None,
+    ) -> dict[str, Any] | None:
+        """{decision, reasoning_trace, evidence, superseded, superseded_by}, or None when absent (at `as_of`)."""
+        ...
+
+    def evidence_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        """SM-EVIDENCE-TYPE-1: store one Compose ``ev:`` record as an `evidence` node (idempotent on its id).
+
+        The contract's evidence_response: {evidence_id, evidence_ref, kind, subject, checker, observed_at,
+        checked_at, checks, payload, record}. Raises EvidenceRefused for a malformed record or a different body
+        under a stored id.
+        """
         ...
 
     def decision_find_conflicts(self, decision_id: str) -> dict[str, Any] | None:
@@ -365,3 +473,89 @@ class MemoryBackend(Protocol):
     def decision_try_activate(self, decision_id: str) -> bool:
         """True when the pending decision became active."""
         ...
+
+    # --- Patterns, plans, anchors, failure journal (SM-LOCAL-TOOLS-1) ------------
+    # Plain dicts/lists/strings, as the decision block. Local runs the core managers on
+    # the real store; remote raises NotImplementedError (no client for the routes yet).
+
+    def pattern_query(
+        self,
+        scope: str | None = None,
+        severity: str | None = None,
+        free_text: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]: ...
+
+    def pattern_get(self, pattern_id: str) -> dict[str, Any] | None: ...
+
+    def pattern_list(self, limit: int = 200) -> list[dict[str, Any]]: ...
+
+    # Pattern writes (SM-PATTERN-CRUD-1, OWNER D-0089): local runs core over the user's own
+    # store, remote calls /memory/patterns and never imports core. Absence is None; a
+    # protected field raises ValueError.
+
+    def pattern_create(
+        self,
+        title: str,
+        content: str,
+        severity: str = "warn",
+        scope: list[str] | None = None,
+        examples: list[dict[str, Any]] | None = None,
+        rationale: str = "",
+    ) -> dict[str, Any]:
+        """Create a pattern; ``source`` is this MCP process's provenance tag."""
+        ...
+
+    def pattern_update(
+        self, pattern_id: str, /, **fields: Any
+    ) -> dict[str, Any] | None:
+        """Change fields (version bumps, ``updated_by`` recorded); None when absent."""
+        ...
+
+    def pattern_retire(
+        self, pattern_id: str, reason: str = "retired via MCP"
+    ) -> dict[str, Any] | None:
+        """Soft retract: ``{pattern_id, status: 'retracted'}``, or None when absent."""
+        ...
+
+    def pattern_seed(self, directory: str) -> dict[str, Any]:
+        """Seed from ``<directory>/MEMORY.md`` and its in-dir linked files: ``{created, skipped}``."""
+        ...
+
+    def plan_create(
+        self,
+        title: str,
+        tasks: list[dict[str, Any]] | None = None,
+        context: str = "",
+        created_by: str = "",
+    ) -> dict[str, Any]: ...
+
+    def plan_get(self, plan_id: str) -> dict[str, Any] | None: ...
+
+    def plan_active(self) -> list[dict[str, Any]]: ...
+
+    def plan_update_task(self, plan_id: str, task_id: str, status: str) -> None: ...
+
+    def anchor_set(self, content: str, anchor_type: str, session_id: str) -> str: ...
+
+    def anchor_list(
+        self, session_id: str = "", anchor_type: str | None = None
+    ) -> list[dict[str, Any]]: ...
+
+    def anchor_clear(
+        self, session_id: str = "", anchor_type: str | None = None
+    ) -> int: ...
+
+    def anchor_graduate(self, session_id: str = "") -> list[str]: ...
+
+    def anchor_check_drift(
+        self, session_id: str, recent_outputs: list[str]
+    ) -> list[dict[str, Any]]: ...
+
+    def log_failure(
+        self, error_type: str, content: str, context: str, **kwargs: Any
+    ) -> str: ...
+
+    def check_failure(
+        self, error_type: str, context: str, top_k: int = 3
+    ) -> list[dict[str, Any]]: ...

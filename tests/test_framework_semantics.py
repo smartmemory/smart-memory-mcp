@@ -56,7 +56,6 @@ export const View = () => <Child/>;
 
 def test_local_falkordb_dead_code_selects_indexed_memory_type(tmp_path, monkeypatch):
     import json
-    import os
     from uuid import uuid4
 
     import pytest

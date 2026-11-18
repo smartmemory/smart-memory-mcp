@@ -67,12 +67,13 @@ EXCLUDED_TOOLS = (
     "memory_get_violation_patterns",  # reads local rule files
     "memory_anchor_set",  # AnchorManager needs a core SmartMemory
     "memory_plan_create",  # PlanManager needs a core SmartMemory
-    "pattern_query",  # PatternManager reads memory._graph
-    "decision_create",  # requires _mem
+    "pattern_query",  # REST-backed since SM-PATTERN-CRUD-1, not yet audited for hosted
+    "pattern_create",  # catalog write, not yet audited for hosted (SM-PATTERN-CRUD-1)
+    "pattern_retire",  # catalog write, not yet audited for hosted (SM-PATTERN-CRUD-1)
+    "pattern_seed",  # reads the client's MEMORY.md directory (filesystem path)
     "peer_chat",  # parked remotely
     "transcript_search",  # local transcript store
-    "memory_ingest_document",  # not audited for hosted
-    "memory_ingest_structured",  # not audited for hosted
+    "memory_save_document",  # path-taking, not audited for hosted
 )
 
 FORBIDDEN_RESULT_FRAGMENTS = (
@@ -107,8 +108,17 @@ def _restore_hosted_mode():
 # --- the fake svc-api -------------------------------------------------------------
 
 
-def fake_svc_api(seen: list[tuple[str, str]] | None = None):
-    """A minimal but valid svc-api for every route a hosted tool can reach."""
+def fake_svc_api(
+    seen: list[tuple[str, str]] | None = None,
+    *,
+    revoked: tuple[str, ...] = (),
+    team_headers: list[dict[str, str]] | None = None,
+):
+    """A minimal but valid svc-api for every route a hosted tool can reach.
+
+    `revoked` workspaces answer 403 to any call whose `X-Workspace-Id` names them, as the real scope check does for a
+    removed member (common `scope.py:501`); `team_headers` collects the headers of every `/memory/workspaces` call.
+    """
 
     def handler(method: str, url: str, **kwargs: Any) -> httpx.Response:
         path = httpx.URL(url).path
@@ -119,8 +129,57 @@ def fake_svc_api(seen: list[tuple[str, str]] | None = None):
         def ok(body: Any, status: int = 200) -> httpx.Response:
             return httpx.Response(status, json=body, request=request)
 
+        decision = {
+            "decision_id": "dec-1",
+            "content": "deploy decision",
+            "decision_type": "inference",
+            "confidence": 0.8,
+        }
+        if path == "/memory/decisions/create":
+            return ok(decision)
+        if path == "/memory/decisions":
+            return ok({"decisions": [decision]})
+        if path == "/memory/decisions/search":
+            return ok({"decisions": [decision]})
+        if path == "/memory/decisions/dec-1/supersede":
+            return ok(
+                {
+                    "old_decision_id": "dec-1",
+                    "new_decision_id": "dec-2",
+                    "reason": "amend",
+                }
+            )
+        if path == "/memory/reasoning/reviews":
+            return ok({"items": [], "status": "open", "limit": 50, "offset": 0})
+        if path == "/memory/reasoning/reviews/conflict_1/settle":
+            return ok(
+                {
+                    "id": "conflict_1",
+                    "status": "resolved",
+                    "conflict": {
+                        "existing_item_id": "dec-1",
+                        "existing_fact": "old",
+                        "new_fact": "new",
+                    },
+                    "resolution_action": "keep_a",
+                    "resolution_reason": "not approved",
+                    "resolved_by": "user-1",
+                    "application_status": "not_required",
+                }
+            )
+        if path == "/memory/decisions/dec-1/provenance":
+            return ok({"decision": decision, "evidence": []})
+        if path == "/memory/decisions/dec-1":
+            return ok(decision)
         if path == "/memory/ask":
-            return ok({"answer": "A decision.", "reasoning": "", "evidence": [], "relations": []})
+            return ok(
+                {
+                    "answer": "Known answer",
+                    "reasoning": "",
+                    "evidence": [],
+                    "relations": [],
+                }
+            )
         if path == "/memory/search":
             return httpx.Response(
                 200,
@@ -151,7 +210,16 @@ def fake_svc_api(seen: list[tuple[str, str]] | None = None):
         if path == "/memory/result-feedback":
             return ok({"result_used_count": 1, "result_shown_count": 1})
         if path == "/memory/workspaces":
-            # WS-ROUTING-5: the switch and list_workspaces read workspaces, not the caller's Teams.
+            sent = {k.lower(): v for k, v in (kwargs.get("headers") or {}).items()}
+            if team_headers is not None:
+                team_headers.append(sent)
+            if sent.get("x-workspace-id") in revoked:
+                return ok({"detail": "insufficient_team_permissions"}, 403)
+            if (
+                method == "POST"
+            ):  # WS-POLICY-10 B: create_workspace, the caller's private workspace
+                body = kwargs.get("json") or {}
+                return ok({"workspace_id": "ws-new", "name": body.get("name")}, 201)
             return ok(
                 {
                     "workspaces": [
@@ -185,17 +253,15 @@ class _Harness:
     def __init__(self) -> None:
         self.cfg = hosted_config()
         self.seen: list[tuple[str, str]] = []
-        # WS-ROUTING-4: a switch is saved to svc-api's routing_sessions lever and read back before each call.
-        # The service floors a header-less call with no pick to the caller's account default (WS-ROUTING-5-PRE-1
-        # target, `RoutingSessionStore`); rows that need the refusal clear it.
-        self.routing = RoutingSessionStore(
-            default_team_id=ME_PAYLOAD["default_team_id"]
-        )
+        # svc-api's routing record (switch_workspace saves the pick there, the middleware reads it back).
+        self.routing = RoutingSessionStore()
         self.app = hosted_asgi_app(
             self.cfg,
             redis_store=memory_store(),
             exchange_cache=ExchangeCache(),
-            api_transport=self.routing.transport(auth_me_transport().handler),
+            api_transport=self.routing.transport(
+                fallback=auth_me_transport().handle_request
+            ),
         )
 
     def run(self, body):
@@ -279,8 +345,8 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
 
     assert advertised == set(HOSTED_TOOLS)
     assert (
-        len(advertised) == 31
-    )  # MCP-SWITCH-WORKSPACE-1: + switch_workspace; WS-ROUTING-5: + list_workspaces; DHRUV-CODING-RULE-P0-1: + memory_supersede
+        len(advertised) == 38
+    )  # SM-SCOPED-VALIDITY-1 six remote decision tools + DRIFT-V3-DHRUV-BOUNDARIES-1 memory_supersede + WS-POLICY-10 create_workspace + OUTREACH-MARIUS-HITL-SURFACE-1 p4 review_queue_list/settle
 
 
 @pytest.mark.parametrize("name", EXCLUDED_TOOLS)
@@ -325,17 +391,32 @@ def test_no_hosted_tool_takes_a_filesystem_path() -> None:
 # --- 3. every advertised tool actually works --------------------------------------
 
 SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
+    ("decision_create", {"content": "deploy decision"}),
+    ("decision_get", {"decision_id": "dec-1"}),
+    ("decision_list", {}),
+    ("decision_search", {"topic": "deploy"}),
+    (
+        "decision_supersede",
+        {"decision_id": "dec-1", "new_content": "new decision", "reason": "amend"},
+    ),
+    ("decision_provenance", {"decision_id": "dec-1"}),
+    ("review_queue_list", {}),  # OUTREACH-MARIUS-HITL-SURFACE-1 p4
+    (
+        "review_queue_settle",
+        {"review_id": "conflict_1", "action": "keep_a", "reason": "not approved"},
+    ),
     ("memory_search", {"query": "runbook"}),
     ("memory_search", {"query": "runbook", "memory_type": "semantic"}),
     ("memory_search", {"query": "runbook", "channel_weights": {"semantic": 1.0}}),
     ("memory_search", {"query": "runbook", "top_k": 3, "decompose": True}),
     ("memory_search", {"query": "runbook", "multi_hop": True, "max_hops": 2}),
     ("memory_search", {"query": "runbook", "as_of_date": "2026-01-01"}),
+    ("memory_ask", {"question": "Where is the runbook?"}),
     ("memory_recall", {"query": "runbook"}),
     ("memory_recall", {"query": "runbook", "top_k": 3}),
-    ("memory_ingest", {"content": "a note"}),
-    ("memory_ingest", {"content": "a note", "memory_type": "episodic"}),
-    ("memory_add", {"content": "a note"}),
+    ("memory_save", {"content": "a note"}),
+    ("memory_save", {"content": "a note", "memory_type": "episodic"}),
+    ("memory_save", {"content": "a note", "memory_type": "pending"}),
     ("memory_get", {"item_id": "mem-1"}),
     ("memory_explain", {"memory_id": "mem-1"}),
     ("memory_update", {"item_id": "mem-1", "content": "changed"}),
@@ -350,25 +431,37 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
             "content": "new rule",
             "reason": "reversal",
             "metadata": {"site": "all"},
-            "valid_from": "2026-04-20",
+            "valid_from": "2026-04-20T00:00:00Z",
         },
     ),
     ("memory_delete", {"item_id": "mem-1"}),
     ("memory_list", {}),
     ("memory_list", {"limit": 3}),
     ("memory_stats", {}),
-    ("memory_distill", {"user_turn": "hi", "assistant_turn": "hello"}),
     (
-        "memory_distill",
-        {"user_turn": "hi", "assistant_turn": "hello", "session_id": "s-1"},
+        "memory_save_conversation",
+        {
+            "turns": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+            ]
+        },
     ),
     (
-        "memory_ingest_conversation",
+        "memory_save_conversation",
+        {
+            "turns": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+            ],
+            "conversation_id": "s-1",
+        },
+    ),
+    (
+        "memory_save_conversation",
         {"turns": [{"role": "user", "content": "hi"}]},
     ),
     ("memory_search_by_metadata", {"metadata_key": "source", "metadata_value": "test"}),
-    ("memory_ask", {"question": "What was decided?"}),
-    ("memory_ask", {"question": "What was decided?", "limit": 7, "reasoning": False}),
     ("memory_recall_pack", {"budget_tokens": 500}),
     ("memory_recall_pack", {"budget_tokens": 500, "query": "runbook"}),
     ("memory_policy_bundle", {}),
@@ -427,6 +520,7 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ("list_workspaces", {}),
     ("switch_workspace", {"workspace": "team-B"}),
     ("switch_team", {"team_id": "team-B"}),  # deprecated alias
+    ("create_workspace", {"name": "Scratch"}),  # WS-POLICY-10 B
 ]
 
 
@@ -599,35 +693,27 @@ def test_switch_refuses_a_workspace_you_are_not_in(monkeypatch, tool, param) -> 
 
 
 @pytest.mark.parametrize(("tool", "param"), SWITCH_TOOLS)
-def test_a_switched_workspace_is_routed_by_the_session_not_the_header(
+def test_a_switched_workspace_reaches_svc_api_as_the_header(
     monkeypatch, tool, param
 ) -> None:
-    """WS-ROUTING-5 header rule: after a switch the call carries no X-Workspace-Id, only X-SM-Client, and svc-api
-    routes it by the session pick (before, the pick was echoed as the header and routed `call`)."""
-    sent: list[dict[str, str]] = []
+    headers_seen: list[str] = []
 
     def spy(method, url, **kwargs):
-        sent.append(dict(kwargs.get("headers") or {}))
+        headers_seen.append((kwargs.get("headers") or {}).get("X-Workspace-Id", ""))
         return fake_svc_api()(method, url, **kwargs)
 
     harness = _Harness()
-    harness.routing.install(monkeypatch, spy)
+    monkeypatch.setattr("smartmemory_mcp.backends.remote.httpx.request", spy)
 
     async def body(client):
         session_id = await harness.session(client)
         await harness.call(client, session_id, tool, {param: "team-B"})
-        sent.clear()
-        harness.routing.resolved.clear()
-        return await harness.call(
-            client, session_id, "memory_add", {"content": "a note"}
-        )
+        headers_seen.clear()
+        await harness.call(client, session_id, "memory_search", {"query": "q"})
 
-    result = harness.run(body)
+    harness.run(body)
 
-    assert [h.get("X-Workspace-Id") for h in sent] == [None]
-    assert [h.get("X-SM-Client") for h in sent] == ["mcp:test"]
-    assert harness.routing.resolved == [("POST", "/memory/add", "team-B", "session")]
-    assert "Workspace: team-B, routed by session." in _text(result)
+    assert headers_seen == ["team-B"]
 
 
 # --- /health ----------------------------------------------------------------------

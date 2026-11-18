@@ -14,7 +14,7 @@ from smartmemory_mcp.backends.local import LocalBackend
 from smartmemory_mcp.backends.remote import RemoteBackend
 from smartmemory_mcp.capabilities import BackendCapabilityMiddleware, TOOL_CAPABILITIES
 from smartmemory_mcp.hosted.backend import HostedRemoteBackend
-from smartmemory_mcp.tools import code_tools, peer_tools, structured_tools
+from smartmemory_mcp.tools import code_tools, peer_tools, save_tools
 
 
 def backend_calls():
@@ -48,7 +48,7 @@ def test_every_tool_backend_call_is_implemented_or_explicitly_unsupported(backen
 
 class NoDocumentBackend(RemoteBackend):
     unsupported_capabilities = RemoteBackend.unsupported_capabilities | {
-        "ingest_document"
+        "ingest_document_with_receipt"
     }
 
 
@@ -62,7 +62,7 @@ def test_capabilities_filter_listings_and_reject_unsupported_calls(
     monkeypatch.setattr("smartmemory_mcp.capabilities.get_backend", lambda: backend)
     server = FastMCP("capability-test")
     server.add_middleware(BackendCapabilityMiddleware())
-    structured_tools.register(server)
+    save_tools.register_pro(server)
     code_tools.register(server)
     peer_tools.register(server)
 
@@ -99,15 +99,15 @@ def test_advertised_document_tool_executes(
     else:
         backend._request = Mock(return_value=result)
     monkeypatch.setattr("smartmemory_mcp.capabilities.get_backend", lambda: backend)
-    monkeypatch.setattr(structured_tools, "get_backend", lambda: backend)
+    monkeypatch.setattr(save_tools, "get_backend", lambda: backend)
     server = FastMCP("ingest-test")
     server.add_middleware(BackendCapabilityMiddleware())
-    structured_tools.register(server)
+    save_tools.register_pro(server)
 
     async def check():
         async with Client(server) as client:
             response = await client.call_tool(
-                "memory_ingest_document", {"source": "https://example.com/doc"}
+                "memory_save_document", {"source": "https://example.com/doc"}
             )
             assert (
                 response.content[0].text
@@ -115,3 +115,22 @@ def test_advertised_document_tool_executes(
             )
 
     asyncio.run(check())
+
+
+@pytest.mark.parametrize(
+    "backend_class", [LocalBackend, RemoteBackend, HostedRemoteBackend]
+)
+def test_scoped_validity_backend_signatures(backend_class):
+    """U12 public kwargs must be accepted on each explicitly supported read/write."""
+    import inspect
+
+    for name in (
+        "decision_get",
+        "decision_list",
+        "decision_search",
+        "decision_provenance",
+    ):
+        parameters = inspect.signature(getattr(backend_class, name)).parameters
+        assert {"as_of", "business_scope", "valid_at"} <= parameters.keys()
+    parameters = inspect.signature(backend_class.decision_supersede).parameters
+    assert {"scope_go_lives", "valid_from"} <= parameters.keys()

@@ -190,7 +190,18 @@ def _item_meta(item: Any) -> dict:
     stored chunk — but `normalize_item` and the raw facade disagree on whether they
     surface as attributes or inside `metadata`, so check both rather than assume.
     """
-    meta = dict(getattr(item, "metadata", None) or {})
+    raw_meta = getattr(item, "metadata", None)
+    if isinstance(raw_meta, dict):
+        meta = dict(raw_meta)
+    else:
+        if raw_meta:
+            logger.warning(
+                "transcript item %s has %s metadata, not a dict; its provenance "
+                "was not read from metadata",
+                getattr(item, "item_id", None),
+                type(raw_meta).__name__,
+            )
+        meta = {}
     for key in (
         "origin",
         "cwd",
@@ -366,10 +377,23 @@ def register(mcp):
             if project
             else top_k
         )
-        results = memory.search(query, top_k=fetch, origin=origin) or []
+        found = memory.search(query, top_k=fetch, origin=origin)
+        # U5.21 (C8): read core's coverage from the call's own result BEFORE `or []` replaces an empty
+        # SearchResults with a plain list that carries no diagnostics.
+        from smartmemory.search.visibility_gate import (
+            gated_fetch_bound,
+            gated_partial_coverage,
+        )
+
+        partial = gated_partial_coverage(found, where="transcript search")
+        # U5.21 (C4): a hit past the fetch was never asked for, so it is neither filtered nor shown.
+        results = gated_fetch_bound(found, fetch, where="transcript search") or []
 
         note = ""
         if project:
+            # U5.21 (C3/C8): a full fetch is a stop at the bound, decided from the rows fetched BEFORE this filter: the
+            # filter may leave an empty or short answer, and sessions ranked past the fetch were not examined.
+            bounded = fetch > 0 and len(results) >= fetch
             root = str(Path(project).expanduser().resolve())
             kept, unknown = [], 0
             for item in results:
@@ -390,11 +414,19 @@ def register(mcp):
                     f"(imported before provenance) and could not be matched — re-import "
                     f"to make them filterable."
                 )
-            if truncated or len(results) == want:
+            if truncated or len(results) == want or bounded:
                 note += (
                     f"\nFiltered from the top {fetch} semantic matches; a session ranked "
                     f"below that is not shown. Raise top_k to widen the window."
                 )
+
+        if partial:
+            # A partial answer is never presented as a definitive one: "nothing found" would read as "no such
+            # session" when core only examined part of what it could see.
+            note += (
+                f"\nThe search was partial (core reported: {', '.join(partial)}), so matching sessions "
+                f"past what it examined may not be shown."
+            )
 
         if not results:
             return (

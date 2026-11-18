@@ -14,7 +14,7 @@ import pytest
 
 from smartmemory_mcp.backends.remote import RemoteBackend
 from smartmemory_mcp.hosted.tools import HOSTED_TOOLS, MEMORY_TOOLS
-from smartmemory_mcp.tools import memory_tools
+from smartmemory_mcp.tools import memory_tools, save_tools
 
 
 class _FakeMCP:
@@ -61,6 +61,7 @@ def wire(monkeypatch):
 def tools():
     mcp = _FakeMCP()
     memory_tools.register_free(mcp)
+    save_tools.register_free(mcp)
     memory_tools.register_pro(mcp)
     return mcp.fns
 
@@ -71,7 +72,7 @@ def test_memory_supersede_posts_to_the_supersede_route(wire, tools):
         "Code influenza to lab-confirmed.",
         "coding lead reversed the rule",
         metadata={"site": "all"},
-        valid_from="2026-04-20",
+        valid_from="2026-04-20T00:00:00Z",
     )
 
     (request,) = wire
@@ -80,7 +81,7 @@ def test_memory_supersede_posts_to_the_supersede_route(wire, tools):
     assert body["content"] == "Code influenza to lab-confirmed."
     assert body["reason"] == "coding lead reversed the rule"
     assert body["metadata"] == {"site": "all"}
-    assert body["valid_from"] == "2026-04-20"
+    assert body["valid_from"] == "2026-04-20T00:00:00Z"
     assert body["memory_type"]
     assert "new-1" in out and "old-1" in out
 
@@ -104,8 +105,8 @@ def test_memory_update_docstring_says_in_place_and_points_at_supersede(tools):
     assert "memory_supersede" in doc
 
 
-def test_memory_ingest_docstring_points_a_changing_reply_at_supersede(tools):
-    doc = tools["memory_ingest"].__doc__ or ""
+def test_memory_save_docstring_points_a_changing_reply_at_supersede(tools):
+    doc = tools["memory_save"].__doc__ or ""
 
     assert "memory_supersede" in doc
 
@@ -141,7 +142,7 @@ def test_local_supersede_closes_the_interval_inside_core_supersession():
 
     mem = _RecordingMem()
     _local(mem).supersede(
-        "old-1", "Code to lab-confirmed.", "reversal", valid_from="2026-04-20"
+        "old-1", "Code to lab-confirmed.", "reversal", valid_from="2026-04-20T00:00:00Z"
     )
 
     item, supersedes, kwargs = mem.superseding[0]
@@ -155,7 +156,10 @@ def test_local_supersede_failure_writes_nothing_more():
     mem = _RecordingMem(fail=True)
     with pytest.raises(RuntimeError):
         _local(mem).supersede(
-            "old-1", "Code to lab-confirmed.", "reversal", valid_from="2026-04-20"
+            "old-1",
+            "Code to lab-confirmed.",
+            "reversal",
+            valid_from="2026-04-20T00:00:00Z",
         )
     assert mem.updates == []
 
@@ -164,3 +168,47 @@ def test_local_supersede_without_valid_from_passes_no_interval():
     mem = _RecordingMem()
     _local(mem).supersede("old-1", "Code to lab-confirmed.", "reversal")
     assert mem.superseding[0][2] == {} and mem.updates == []
+
+
+def test_local_supersede_persists_both_effective_bounds_on_real_lite(tmp_path):
+    from datetime import datetime, timezone
+
+    from smartmemory.models.memory_item import MemoryItem
+    from smartmemory.pipeline.config import PipelineConfig
+    from smartmemory.tools.factory import create_lite_memory
+
+    memory = create_lite_memory(
+        data_dir=str(tmp_path / "test_dhruv_boundaries"),
+        pipeline_profile=PipelineConfig.lite_hermetic(),
+        spawn_worker=False,
+    )
+    try:
+        old_id = memory.add(
+            MemoryItem(content="Code by symptoms", memory_type="semantic")
+        )
+        result = _local(memory).supersede(
+            old_id,
+            "Code by laboratory confirmation",
+            "reversal",
+            valid_from="2026-04-20T00:00:00Z",
+        )
+        expected = datetime(2026, 4, 20, tzinfo=timezone.utc)
+        replacement = memory.get(result["new_item_id"])
+        assert replacement.content == "Code by laboratory confirmation"
+        assert replacement.valid_start_time == expected
+        old = memory._graph.backend.get_node(old_id)
+        assert old["valid_end_time"] == expected.isoformat()
+        assert old["superseded_by"] == result["new_item_id"]
+    finally:
+        memory.close()
+
+
+def test_supersede_rejects_bad_validity_before_resolving_backend(monkeypatch, tools):
+    from fastmcp.exceptions import ToolError
+
+    def forbidden():
+        raise AssertionError("invalid input resolved the backend")
+
+    monkeypatch.setattr(memory_tools, "get_backend", forbidden)
+    with pytest.raises(ToolError, match="invalid_scoped_validity"):
+        tools["memory_supersede"]("old-1", "new", "reversal", valid_from="2026-04-20")

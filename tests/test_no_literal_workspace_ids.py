@@ -1,4 +1,4 @@
-"""WS-ROUTING-1 S3: no client literal workspace defaults in the MCP package (WS-ROUTING-5).
+"""WS-ROUTING-1 S3: no client literal workspace defaults in the MCP package (WS-ROUTING-5; on 2.0 under shape B, s1-chat 2026-11-09).
 
 A hard-coded workspace id is a client guessing where a write goes (the SDK's old `team_default_demo` fallback). Every
 string constant in `smartmemory_mcp/` (docstrings and f-string parts included) is checked; field and key names such as
@@ -62,3 +62,24 @@ def test_the_mcp_package_has_no_literal_workspace_ids() -> None:
         if (ids := literal_ids(path.read_text(encoding="utf-8")))
     }
     assert hits == {}
+
+
+def test_a_planted_literal_in_a_copy_of_the_package_is_caught(tmp_path: Path) -> None:
+    """The scan is the same one the package test runs, so a literal that lands in the source fails CI."""
+    import shutil
+
+    copy = tmp_path / "smartmemory_mcp"
+    shutil.copytree(PACKAGE, copy, ignore=shutil.ignore_patterns("__pycache__"))
+    planted = copy / "backends" / "remote.py"
+    planted.write_text(
+        planted.read_text(encoding="utf-8") + '\nFALLBACK_WORKSPACE = "ws_acme01"\n',
+        encoding="utf-8",
+    )
+
+    hits = {
+        str(path.relative_to(copy)): ids
+        for path in sorted(copy.rglob("*.py"))
+        if (ids := literal_ids(path.read_text(encoding="utf-8")))
+    }
+
+    assert hits == {"backends/remote.py": ["ws_acme01"]}

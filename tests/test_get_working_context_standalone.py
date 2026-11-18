@@ -227,6 +227,26 @@ def test_memory_recall_filters_to_working():
     assert "episodic event" not in out
 
 
+def test_memory_recall_default_top_k_is_10():
+    """MCP-2.0-RECALL-TOPK-1: omitting top_k asks the backend for 10 (main c69ee3e)."""
+    recall = _registered()["memory_recall"]
+
+    class _RecordingBackend:
+        def __init__(self):
+            self.calls = []
+
+        def recall(self, cwd=None, top_k=10, **kwargs):
+            self.calls.append({"cwd": cwd, "top_k": top_k})
+            return "recalled text"
+
+    backend = _RecordingBackend()
+    with patch("smartmemory_mcp.tools.memory_tools.get_backend", return_value=backend):
+        out = recall("q")
+
+    assert out == "recalled text"
+    assert backend.calls == [{"cwd": "q", "top_k": 10}]
+
+
 def test_legacy_recall_type_scope_matches_service():
     """Plan-m1a.md allows collapsing to a shared constant if the two repos' scopes are identical.
     We verify here that they match the service's value.  If they diverge, this regression

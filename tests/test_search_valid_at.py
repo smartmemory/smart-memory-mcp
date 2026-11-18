@@ -37,10 +37,12 @@ def _tool_kwargs(**kwargs):
 
 
 def test_tool_forwards_valid_at_beside_as_of_date():
-    kwargs = _tool_kwargs(query="x", valid_at="2026-04-10", as_of_date="2026-11-05")
-    assert kwargs["valid_at"] == "2026-04-10"
+    kwargs = _tool_kwargs(
+        query="x", valid_at="2026-04-10T00:00:00Z", as_of_date="2026-11-05"
+    )
+    assert kwargs["valid_at"] == "2026-04-10T00:00:00Z"
     assert kwargs["as_of_date"] == "2026-11-05"
-    assert _tool_kwargs(query="x")["valid_at"] is None
+    assert "valid_at" not in _tool_kwargs(query="x")
 
 
 def test_docstring_separates_in_force_from_recorded():
@@ -69,7 +71,10 @@ def _remote_body(**kwargs):
 
 
 def test_remote_body_forwards_valid_at_only_when_set():
-    assert _remote_body(valid_at="2026-04-10")["valid_at"] == "2026-04-10"
+    assert (
+        _remote_body(valid_at="2026-04-10T00:00:00Z")["valid_at"]
+        == "2026-04-10T00:00:00Z"
+    )
     assert "valid_at" not in _remote_body()
 
 
@@ -91,12 +96,12 @@ def test_hosted_memory_search_forwards_valid_at(monkeypatch):
             client,
             session_id,
             "memory_search",
-            {"query": "q", "valid_at": "2026-04-10"},
+            {"query": "q", "valid_at": "2026-04-10T00:00:00Z"},
         )
 
     result = harness.run(body)
     assert "error" not in result, result
-    assert bodies and bodies[-1].get("valid_at") == "2026-04-10", bodies
+    assert bodies and bodies[-1].get("valid_at") == "2026-04-10T00:00:00Z", bodies
 
 
 @pytest.mark.parametrize(

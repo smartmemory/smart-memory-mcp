@@ -1,0 +1,1417 @@
+"""U4.32 (N-02.activate.outer-readers): LocalBackend reads a core save return as a receipt or a legacy shape.
+
+Legacy returns (id string, held dict) are unchanged and import nothing. A receipt (object or wire dict) reads as
+its subject id for ``add`` and in full through ``add_with_receipt``. A rejected or unreadable receipt is a typed
+error with one WARNING and never an id. The MCP tool text for both arms is pinned (R15: both shapes parse).
+No core producer returns a receipt yet, so a scripted ``_mem.add`` stands in for it.
+"""
+
+from __future__ import annotations
+
+import builtins
+import importlib.util
+import logging
+import sys
+from collections.abc import Mapping
+from types import MappingProxyType
+from unittest.mock import MagicMock
+
+import pytest
+
+from smartmemory_mcp.backends import local
+from smartmemory_mcp.backends.local import LocalBackend
+from smartmemory_mcp.tools import save_tools
+
+receipt_mod = pytest.importorskip("smartmemory.save.receipt")
+save_return = pytest.importorskip("smartmemory_app.save_return")
+save_caller = pytest.importorskip("smartmemory_app.save_caller")
+core_receipt = receipt_mod
+
+LOGGER = "smartmemory_mcp.backends.local"
+OURS = (LOGGER, "smartmemory_app.save_return")
+
+
+def ours(caplog):
+    """The save-return records only: core's own origin-policy WARNING on ``add`` is not this unit's."""
+    return [r for r in caplog.records if r.name in OURS]
+
+
+def backend(result):
+    be = LocalBackend.__new__(LocalBackend)
+    be._mem = MagicMock()
+    be._mem.add.return_value = result
+    return be
+
+
+def receipt(**over):
+    return receipt_mod.build_local_receipt(
+        subject=receipt_mod.ReceiptSubject("item_save", item_id="test_item"),
+        run_id="test_run",
+        processing_stage="stored",
+        execution_state="queued",
+        outcome=None,
+        terminal=False,
+        result_availability="pending",
+        revision=1,
+        **over,
+    )
+
+
+def skipped_receipt():
+    return receipt_mod.build_local_receipt(
+        subject=receipt_mod.ReceiptSubject("item_save", item_id="test_item"),
+        run_id="test_run",
+        processing_stage="stored",
+        execution_state="completed",
+        outcome="skipped",
+        terminal=True,
+        result_availability="none",
+        revision=1,
+    )
+
+
+def rejection(code="idempotency_conflict"):
+    return receipt_mod.decode_receipt(
+        {
+            "schema_version": "1.1",
+            "admission_error": {"code": code, "message": f"test {code}"},
+        }
+    )
+
+
+HELD = {
+    "status": "held",
+    "item_id": None,
+    "queued": False,
+    "reason": "low_confidence",
+    "reasons": ["r"],
+}
+
+LEGACY_ROWS = [
+    ("id string", "test-id-1"),
+    ("held dict", HELD),
+    ("queued dict", {"item_id": "test-id-2", "queued": True, "run_id": "r1"}),
+    ("none", None),
+]
+
+
+@pytest.mark.parametrize(
+    "result", [row[1] for row in LEGACY_ROWS], ids=[row[0] for row in LEGACY_ROWS]
+)
+def test_legacy_returns_are_unchanged_and_import_nothing(result, monkeypatch, caplog):
+    real = builtins.__import__
+
+    def no_wrapper(name, *args, **kwargs):
+        if name.startswith("smartmemory_app.save_return"):
+            raise AssertionError(f"legacy return imported {name}")
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_wrapper)
+    be = backend(result)
+    assert be.add("test content") is result
+    kept = be.add_with_receipt("test content")
+    assert kept.value is result and kept.receipt is None and kept.summary is None
+    assert ours(caplog) == []
+
+
+RECEIPT_ROWS = [
+    ("item received", receipt, "test_item (stored)"),
+    (
+        "G98 extraction skipped",
+        skipped_receipt,
+        "test_item (Saved, extraction skipped)",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "make, summary",
+    [row[1:] for row in RECEIPT_ROWS],
+    ids=[row[0] for row in RECEIPT_ROWS],
+)
+def test_receipt_reads_as_id_and_keeps_the_receipt(make, summary):
+    obj = make()
+    for shape in (obj, obj.to_dict()):
+        be = backend(shape)
+        assert be.add("test content") == "test_item"
+        kept = be.add_with_receipt("test content")
+        assert (kept.value, kept.receipt, kept.summary) == (
+            "test_item",
+            obj.to_dict(),
+            summary,
+        )
+        assert be.add("test content") != str(obj)
+
+
+def test_rejected_receipt_is_typed_logged_and_never_an_id(caplog):
+    for shape in (rejection(), rejection().to_dict()):
+        caplog.clear()
+        be = backend(shape)
+        for call in (be.add, be.add_with_receipt):
+            with pytest.raises(save_return.SaveRejected):
+                call("test content")
+        assert [
+            r.getMessage() for r in ours(caplog) if r.levelno >= logging.WARNING
+        ] == [
+            "Save return add rejected at admission (idempotency_conflict); nothing was stored under a new id"
+        ] * 2
+
+
+def test_unreadable_receipt_is_refused(caplog):
+    be = backend({**receipt().to_dict(), "schema_version": "2.0"})
+    with pytest.raises(save_return.SaveReturnRefused):
+        be.add("test content")
+    assert [(r.levelno, r.getMessage()) for r in ours(caplog)] == [
+        (
+            logging.WARNING,
+            "Save return add refused: receipt refused by the reader (unsupported_version); no id returned",
+        )
+    ]
+
+
+def test_receipt_without_the_wrapper_reader_is_one_warning_and_a_typed_error(
+    monkeypatch, caplog
+):
+    monkeypatch.setitem(sys.modules, "smartmemory_app.save_return", None)
+    import smartmemory_app
+
+    monkeypatch.delattr(smartmemory_app, "save_return", raising=False)
+    be = backend(receipt())
+    with pytest.raises(local.SaveReturnUnavailable, match="cannot read it") as raised:
+        be.add("test content")
+    assert (
+        type(raised.value) is local.SaveReturnUnavailable
+    )  # the unit's own typed refusal,
+    assert isinstance(
+        raised.value, RuntimeError
+    )  # still a RuntimeError for existing handlers
+    assert [(r.levelno, r.name) for r in ours(caplog)] == [(logging.WARNING, LOGGER)]
+    assert ours(caplog)[0].getMessage() == (
+        "Save return add refused: smartmemory_app.save_return is not installed, so a save receipt "
+        "cannot be read; no id returned"
+    )
+
+
+def test_receipt_arm_classifier_table():
+    rows = [
+        ("test-id", False),
+        ({"item_id": "x"}, False),
+        (HELD, False),
+        (None, False),
+        ({"schema_version": "1.1"}, True),
+        (receipt(), True),
+        (rejection(), True),
+    ]
+    assert [local._is_receipt_arm(value) for value, _ in rows] == [
+        expected for _, expected in rows
+    ]
+
+
+# --- fix round 2 (N1): one receipt/legacy discrimination rule, every receipt subtype --------------------------------
+# Bug class: legacy id envelope broken at the receipt boundary. An exact class-name or dict-only test sent a subclass of
+# core's receipt, a non-dict mapping or a foreign copy of core's receipt to the legacy arm, where a rejected admission
+# read as success. One row per member of the class. The same rows run against the wrapper
+# (tests/unit/test_save_return_compat.py), smartmemory_mcp (tests/test_local_save_return_compat.py) and the service
+# (tests/unit/test_cli_add_receipt.py), each against its own consumers.
+N1_REJECTED = {
+    "schema_version": "1.1",
+    "admission_error": {"code": "idempotency_conflict", "message": "test conflict"},
+}
+N1_FUTURE = {"schema_version": "2.0", "run_id": "test_run"}
+
+
+def _n1_wire(kind="item_save"):
+    if kind == "item_save":
+        subject, fields = (
+            core_receipt.ReceiptSubject("item_save", item_id="test_item"),
+            {"processing_stage": "stored", "revision": 1},
+        )
+    else:
+        subject, fields = (
+            core_receipt.ReceiptSubject(
+                "stage_job", occurrence_id="test_occ", stage_id="test_stage"
+            ),
+            {"processing_stage": None},
+        )
+    return core_receipt.build_local_receipt(
+        subject=subject,
+        run_id="test_run",
+        execution_state="queued",
+        outcome=None,
+        terminal=False,
+        result_availability="pending",
+        **fields,
+    ).to_dict()
+
+
+class DerivedReceipt(core_receipt.Receipt):
+    """A plain subclass: still core's receipt, validated by core's own constructor (the reviewer's N1 repro)."""
+
+
+class HidingReceipt(core_receipt.Receipt):
+    """Overrides ``to_dict`` to report an admitted save: only core's own export shows the rejection."""
+
+    def to_dict(self):
+        return _n1_wire()
+
+
+class DerivedRefusal(core_receipt.ReceiptRefusal):
+    """A subclass of core's reader refusal."""
+
+
+def _named_receipt():
+    class Receipt:  # not core's: a lookalike whose to_dict reads as an admitted save
+        def to_dict(self):
+            return _n1_wire()
+
+    return Receipt()
+
+
+def _refusal_named_base():
+    class ReceiptRefusal:
+        pass
+
+    class Wrapped(ReceiptRefusal):
+        def to_dict(self):
+            return _n1_wire()
+
+    return Wrapped()
+
+
+def _second_core_copy_rejected():
+    """A rejected receipt built by a second, separately loaded copy of core's receipt module (its classes differ)."""
+    spec = importlib.util.spec_from_file_location(
+        "test_u442_second_core_receipt", core_receipt.__file__
+    )
+    module = importlib.util.module_from_spec(spec)
+    # dataclasses reads the module while the class body runs; it is removed again below
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        del sys.modules[spec.name]
+    return module.decode_receipt(N1_REJECTED)
+
+
+def _refusal_status_unreadable():
+    """A reader-refusal subclass whose ``status`` (core reads ``error.code``) raises."""
+    refusal = DerivedRefusal(
+        core_receipt.ReceiptError("unsupported_version", "test"), dict(N1_FUTURE)
+    )
+    object.__setattr__(refusal, "error", None)
+    return refusal
+
+
+class _NoDeepcopy:
+    def __deepcopy__(self, memo):
+        raise RuntimeError("test: the receipt's data cannot be exported")
+
+
+def _unexportable_receipt():
+    """A receipt subclass whose core export (``Receipt.to_dict``, a deepcopy of its data) raises."""
+    receipt = DerivedReceipt(_n1_wire())
+    object.__setattr__(receipt, "_data", _NoDeepcopy())
+    return receipt
+
+
+class UninspectableMapping(Mapping):
+    """A mapping whose membership test raises: the arm rule itself cannot tell it apart."""
+
+    def __getitem__(self, key):
+        raise KeyError(key)
+
+    def __iter__(self):
+        return iter(())
+
+    def __len__(self):
+        return 0
+
+    def __contains__(self, key):
+        raise RuntimeError("test: membership cannot be read")
+
+
+class ProjectedReceipt(core_receipt.Receipt, Mapping):
+    """A receipt whose Mapping view projects an admitted wire; core's own export shows its rejection (r3 F1)."""
+
+    def __iter__(self):
+        return iter(_n1_wire())
+
+    def __len__(self):
+        return len(_n1_wire())
+
+    def __getitem__(self, key):
+        return _n1_wire()[key]
+
+
+class MappingReceipt(core_receipt.Receipt, Mapping):
+    """A receipt whose Mapping view is a plain legacy id shape with no schema_version (r3 F1)."""
+
+    def __iter__(self):
+        return iter(("item_id", "queued"))
+
+    def __len__(self):
+        return 2
+
+    def __getitem__(self, key):
+        return {"item_id": "test-legacy-id", "queued": True}[key]
+
+
+class StringReceipt(core_receipt.Receipt, str):
+    """A receipt that also is a (here empty, so falsy) string (r3 F1)."""
+
+
+def _named_mapping_receipt():
+    class Receipt(
+        Mapping
+    ):  # not core's: a mapping lookalike projecting an admitted wire
+        def __iter__(self):
+            return iter(_n1_wire())
+
+        def __len__(self):
+            return len(_n1_wire())
+
+        def __getitem__(self, key):
+            return _n1_wire()[key]
+
+    return Receipt()
+
+
+# (label, make, kind). kind is admitted | rejected | refusal | not_save | foreign | uninspectable | refusal_unreadable | unexportable | legacy.
+N1_ROWS = [
+    (
+        "core receipt admitted",
+        lambda: core_receipt.decode_receipt(_n1_wire()),
+        "admitted",
+    ),
+    (
+        "core receipt rejected",
+        lambda: core_receipt.decode_receipt(N1_REJECTED),
+        "rejected",
+    ),
+    ("core reader refusal", lambda: core_receipt.decode_receipt(N1_FUTURE), "refusal"),
+    ("subclass admitted", lambda: DerivedReceipt(_n1_wire()), "admitted"),
+    (
+        "subclass rejected, the reviewer's N1 repro",
+        lambda: DerivedReceipt(N1_REJECTED),
+        "rejected",
+    ),
+    (
+        "subclass hiding admission_error in to_dict",
+        lambda: HidingReceipt(N1_REJECTED),
+        "rejected",
+    ),
+    (
+        "subclass with a job subject",
+        lambda: DerivedReceipt(_n1_wire("stage_job")),
+        "not_save",
+    ),
+    (
+        "subclass of the reader refusal",
+        lambda: DerivedRefusal(
+            core_receipt.ReceiptError("unsupported_version", "test"), dict(N1_FUTURE)
+        ),
+        "refusal",
+    ),
+    ("lookalike class named Receipt", _named_receipt, "foreign"),
+    ("lookalike with a base named ReceiptRefusal", _refusal_named_base, "foreign"),
+    (
+        "rejected receipt from a second copy of core's receipt module",
+        _second_core_copy_rejected,
+        "foreign",
+    ),
+    ("mapping proxy wire admitted", lambda: MappingProxyType(_n1_wire()), "admitted"),
+    (
+        "mapping proxy wire rejected",
+        lambda: MappingProxyType(dict(N1_REJECTED)),
+        "rejected",
+    ),
+    ("mapping whose membership test raises", UninspectableMapping, "uninspectable"),
+    (
+        "reader refusal whose status cannot be read",
+        _refusal_status_unreadable,
+        "refusal_unreadable",
+    ),
+    ("receipt whose core export raises", _unexportable_receipt, "unexportable"),
+    (
+        "receipt that also is a Mapping projecting an admitted wire, r3 F1",
+        lambda: ProjectedReceipt(N1_REJECTED),
+        "rejected",
+    ),
+    (
+        "receipt that also is a Mapping with no schema_version, r3 F1",
+        lambda: MappingReceipt(N1_REJECTED),
+        "rejected",
+    ),
+    (
+        "receipt that also is a str, r3 F1",
+        lambda: StringReceipt(N1_REJECTED),
+        "rejected",
+    ),
+    (
+        "admitted receipt that also is a str, r3 F1",
+        lambda: StringReceipt(_n1_wire()),
+        "admitted",
+    ),
+    (
+        "lookalike Mapping named Receipt projecting an admitted wire, r3 F1",
+        _named_mapping_receipt,
+        "foreign",
+    ),
+    ("legacy id string", lambda: "test-id", "legacy"),
+    ("legacy dict", lambda: {"item_id": "test-id", "queued": True}, "legacy"),
+    ("legacy int", lambda: 7, "legacy"),
+    ("legacy None", lambda: None, "legacy"),
+]
+
+
+class _Answers:
+    """The core facade's save doorways, each answering with the row's value (no producer returns a receipt yet)."""
+
+    def __init__(self, returned):
+        self.returned = returned
+
+    def add(self, *args, **kwargs):
+        return self.returned
+
+    def ingest_structured(self, *args, **kwargs):
+        return self.returned
+
+    def save(self, request, *, adapter_namespace=None):
+        return self.returned
+
+
+# (consumer label, doorway op in the reader's WARNING, call). Every LocalBackend reader of a core save return.
+N1_CONSUMERS = [
+    ("add", "add", lambda be: be.add("test content")),
+    ("add_with_receipt", "add", lambda be: be.add_with_receipt("test content").value),
+    (
+        "ingest_structured",
+        "ingest_structured",
+        lambda be: be.ingest_structured({"k": 1}),
+    ),
+    (
+        "ingest_structured_with_receipt",
+        "ingest_structured",
+        lambda be: be.ingest_structured_with_receipt({"k": 1}).value,
+    ),
+    (
+        "submit_save",
+        "save",
+        lambda be: be.submit_save(be.save_call("test content")).value,
+    ),
+]
+
+N1_REFUSED = {
+    "rejected": (
+        save_return.SaveRejected,
+        "Save return {op} rejected at admission (idempotency_conflict); nothing was stored under a new id",
+    ),
+    "refusal": (
+        save_return.SaveReturnRefused,
+        "Save return {op} refused: receipt refused by the reader (unsupported_version); no id returned",
+    ),
+    "not_save": (
+        save_return.SaveReturnRefused,
+        "Save return {op} refused: receipt subject stage_job is not a save; no id returned",
+    ),
+    "refusal_unreadable": (
+        save_return.SaveReturnRefused,
+        "Save return {op} refused: receipt refused by the reader (unreadable); no id returned",
+    ),
+    "unexportable": (
+        save_return.SaveReturnRefused,
+        "Save return {op} refused: save return is not a readable receipt; no id returned",
+    ),
+    "uninspectable": (
+        save_return.SaveReturnRefused,
+        "Save return {op} refused: save return cannot be inspected; no id returned",
+    ),
+    "foreign": (
+        save_return.SaveReturnRefused,
+        "Save return {op} refused: save return is named like a receipt but is not this core's receipt; no id returned",
+    ),
+}
+N1_LOGGERS = (LOGGER, "smartmemory_app.save_return", "smartmemory_app.save_caller")
+
+
+@pytest.mark.parametrize("label, make, kind", N1_ROWS, ids=[r[0] for r in N1_ROWS])
+def test_every_receipt_subtype_is_read_by_the_wrappers_rule_on_every_doorway(
+    label, make, kind, monkeypatch, tmp_path, caplog
+):
+    from smartmemory.refusal_logging import refusal_logged
+    from smartmemory_app import storage
+
+    monkeypatch.setattr(
+        storage, "_data_path", tmp_path
+    )  # submit_save takes the write lock under the test's dir
+    if (
+        kind == "uninspectable"
+    ):  # both copies of the rule raise; the reader turns that into a refusal
+        for rule in (local._is_receipt_arm, save_return.is_receipt_arm):
+            with pytest.raises(RuntimeError):
+                rule(make())
+    else:
+        assert (
+            local._is_receipt_arm(make())
+            is save_return.is_receipt_arm(make())
+            is (kind != "legacy")
+        ), label
+    for consumer, op, call in N1_CONSUMERS:
+        caplog.clear()
+        value = make()
+        be = LocalBackend.__new__(LocalBackend)
+        be._mem = _Answers(value)
+
+        def warnings():
+            return [
+                (r.name, r.levelno, r.getMessage())
+                for r in caplog.records
+                if r.name in N1_LOGGERS
+            ]
+
+        if kind == "admitted":
+            assert call(be) == "test_item", (label, consumer)
+            assert warnings() == [], (label, consumer)
+        elif (
+            kind == "legacy" and consumer == "submit_save"
+        ):  # save() promises a receipt: a legacy return is refused
+            with pytest.raises(save_caller.SaveCallRefused) as caught:
+                call(be)
+            assert caught.value.code == save_caller.NOT_A_RECEIPT
+            assert warnings() == [
+                (
+                    "smartmemory_app.save_caller",
+                    logging.WARNING,
+                    f"Save call refused (not_a_receipt): _Answers.save() returned {type(value).__name__}, not a "
+                    "receipt; no id was inferred from it",
+                )
+            ], label
+            assert refusal_logged(caught.value) is True
+        elif kind == "legacy":
+            assert call(be) == value, (label, consumer)
+            assert warnings() == [], (label, consumer)
+        else:
+            error, message = N1_REFUSED[kind]
+            with pytest.raises(error) as caught:
+                call(be)
+            assert type(caught.value) is error, (label, consumer)
+            assert warnings() == [
+                ("smartmemory_app.save_return", logging.WARNING, message.format(op=op))
+            ], (
+                label,
+                consumer,
+            )
+            assert refusal_logged(caught.value) is True, (label, consumer)
+
+
+# -- tool text, both arms (R15) -------------------------------------------------------------------------
+# --- fix round 3 (F2, F3) ---------------------------------------------------------------------------------------
+# F2, bug class "re-log of an already-marked failure": a catch whose cause already carries core's logged mark raises the
+# typed refusal chained from it with no WARNING of its own, so the whole failure leaves ONE WARNING (the dependency's).
+# One row per catch site of the reader (the wrapper's resolver, and this module's inspection and missing-wrapper arms).
+# F3, bug class "uncertainty read as legacy success": an inspection failure ends in the typed, once-logged refusal on
+# the FIRST failure and is never inspected again.
+DEPENDENCY_WARNING = "test dependency refused; receipt inspection unavailable"
+DEPENDENCY_RECORD = ("test_dependency", logging.WARNING, DEPENDENCY_WARNING)
+
+
+def _dependency_fails(*_args, **_kwargs):
+    """A dependency that logs its one WARNING, marks the refusal it raises as logged, and raises."""
+    from smartmemory.refusal_logging import mark_refusal_logged
+
+    logging.getLogger("test_dependency").warning(DEPENDENCY_WARNING)
+    raise mark_refusal_logged(RuntimeError("test dependency unavailable"))
+
+
+class MarkedMapping(Mapping):
+    """A mapping whose membership test (the arm rule) fails with a marked refusal."""
+
+    def __iter__(self):
+        return iter(())
+
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, key):
+        _dependency_fails()
+
+
+class FlakyMapping(Mapping):
+    """The first membership test fails, every later one succeeds without schema_version (the r3 F3 repro)."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def __iter__(self):
+        return iter(("item_id",))
+
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, key):
+        if key == "item_id":
+            return "test-legacy-id"
+        raise KeyError(key)
+
+    def __contains__(self, key):
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("test inspection unavailable")
+        return False
+
+
+def _patch_core_export(mp):
+    mp.setattr(core_receipt.Receipt, "to_dict", _dependency_fails)
+
+
+def _patch_codec(mp):
+    mp.setattr(core_receipt, "decode_receipt", _dependency_fails)
+
+
+def _patch_codec_validation(mp):
+    from smartmemory.refusal_logging import mark_refusal_logged
+
+    def fails(wire):
+        logging.getLogger("test_dependency").warning(DEPENDENCY_WARNING)
+        raise mark_refusal_logged(core_receipt.ReceiptValidationError([]))
+
+    mp.setattr(core_receipt, "decode_receipt", fails)
+
+
+def _patch_refusal_status(mp):
+    mp.setattr(core_receipt.ReceiptRefusal, "status", property(_dependency_fails))
+
+
+def _patch_receipt_text(mp):
+    mp.setattr(core_receipt.Receipt, "__str__", _dependency_fails)
+
+
+def _no_patch(mp):
+    return None
+
+
+def _wrapper_missing(mp):
+    mp.setitem(sys.modules, "smartmemory_app.save_return", None)
+    import smartmemory_app
+
+    mp.delattr(smartmemory_app, "save_return", raising=False)
+
+
+def _warning_records(caplog):
+    """Every WARNING-or-worse record except core's origin-policy line on ``add`` (see ``ours``), which is not this unit's."""
+    return [
+        (r.name, r.levelno, r.getMessage())
+        for r in caplog.records
+        if r.levelno >= logging.WARNING and r.name != "smartmemory.origin_policy"
+    ]
+
+
+def _answering(value):
+    be = LocalBackend.__new__(LocalBackend)
+    be._mem = _Answers(value)
+    return be
+
+
+# (site, make, patch, the typed error). One row per catch site that has a cause.
+MARKED_ROWS = [
+    (
+        "arm check (is_receipt_arm)",
+        MarkedMapping,
+        _no_patch,
+        save_return.SaveReturnRefused,
+    ),
+    (
+        "arm check with the wrapper missing",
+        MarkedMapping,
+        _wrapper_missing,
+        local.SaveReturnUnavailable,
+    ),
+    (
+        "core export of a receipt object",
+        lambda: core_receipt.Receipt(N1_REJECTED),
+        _patch_core_export,
+        save_return.SaveReturnRefused,
+    ),
+    (
+        "codec raises (generic catch)",
+        lambda: dict(N1_REJECTED),
+        _patch_codec,
+        save_return.SaveReturnRefused,
+    ),
+    (
+        "codec raises a validation error",
+        lambda: dict(N1_REJECTED),
+        _patch_codec_validation,
+        save_return.SaveReturnRefused,
+    ),
+    (
+        "status of a reader refusal object",
+        lambda: core_receipt.decode_receipt(N1_FUTURE),
+        _patch_refusal_status,
+        save_return.SaveReturnRefused,
+    ),
+    (
+        "status of a decoded reader refusal",
+        lambda: dict(N1_FUTURE),
+        _patch_refusal_status,
+        save_return.SaveReturnRefused,
+    ),
+    (
+        "export of the decoded receipt",
+        _n1_wire,
+        _patch_core_export,
+        save_return.SaveReturnRefused,
+    ),
+    (
+        "summary of an admitted receipt",
+        _n1_wire,
+        _patch_receipt_text,
+        save_return.SaveReturnRefused,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "label, make, patch, error", MARKED_ROWS, ids=[r[0] for r in MARKED_ROWS]
+)
+def test_a_marked_cause_is_refused_with_no_second_warning_on_every_doorway(
+    label, make, patch, error, monkeypatch, tmp_path, caplog
+):
+    from smartmemory.refusal_logging import refusal_logged
+    from smartmemory_app import storage
+
+    monkeypatch.setattr(storage, "_data_path", tmp_path)
+    value = make()
+    patch(monkeypatch)
+    # submit_save reads through the wrapper's own save_caller, which has the wrapper imported already
+    consumers = N1_CONSUMERS[:4] if patch is _wrapper_missing else N1_CONSUMERS
+    for consumer, op, call in consumers:
+        caplog.clear()
+        with pytest.raises(error) as caught:
+            call(_answering(value))
+        assert type(caught.value) is error, (label, consumer)
+        assert _warning_records(caplog) == [DEPENDENCY_RECORD], (label, consumer)
+        assert refusal_logged(caught.value) is True, (label, consumer)
+        assert refusal_logged(caught.value.__cause__) is True, (label, consumer)
+
+
+# (label, patch, the typed error, the exact WARNING). The inspection fails once; nothing may inspect again.
+FLAKY_ROWS = [
+    (
+        "wrapper installed",
+        _no_patch,
+        save_return.SaveReturnRefused,
+        (
+            "smartmemory_app.save_return",
+            "Save return {op} refused: save return cannot be inspected; no id returned",
+        ),
+    ),
+    (
+        "wrapper missing",
+        _wrapper_missing,
+        local.SaveReturnUnavailable,
+        (
+            LOGGER,
+            "Save return {op} refused: smartmemory_app.save_return is not installed, so a save receipt cannot be "
+            "read; no id returned",
+        ),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "label, patch, error, warning", FLAKY_ROWS, ids=[r[0] for r in FLAKY_ROWS]
+)
+def test_a_failed_inspection_is_one_typed_refusal_and_is_never_inspected_again(
+    label, patch, error, warning, monkeypatch, caplog
+):
+    from smartmemory.refusal_logging import refusal_logged
+
+    patch(monkeypatch)
+    for consumer, op, call in N1_CONSUMERS[
+        :4
+    ]:  # the add and ingest_structured doorways (submit_save needs storage)
+        caplog.clear()
+        value = FlakyMapping()
+        with pytest.raises(error) as caught:
+            call(_answering(value))
+        assert type(caught.value) is error, (label, consumer)
+        assert value.calls == 1, (label, consumer)
+        assert _warning_records(caplog) == [
+            (warning[0], logging.WARNING, warning[1].format(op=op))
+        ], (
+            label,
+            consumer,
+        )
+        assert refusal_logged(caught.value) is True, (label, consumer)
+
+
+def test_a_core_without_refusal_logging_still_refuses_once_unmarked(
+    monkeypatch, caplog
+):
+    """The ImportError arms of the mark (``_logged``, ``_cause_logged``) on the MCP side, wrapper missing: one WARNING, never a lost refusal."""
+    _wrapper_missing(monkeypatch)
+    monkeypatch.setitem(sys.modules, "smartmemory.refusal_logging", None)
+    with (
+        caplog.at_level(logging.WARNING),
+        pytest.raises(local.SaveReturnUnavailable) as caught,
+    ):
+        local._resolve_save_return(FlakyMapping(), op="add")
+    assert not any("logged" in key for key in vars(caught.value))
+    assert _warning_records(caplog) == [
+        (
+            LOGGER,
+            logging.WARNING,
+            "Save return add refused: smartmemory_app.save_return is not installed, so a save receipt cannot be "
+            "read; no id returned",
+        )
+    ]
+
+
+class FakeMCP:
+    def __init__(self):
+        self.fns = {}
+
+    def tool(self, **_kwargs):
+        def deco(fn):
+            self.fns[fn.__name__] = fn
+            return fn
+
+        return deco
+
+
+@pytest.fixture
+def memory_save(monkeypatch):
+    """``memory_save(memory_type="pending")``: the raw doorway (old ``memory_add``) over a scripted core ``add``."""
+
+    def arm(result):
+        monkeypatch.setattr(save_tools, "get_backend", lambda: backend(result))
+        mcp = FakeMCP()
+        save_tools.register_free(mcp)
+        return lambda content: mcp.fns["memory_save"](
+            content=content, memory_type="pending"
+        )
+
+    return arm
+
+
+def test_memory_save_pending_tool_reads_both_arms(memory_save):
+    legacy = memory_save("test-id-1")("test content")
+    assert legacy.content[0].text == "Memory saved. Item ID: test-id-1"
+    assert legacy.structured_content["status"] == "saved"
+    assert legacy.structured_content["receipt"] is None
+    held = memory_save(HELD)("test content")
+    assert held.content[0].text == "Memory held: low_confidence. Details: ['r']"
+    assert held.structured_content["status"] == "held"
+    for shape in (receipt(), receipt().to_dict()):
+        out = memory_save(shape)("test content")
+        assert out.structured_content["item_id"] == "test_item"
+        assert out.structured_content["receipt"]["subject"]["item_id"] == "test_item"
+        assert out.structured_content["status"] in ("saved", "queued")
+
+
+# -- every consumer of the wrapper's ingest in this package, enumerated by AST (review r1 F3) --------------------
+def ingest_callers(root, allowed_dynamic=()):
+    """Every reference to ``smartmemory_app.storage.ingest`` under ``root``, resolved through the file's imports:
+    the bare imported name, an ``as`` alias, ``import M``/``import M as x``, the package attribute chain, a
+    relative import, a dynamic import with a constant module name (``importlib.import_module``/``__import__``
+    under any alias, as a call receiver), then any dotted chain ending in ``.ingest`` whose root resolves to the
+    module.
+
+    Returns ``{(file relative to root, enclosing function, how the return value is used)}``. The scan fails closed:
+    a reference it cannot follow (``getattr``, the module or ``ingest`` itself escaping as a value, a star import,
+    a string naming the module, a dynamic import whose name is not a constant, the dynamic-import functions or
+    ``importlib``/``sys``/``builtins`` escaping as values, ``sys.modules`` used other than by a constant key)
+    raises AssertionError naming file:line. ``allowed_dynamic`` is a set of ``(file, function)`` pairs (``<module>``
+    for module level) whose module-name strings and non-constant dynamic imports are known not to load the wrapper.
+    """
+    import ast
+    from pathlib import Path
+
+    module, target = "smartmemory_app.storage", "smartmemory_app.storage.ingest"
+    tracked = {"smartmemory_app", module, target}
+    loaders = {
+        "importlib.import_module",
+        "importlib.__import__",
+        "builtins.__import__",
+        "__import__",
+    }
+    surface = {"importlib", "sys", "builtins"}
+    root = Path(root)
+    allowed = set(allowed_dynamic)
+    found, unresolved = set(), []
+    for path in sorted(root.rglob("*.py")):
+        rel = path.relative_to(root)
+        tree = ast.parse(path.read_text())
+        parents = {c: p for p in ast.walk(tree) for c in ast.iter_child_nodes(p)}
+        package = [root.name, *rel.parent.parts]
+        aliases = {}
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Import):
+                for a in n.names:
+                    bound = a.asname or a.name.split(".")[0]
+                    aliases.setdefault(bound, set()).add(a.asname and a.name or bound)
+            elif isinstance(n, ast.ImportFrom):
+                base = n.module or ""
+                if n.level:
+                    base = ".".join(
+                        [
+                            *package[: len(package) - n.level + 1],
+                            *filter(None, [n.module]),
+                        ]
+                    )
+                for a in n.names:
+                    if a.name == "*":
+                        if base in tracked or base in surface:
+                            unresolved.append(
+                                f"{rel}:{n.lineno}: star import from {base}"
+                            )
+                        continue
+                    aliases.setdefault(a.asname or a.name, set()).add(
+                        f"{base}.{a.name}"
+                    )
+
+        def loaded(call):
+            """What a dynamic import with a constant, absolute module name returns (empty when unreadable)."""
+            arg = call.args[0] if call.args else None
+            arg = arg or next((k.value for k in call.keywords if k.arg == "name"), None)
+            if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)):
+                return set()
+            if not arg.value or arg.value.startswith("."):
+                return set()
+            if resolve(call.func) & {"importlib.import_module"}:
+                return {arg.value}
+            return {
+                arg.value,
+                arg.value.split(".")[0],
+            }  # __import__ without fromlist returns the top package
+
+        def resolve(node):
+            if isinstance(node, ast.Name):
+                if node.id == "__import__" and node.id not in aliases:
+                    return {"__import__"}
+                return aliases.get(node.id, set())
+            if isinstance(node, ast.Attribute):
+                return {f"{d}.{node.attr}" for d in resolve(node.value)}
+            if isinstance(node, ast.Call) and resolve(node.func) & loaders:
+                return loaded(node)
+            return set()
+
+        def enclosing(node):
+            while node in parents and not isinstance(
+                node, (ast.FunctionDef, ast.AsyncFunctionDef)
+            ):
+                node = parents[node]
+            return node
+
+        for n in ast.walk(tree):
+            p = parents.get(n)
+            if (
+                isinstance(n, ast.Constant)
+                and isinstance(n.value, str)
+                and (
+                    n.value == module
+                    or n.value.startswith((module + ".", module + ":"))
+                )
+                and (str(rel), getattr(enclosing(n), "name", "<module>")) not in allowed
+                and not (  # the name of a dynamic import that resolves is enumerated, not a blind reference
+                    isinstance(p, ast.Call)
+                    and resolve(p.func) & loaders
+                    and p.args[:1] == [n]
+                )
+            ):
+                unresolved.append(
+                    f"{rel}:{n.lineno}: string {n.value!r} (dynamic lookup)"
+                )
+            elif (
+                isinstance(n, ast.Subscript)
+                and ast.unparse(n.value).endswith("modules")
+                and isinstance(n.slice, ast.Constant)
+                and n.slice.value in tracked
+            ):
+                unresolved.append(
+                    f"{rel}:{n.lineno}: {ast.unparse(n)} (dynamic lookup)"
+                )
+            elif (
+                isinstance(n, ast.Call)
+                and ast.unparse(n.func) in ("getattr", "builtins.getattr")
+                and len(n.args) > 1
+                and isinstance(n.args[1], ast.Constant)
+                and n.args[1].value == "ingest"
+            ):
+                unresolved.append(
+                    f"{rel}:{n.lineno}: getattr(..., 'ingest') on an unresolved receiver"
+                )
+            elif isinstance(n, ast.Call) and (
+                resolve(n.func) & loaders
+                or ast.unparse(n.func).split(".")[-1] in ("import_module", "__import__")
+            ):
+                got = loaded(n)
+                first = n.args[0] if n.args else None
+                if not resolve(n.func) & loaders:
+                    if (
+                        isinstance(first, ast.Constant)
+                        and isinstance(first.value, str)
+                        and first.value in tracked
+                    ):
+                        unresolved.append(
+                            f"{rel}:{n.lineno}: dynamic import of {first.value} on an unresolved receiver"
+                        )
+                elif not got:
+                    if (
+                        str(rel),
+                        getattr(enclosing(n), "name", "<module>"),
+                    ) not in allowed:
+                        unresolved.append(
+                            f"{rel}:{n.lineno}: {ast.unparse(n)} (dynamic import of a name the scan cannot read)"
+                        )
+                elif got & tracked and not (
+                    isinstance(p, ast.Attribute) and p.value is n
+                ):
+                    unresolved.append(
+                        f"{rel}:{n.lineno}: {ast.unparse(n)} (dynamic import of {module} or its package used as a value)"
+                    )
+            if not isinstance(n, (ast.Name, ast.Attribute)) or not isinstance(
+                n.ctx, ast.Load
+            ):
+                continue
+            refs = resolve(n)
+            if "sys.modules" in refs:
+                key = p.slice if isinstance(p, ast.Subscript) and p.value is n else None
+                if not (
+                    isinstance(key, ast.Constant)
+                    and isinstance(key.value, str)
+                    and key.value.split(".")[0] != "smartmemory_app"
+                ):
+                    unresolved.append(
+                        f"{rel}:{n.lineno}: {ast.unparse(n)} (sys.modules used other than by a constant key outside the package)"
+                    )
+            if refs & surface and not (isinstance(p, ast.Attribute) and p.value is n):
+                unresolved.append(
+                    f"{rel}:{n.lineno}: {ast.unparse(n)} (import machinery escaping as a value)"
+                )
+            if refs & loaders and not (isinstance(p, ast.Call) and p.func is n):
+                unresolved.append(
+                    f"{rel}:{n.lineno}: {ast.unparse(n)} (dynamic import function referenced as a value, not called)"
+                )
+            if isinstance(p, ast.Attribute) and p.value is n:
+                continue  # the chain continues; judged at its end
+            hits = refs & tracked
+            if not hits:
+                continue
+            if target not in hits:
+                unresolved.append(
+                    f"{rel}:{n.lineno}: {ast.unparse(n)} ({module} or its package) used as a value"
+                )
+                continue
+            if not (isinstance(p, ast.Call) and p.func is n):
+                unresolved.append(
+                    f"{rel}:{n.lineno}: {ast.unparse(n)} referenced as a value, not called"
+                )
+                continue
+            fn = enclosing(p)
+            use_of = parents.get(p)
+            use = (
+                "discarded"
+                if isinstance(use_of, ast.Expr)
+                else "returned"
+                if isinstance(use_of, ast.Return)
+                else "assigned to " + ast.unparse(use_of.targets[0])
+                if isinstance(use_of, ast.Assign)
+                else "argument of " + ast.unparse(use_of.func)
+                if isinstance(use_of, ast.Call)
+                else "used in " + type(use_of).__name__
+            )
+            found.add((str(rel), getattr(fn, "name", "<module>"), use))
+    assert not unresolved, (
+        "storage.ingest references the census cannot resolve: " + "; ".join(unresolved)
+    )
+    return found
+
+
+def test_every_mcp_ingest_consumer_is_assessed():
+    """One row: ``LocalBackend._ingest_raw`` (behind ``ingest``, and ``ingest_with_receipt`` only on a wrapper without
+    ``storage.ingest_with_receipt``) returns the wrapper's value (an id string from ``storage.ingest`` with ``sync``
+    left True). The receipt doorway reads ``storage.ingest_with_receipt`` (WRAPPER-2.0-RECEIPT-COLLAPSE-1)."""
+    from pathlib import Path
+
+    root = Path(local.__file__).parent.parent
+    assert ingest_callers(root) == {("backends/local.py", "_ingest_raw", "returned")}
+
+
+# -- the census helper itself, over every import form (review r2 F3): in-memory source, no repository file written ----
+CALLER = {("test_scan.py", "caller", "returned")}
+CENSUS_ROWS = [
+    # (name, source of one file, package name of the scan root, consumers found or the file:line it must fail on)
+    (
+        "bare imported name",
+        "from smartmemory_app.storage import ingest\n\ndef caller():\n    return ingest('test')\n",
+        "test_scan_pkg",
+        CALLER,
+    ),
+    (
+        "imported name alias",
+        "from smartmemory_app.storage import ingest as save\n\ndef caller():\n    return save('test')\n",
+        "test_scan_pkg",
+        CALLER,
+    ),
+    (
+        "import module, fully dotted call",
+        "import smartmemory_app.storage\n\ndef caller():\n    return smartmemory_app.storage.ingest('test')\n",
+        "test_scan_pkg",
+        CALLER,
+    ),
+    (
+        "import module as alias",
+        "import smartmemory_app.storage as st\n\ndef caller():\n    return st.ingest('test')\n",
+        "test_scan_pkg",
+        CALLER,
+    ),
+    (
+        "import package, attribute chain",
+        "import smartmemory_app\n\ndef caller():\n    return smartmemory_app.storage.ingest('test')\n",
+        "test_scan_pkg",
+        CALLER,
+    ),
+    (
+        "from package import module",
+        "from smartmemory_app import storage\n\ndef caller():\n    return storage.ingest('test')\n",
+        "test_scan_pkg",
+        CALLER,
+    ),
+    (
+        "from package import module as alias",
+        "from smartmemory_app import storage as s\n\ndef caller():\n    return s.ingest('test')\n",
+        "test_scan_pkg",
+        CALLER,
+    ),
+    (
+        "relative import of the name",
+        "from .storage import ingest\n\ndef caller():\n    return ingest('test')\n",
+        "smartmemory_app",
+        CALLER,
+    ),
+    (
+        "relative import of the module",
+        "from . import storage\n\ndef caller():\n    x = storage.ingest('test')\n",
+        "smartmemory_app",
+        {("test_scan.py", "caller", "assigned to x")},
+    ),
+    (
+        "getattr with a string on the module",
+        "from smartmemory_app import storage\n\ndef caller():\n    return getattr(storage, 'ingest')('test')\n",
+        "test_scan_pkg",
+        "test_scan.py:4: ",
+    ),
+    (
+        "getattr with a string on an unknown receiver",
+        "def caller(mod):\n    return getattr(mod, 'ingest')('test')\n",
+        "test_scan_pkg",
+        "test_scan.py:2: ",
+    ),
+    (
+        "module alias made by assignment",
+        "from smartmemory_app import storage\n\ndef caller():\n    st = storage\n    return st.ingest('test')\n",
+        "test_scan_pkg",
+        "test_scan.py:4: ",
+    ),
+    (
+        "dynamic import of the module, constant name (resolved since review r3 F3)",
+        "import importlib\n\ndef caller():\n    return importlib.import_module('smartmemory_app.storage').ingest('test')\n",
+        "test_scan_pkg",
+        CALLER,
+    ),
+    (
+        "ingest passed on as a value",
+        "from smartmemory_app import storage\n\ndef caller(run):\n    return run(storage.ingest)\n",
+        "test_scan_pkg",
+        "test_scan.py:4: ",
+    ),
+    (
+        "star import of the module",
+        "from smartmemory_app.storage import *\n\ndef caller():\n    return ingest('test')\n",
+        "test_scan_pkg",
+        "test_scan.py:1: ",
+    ),
+    (
+        "aliased import_module, call receiver (review r3 F3)",
+        'from importlib import import_module as load\n\ndef caller():\n    return load("smartmemory_app.storage").ingest("test")\n',
+        "test_scan_pkg",
+        CALLER,
+    ),
+    (
+        "aliased __import__ through builtins, fromlist",
+        'from builtins import __import__ as imp\n\ndef caller():\n    return imp("smartmemory_app.storage", fromlist=["ingest"]).ingest("test")\n',
+        "test_scan_pkg",
+        CALLER,
+    ),
+    (
+        "import importlib as il, il.import_module",
+        'import importlib as il\n\ndef caller():\n    return il.import_module("smartmemory_app.storage").ingest("test")\n',
+        "test_scan_pkg",
+        CALLER,
+    ),
+    (
+        "call receiver chain through the package",
+        'import importlib\n\ndef caller():\n    return importlib.import_module("smartmemory_app").storage.ingest("test")\n',
+        "test_scan_pkg",
+        CALLER,
+    ),
+    (
+        "sys.modules aliased by from-import",
+        'from sys import modules as registry\n\ndef caller():\n    return registry["smartmemory_app.storage"].ingest("test")\n',
+        "test_scan_pkg",
+        "test_scan.py:4: ",
+    ),
+    (
+        "sys.modules held in a variable through import sys as s",
+        'import sys as s\n\ndef caller():\n    table = s.modules\n    return table["smartmemory_app.storage"].ingest("test")\n',
+        "test_scan_pkg",
+        "test_scan.py:4: ",
+    ),
+    (
+        "sys.modules read without a constant key",
+        'import sys\n\ndef caller():\n    return sys.modules.get("smartmemory_app.storage").ingest("test")\n',
+        "test_scan_pkg",
+        "test_scan.py:4: ",
+    ),
+    (
+        "module name as a string only",
+        'NAME = "smartmemory_app.storage"\n',
+        "test_scan_pkg",
+        "test_scan.py:1: ",
+    ),
+    (
+        "dynamic import with a name read at run time",
+        'import importlib\n\ndef caller(name):\n    return importlib.import_module(name).ingest("test")\n',
+        "test_scan_pkg",
+        "test_scan.py:4: ",
+    ),
+    (
+        "dynamic import with a relative name",
+        'import importlib\n\ndef caller():\n    return importlib.import_module(".storage", "smartmemory_app").ingest("test")\n',
+        "test_scan_pkg",
+        "test_scan.py:4: ",
+    ),
+    (
+        "aliased dynamic import result held in a variable",
+        'from importlib import import_module as load\n\ndef caller():\n    m = load("smartmemory_app.storage")\n    return m.ingest("test")\n',
+        "test_scan_pkg",
+        "test_scan.py:4: ",
+    ),
+    (
+        "importlib itself held in a variable",
+        'import importlib\n\ndef caller():\n    loader = importlib\n    return loader.import_module("smartmemory_app.storage").ingest("test")\n',
+        "test_scan_pkg",
+        "test_scan.py:4: ",
+    ),
+    (
+        "dynamic import function held as a value",
+        'from importlib import import_module\n\ndef caller():\n    load = import_module\n    return load("smartmemory_app.storage").ingest("test")\n',
+        "test_scan_pkg",
+        "test_scan.py:4: ",
+    ),
+    (
+        "star import of importlib",
+        'from importlib import *\n\ndef caller():\n    return import_module("smartmemory_app.storage").ingest("test")\n',
+        "test_scan_pkg",
+        "test_scan.py:1: ",
+    ),
+    (
+        "getattr on sys passes the registry on",
+        'import sys\n\ndef caller():\n    return getattr(sys, "modules")["smartmemory_app.storage"].ingest("test")\n',
+        "test_scan_pkg",
+        "test_scan.py:4: ",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "source, package, expected",
+    [row[1:] for row in CENSUS_ROWS],
+    ids=[row[0] for row in CENSUS_ROWS],
+)
+def test_census_resolves_every_import_form_or_fails_naming_the_line(
+    monkeypatch, source, package, expected
+):
+    import re
+    from pathlib import Path
+
+    root = Path(package)
+    with monkeypatch.context() as mp:
+        mp.setattr(Path, "rglob", lambda self, pattern: [root / "test_scan.py"])
+        mp.setattr(Path, "read_text", lambda self, *a, **k: source)
+        if isinstance(expected, str):
+            with pytest.raises(AssertionError, match=re.escape(expected)):
+                ingest_callers(root)
+            return
+        found = ingest_callers(root)
+    assert found == expected
+
+
+def test_census_allows_a_named_dynamic_import_and_no_other(monkeypatch):
+    import re
+    from pathlib import Path
+
+    source = "import importlib\n\ndef loader(name):\n    return importlib.import_module(name)\n"
+    root = Path("test_scan_pkg")
+    with monkeypatch.context() as mp:
+        mp.setattr(Path, "rglob", lambda self, pattern: [root / "test_scan.py"])
+        mp.setattr(Path, "read_text", lambda self, *a, **k: source)
+        assert ingest_callers(root, {("test_scan.py", "loader")}) == set()
+        for allowed in ((), {("test_scan.py", "other")}, {("other.py", "loader")}):
+            with pytest.raises(AssertionError, match=re.escape("test_scan.py:4: ")):
+                ingest_callers(root, allowed)
+
+
+#: sha256 of ``ingest_callers`` source. The wrapper and the MCP package each hold a copy (the repositories cannot
+#: import each other), and both tests pin this one hash, so the copies cannot drift apart unnoticed.
+INGEST_CALLERS_SHA256 = (
+    "5b79b81b0da964c53a498925b7f3ae396d00c8d1477ca687628e1a0d24d8888e"
+)
+
+
+def test_census_helper_copy_matches_its_twin():
+    import hashlib
+    import inspect
+
+    digest = hashlib.sha256(inspect.getsource(ingest_callers).encode()).hexdigest()
+    assert digest == INGEST_CALLERS_SHA256, (
+        "ingest_callers changed: update the copy in the other repository and this hash together"
+    )
+
+
+INGEST_ARMS = [
+    # (name, core return, id the tool prints)
+    ("legacy id", "test-id", "test-id"),
+    ("legacy queued dict", {"item_id": "test-id", "queued": False}, "test-id"),
+    ("receipt", receipt(), "test_item"),
+    ("receipt wire", receipt().to_dict(), "test_item"),
+    ("terminal skipped receipt", skipped_receipt(), "test_item"),
+]
+
+
+@pytest.mark.parametrize(
+    "result, expected",
+    [row[1:] for row in INGEST_ARMS],
+    ids=[row[0] for row in INGEST_ARMS],
+)
+def test_memory_ingest_tool_reads_the_id_on_both_arms(
+    monkeypatch, tmp_path, result, expected
+):
+    from smartmemory_app import storage
+
+    class ScriptedMemory:
+        def ingest(self, content, context=None, sync=None):
+            return result
+
+    monkeypatch.setattr(storage, "_data_path", tmp_path)
+    monkeypatch.setattr(storage, "get_memory", lambda: ScriptedMemory())
+    monkeypatch.setattr(storage, "llm_extraction_warning", lambda: None)
+    monkeypatch.setattr(
+        save_tools, "get_backend", lambda: LocalBackend.__new__(LocalBackend)
+    )
+    mcp = FakeMCP()
+    save_tools.register_free(mcp)
+    out = mcp.fns["memory_save"](content="test content")
+    assert out.structured_content["item_id"] == expected
