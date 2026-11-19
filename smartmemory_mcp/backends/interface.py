@@ -409,6 +409,27 @@ class MemoryBackend(Protocol):
         raises DecisionRestoreRefused."""
         ...
 
+    def decision_history(
+        self,
+        decision_id: str,
+        limit: int | None = None,
+        before: str | None = None,
+        as_of: str | None = None,
+    ) -> dict[str, Any] | None:
+        """STUDIO-DECISION-VIEW-1: {decision_id, entries, start, truncated} (newest first), None when the decision is
+        absent or not readable by the caller."""
+        ...
+
+    def decision_sites(
+        self,
+        decision_id: str,
+        at: str | None = None,
+        scopes: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | None:
+        """STUDIO-DECISION-VIEW-1: {decision_id, at, all_sites, all_sites_from, rows} (one row per site), None when the
+        decision is absent or not readable by the caller."""
+        ...
+
     def decision_reinforce(
         self, decision_id: str, evidence_id: str
     ) -> dict[str, Any] | None:

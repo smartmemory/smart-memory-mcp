@@ -30,6 +30,8 @@ DECISION_ROWS = (
     ("decision_reinforce", {"decision_id": "dec_1", "evidence_id": "mem_1"}),
     ("decision_contradict", {"decision_id": "dec_1", "evidence_id": "mem_1"}),
     ("decision_provenance", {"decision_id": "dec_1"}),
+    ("decision_history", {"decision_id": "dec_1"}),  # STUDIO-DECISION-VIEW-1 U5
+    ("decision_sites", {"decision_id": "dec_1"}),  # STUDIO-DECISION-VIEW-1 U5
     ("decision_find_conflicts", {"decision_id": "dec_1"}),
     (
         "decision_create_pending",

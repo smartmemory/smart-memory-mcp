@@ -121,17 +121,13 @@ def _cases():
     yield (
         "decision_get",
         {"decision_id": "dec_1"},
-        _local(_decision_manager=lambda: _Manager(get_decision=lambda _id: decision)),
+        _local_core(get_decision=lambda _id, **kwargs: decision),
         _remote(DECISION),
     )
     yield (
         "decision_list",
         {},
-        _local(
-            _decision_queries=lambda: _Manager(
-                get_active_decisions=lambda **kw: [decision]
-            )
-        ),
+        _local_core(get_active_decisions=lambda **kwargs: [decision]),
         _remote({"decisions": [DECISION], "count": 1}),
     )
     yield (
@@ -252,16 +248,14 @@ def _cases():
     yield (
         "decision_provenance",
         {"decision_id": "dec_1"},
-        _local(
-            _decision_queries=lambda: _Manager(
-                get_decision_provenance=lambda _id: {
-                    "decision": decision,
-                    "reasoning_trace": None,
-                    "evidence": [{"memory": {}}],
-                    "superseded": [decision],
-                    "superseded_by": [],
-                }
-            )
+        _local_core(
+            get_decision_provenance=lambda _id, **kw: {
+                "decision": decision,
+                "reasoning_trace": None,
+                "evidence": [{"memory": {}}],
+                "superseded": [decision],
+                "superseded_by": [],
+            }
         ),
         _remote(
             {
@@ -272,6 +266,51 @@ def _cases():
                 "superseded_by": [],
             }
         ),
+    )
+    history = {
+        "decision_id": "dec_1",
+        "entries": [
+            {
+                "entry_kind": "version",
+                "at": "2026-10-01T09:00:00+00:00",
+                "version": 2,
+                "action": "supersede",
+                "asked_by": "human:alice",
+                "approved_by": None,
+                "reason": "capacity review Q4",
+                "old_content": "at most 15",
+                "new_content": None,
+                "related_decision_id": "dec_2",
+                "related_visible": True,
+            }
+        ],
+        "start": {"at": "2026-09-01T09:00:00+00:00", "kind": "recorded", "note": "Recorded 1 Sep 2026."},
+        "truncated": False,
+    }
+    yield (
+        "decision_history",
+        {"decision_id": "dec_1"},
+        _local_core(get_decision_history=lambda _id, **kw: history),
+        _remote(history),
+    )
+    sites = {
+        "decision_id": "dec_1",
+        "at": "2026-10-15T00:00:00+00:00",
+        "all_sites": False,
+        "all_sites_from": None,
+        "rows": [
+            {
+                "scope": {"site": "03"},
+                "in_force": {"decision_id": "dec_0", "visible": True, "from": "2026-09-01T00:00:00+00:00"},
+                "next": {"decision_id": "dec_1", "visible": True, "from": "2026-11-01T00:00:00+00:00"},
+            }
+        ],
+    }
+    yield (
+        "decision_sites",
+        {"decision_id": "dec_1", "at": "2026-10-15T00:00:00Z"},
+        _local_core(get_decision_sites=lambda _id, **kw: sites),
+        _remote(sites),
     )
     yield (
         "decision_find_conflicts",
@@ -330,7 +369,7 @@ def test_the_parity_suite_covers_every_registered_decision_tool():
         (
             "decision_get",
             {"decision_id": "dec_x"},
-            _local(_decision_manager=lambda: _Manager(get_decision=lambda _id: None)),
+            _local_core(get_decision=lambda _id, **kwargs: None),
             _remote({"error": "API error 404: Decision not found"}),
         ),
         (

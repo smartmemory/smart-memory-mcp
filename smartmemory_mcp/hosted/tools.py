@@ -47,7 +47,7 @@ CODE_TOOLS = (
 )
 AGENT_TOOLS = ("agent_set_recall_profile", "agent_get_recall_profile")
 REASONING_TOOLS = ("reasoning_query_traces",)
-# These six decision tools dispatch exclusively through the authenticated backend.
+# These eight decision tools dispatch exclusively through the authenticated backend.
 DECISION_TOOLS = (
     "decision_create",
     "decision_supersede",
@@ -55,6 +55,8 @@ DECISION_TOOLS = (
     "decision_search",
     "decision_get",
     "decision_provenance",
+    "decision_history",  # STUDIO-DECISION-VIEW-1
+    "decision_sites",  # STUDIO-DECISION-VIEW-1
 )
 # OUTREACH-MARIUS-HITL-SURFACE-1 p4: the review queue, so a replacement held for a person can be shown and settled
 # from the hosted connector. Both go through `backend.request` on the per-call backend: the workspace is the

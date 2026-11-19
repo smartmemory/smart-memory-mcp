@@ -171,7 +171,7 @@ Hosted mode advertises 35 tools, an explicit allowlist rather than a tier:
 `code_search` `code_dead_code` `code_dependencies` `code_upload` `code_effects`
 `agent_set_recall_profile` `agent_get_recall_profile` `reasoning_query_traces`
 `decision_create` `decision_supersede` `decision_get` `decision_list`
-`decision_search` `decision_provenance` `review_queue_list` `review_queue_settle`
+`decision_search` `decision_provenance` `decision_history` `decision_sites` `review_queue_list` `review_queue_settle`
 `whoami` `list_workspaces` `switch_workspace` `switch_team`
 
 When a workspace asks a person first (supersession policy `propose`), `decision_supersede`

@@ -37,7 +37,7 @@ def test_hosted_tools_have_explicit_directory_annotations() -> None:
 
     assert set(by_name) == set(HOSTED_TOOLS)
     assert (
-        len(by_name) == 38
+        len(by_name) == 40
     )  # SM-SCOPED-VALIDITY-1 six remote decision tools + DRIFT-V3-DHRUV-BOUNDARIES-1 memory_supersede + WS-POLICY-10 create_workspace + OUTREACH-MARIUS-HITL-SURFACE-1 p4 review_queue_list/settle
     for name, tool in by_name.items():
         assert tool.title, f"{name} is missing a title"
@@ -67,6 +67,8 @@ def test_hosted_tools_have_explicit_directory_annotations() -> None:
         "decision_list",
         "decision_search",
         "decision_provenance",
+        "decision_history",
+        "decision_sites",
     ):
         assert by_name[name].annotations.read_only_hint is True
         assert by_name[name].annotations.destructive_hint is False

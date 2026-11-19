@@ -37,7 +37,7 @@ RESERVED_SEGMENTS: dict[str, frozenset[str]] = {
         validate vector worker workspaces zettel
         """.split()
     ),
-    "/memory/decisions/": frozenset({"create", "pending", "search"}),
+    "/memory/decisions/": frozenset({"create", "pending", "search", "auto-changes"}),
     "/memory/decisions/pending/": frozenset({"create"}),
     "/memory/patterns/": frozenset({"seed"}),
     "/memory/agents/": frozenset(),
