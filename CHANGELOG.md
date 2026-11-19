@@ -1,5 +1,7 @@
 ## 2.0.2
 
+- TEST-TEARDOWN-1: Removed four test cases that pinned a fixed local tool table, a wait helper's imports, or census bookkeeping. Retained the runtime tool and wait coverage.
+
 - REL-2-0-2-MERGED-TIP-1: `supersession_policy_set` docstring now says turning the hold off (`retire`, or `inherit` when the inherited value is retire) needs a workspace owner or admin. Docs only.
 - REL-2-0-2-MERGED-TIP-1: `tests/test_decision_supersede_held_local.py` now expects the local tool's settle to be refused (`person_only` default, part 7) and settles the held review as a person (`actor='human:...'`). Tests only.
 
