@@ -5,9 +5,18 @@ from typing import Optional
 
 from mcp.types import ToolAnnotations
 
-from .common import get_backend, graceful
+from .common import backend_tool, get_backend, graceful
 
 logger = logging.getLogger(__name__)
+
+
+def _local_insight_backend():
+    from ..backends.remote import RemoteBackend
+
+    backend = get_backend()
+    if isinstance(backend, RemoteBackend):
+        raise NotImplementedError("This operation requires local memory.")
+    return backend
 
 
 def register(mcp):
@@ -22,7 +31,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def insight_health() -> str:
         """Get memory health summary — item counts, health score, and detected issues."""
         backend = get_backend()
@@ -78,9 +87,9 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def insight_reflect(top_k: int = 10) -> str:
-        """Reflect on memory patterns — identify key concepts, top entities, and dominant topics."""
+        """Reflect on memory patterns — identify key concepts and dominant topics."""
         backend = get_backend()
         raw_reflection = backend.reflect(top_k=top_k)
 
@@ -125,12 +134,12 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def insight_maintenance_status(
         stale_threshold_days: int = 90,
         low_confidence_threshold: float = 0.5,
     ) -> str:
-        """Get maintenance status — orphaned, stale, and low-confidence memory counts."""
+        """Get maintenance status — orphaned and stale memory counts. low_confidence_threshold is unused."""
         backend = get_backend()
 
         orphaned = backend.orphaned_notes()
@@ -203,13 +212,13 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def insight_personalize(
         traits: Optional[dict] = None,
         preferences: Optional[dict] = None,
     ) -> str:
         """Apply personalization settings — traits and preferences for memory retrieval."""
-        backend = get_backend()
+        backend = _local_insight_backend()
         backend.personalize(
             user_id="mcp-user",
             traits=traits or {},
@@ -226,13 +235,13 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def insight_feedback(
         feedback: Optional[dict] = None,
         memory_type: str = "semantic",
     ) -> str:
         """Update memory system based on user feedback."""
-        backend = get_backend()
+        backend = _local_insight_backend()
         backend.update_from_feedback(feedback=feedback or {}, memory_type=memory_type)
         return "Feedback processed successfully."
 
@@ -245,10 +254,10 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def insight_ground(item_id: str, source_url: str) -> str:
         """Ground a memory item to an external source URL for provenance."""
-        backend = get_backend()
+        backend = _local_insight_backend()
 
         item = backend.get(item_id)
         if not item:

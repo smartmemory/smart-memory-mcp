@@ -1,3 +1,8 @@
+## Unreleased
+
+- Fixed the Python module launcher and the hosted probe's exit status on transport errors.
+- Process MCP tools now report unavailable operations, failed development saves, failed evolution-status reads and skipped feedback as errors. Local feedback checks the supplied search session. Development saves include their session or friction metadata.
+
 ## 2.0.7
 
 ## Unreleased - BUG-MCP-HOSTED-INSTRUCTIONS-NO-DECISION-TOOLS-1: hosted instructions route decisions to the decision tools (2026-11-25)

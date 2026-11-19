@@ -4,7 +4,7 @@ import logging
 
 from mcp.types import ToolAnnotations
 
-from .common import get_backend, graceful
+from .common import backend_tool, get_backend
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +16,6 @@ def _get_zettel_memory():
     ``ZettelMemory(memory=...)`` was never a core signature, and the plain constructor builds
     its own graph on the configured default backend, not the Lite store.
     """
-    from smartmemory.memory.types.zettel_memory import ZettelMemory
-
     backend = get_backend()
 
     # LocalBackend exposes _mem; RemoteBackend does not
@@ -27,6 +25,8 @@ def _get_zettel_memory():
             None,
             "Zettel tools require local backend. Remote mode does not support graph-based zettel operations.",
         )
+
+    from smartmemory.memory.types.zettel_memory import ZettelMemory
 
     return ZettelMemory.for_memory(mem), None
 
@@ -43,14 +43,14 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def zettel_backlinks(
         note_id: str,
     ) -> str:
         """Get notes that link TO this note (backlinks)."""
         zettel, err = _get_zettel_memory()
         if err:
-            return err
+            raise NotImplementedError(err)
 
         backlinks = zettel.backlinks.get_backlinks(note_id)
 
@@ -71,14 +71,14 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def zettel_connections(
         note_id: str,
     ) -> str:
         """Get all connections (backlinks + forward links) for a note."""
         zettel, err = _get_zettel_memory()
         if err:
-            return err
+            raise NotImplementedError(err)
 
         connections = zettel.backlinks.get_all_connections(note_id)
 
@@ -99,14 +99,14 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def zettel_clusters(
         min_size: int = 3,
     ) -> str:
         """Detect knowledge clusters in your Zettelkasten."""
         zettel, err = _get_zettel_memory()
         if err:
-            return err
+            raise NotImplementedError(err)
 
         clusters = zettel.structure.detect_knowledge_clusters(min_cluster_size=min_size)
 
@@ -131,7 +131,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def zettel_discover(
         note_id: str,
         min_surprise: float = 0.5,
@@ -139,7 +139,7 @@ def register(mcp):
         """Find unexpected connections (serendipitous discovery) for a note."""
         zettel, err = _get_zettel_memory()
         if err:
-            return err
+            raise NotImplementedError(err)
 
         discoveries = zettel.discovery.discover_missing_connections(note_id)
 

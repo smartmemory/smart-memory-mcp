@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from mcp.types import ToolAnnotations
 
-from .common import get_backend, graceful
+from .common import backend_tool, get_backend
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def memory_anchor_set(
         content: str,
         anchor_type: str = "spec",
@@ -41,7 +41,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def memory_anchor_list(
         session_id: str = "",
         anchor_type: Optional[str] = None,
@@ -67,7 +67,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def memory_anchor_clear(
         session_id: str = "",
         anchor_type: Optional[str] = None,
@@ -86,7 +86,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def memory_anchor_graduate(
         session_id: str = "",
     ) -> str:
@@ -108,7 +108,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def memory_anchor_check_drift(
         session_id: str = "",
         recent_outputs: Optional[List[str]] = None,

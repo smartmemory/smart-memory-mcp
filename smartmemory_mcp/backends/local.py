@@ -6,6 +6,7 @@ import importlib
 import logging
 import sys
 import threading
+from uuid import uuid4
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, NoReturn
@@ -234,6 +235,12 @@ class LocalBackend(BackendCapabilities):
     def __init__(self) -> None:
         self._memory: Any = None
         self._init_lock = threading.Lock()
+        self._search_call = threading.local()
+
+    @property
+    def _last_search_session_id(self) -> str | None:
+        """The synchronous search handler reads the ID on the same thread as search()."""
+        return getattr(self._search_call, "session_id", None)
 
     def _get_memory(self) -> Any:
         """Resolve storage only when an operation needs the local memory."""
@@ -523,11 +530,10 @@ class LocalBackend(BackendCapabilities):
         self._last_conflict_check = None
         results = normalize_items(search(query, top_k, **kwargs))
         self._last_conflict_check = last_conflict_check()
-        # SELF-IMPROVE-6: track shown IDs for local-mode feedback
-        self._last_search_session_id = f"local:{id(results)}:{top_k}"
-        self._last_shown_ids = [
-            r.get("item_id", "") for r in results if r.get("item_id")
-        ]
+        session_id = f"local:{uuid4().hex}"
+        shown = [r["item_id"] for r in results if r.get("item_id")]
+        self._feedback_context = (session_id, shown)
+        self._search_call.session_id = session_id
         return results
 
     def search_by_metadata(
@@ -1154,17 +1160,14 @@ class LocalBackend(BackendCapabilities):
         accurate selection rate data (not just result_used == result_shown).
         """
         try:
+            context = getattr(self, "_feedback_context", None)
+            if context is None or context[0] != search_session_id:
+                return {"status": "skipped", "reason": "no matching search context"}
+            shown_ids = context[1]
+
             from smartmemory.observability.retrieval_tracking import (
                 emit_result_feedback,
             )
-
-            # Use shown_ids from the search that produced these results
-            shown_ids = getattr(self, "_last_shown_ids", None) or []
-            if not shown_ids:
-                log.warning(
-                    "submit_feedback: no prior search() call — shown_ids unknown, skipping"
-                )
-                return {"status": "skipped", "reason": "no prior search context"}
 
             emit_result_feedback(
                 query_hash="",
@@ -1176,6 +1179,7 @@ class LocalBackend(BackendCapabilities):
             return {
                 "status": "ok",
                 "search_session_id": search_session_id,
+                "result_shown_count": len(shown_ids),
                 "result_used_count": len(result_used),
             }
         except Exception as exc:

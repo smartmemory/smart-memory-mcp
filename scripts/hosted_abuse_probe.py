@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -126,8 +127,16 @@ def main() -> int:
     print(f"Latency p95: {_percentile(latencies, 0.95):.1f} ms")
 
     has_5xx = any(status.isdigit() and 500 <= int(status) < 600 for status in statuses)
+    if "transport_error" in statuses:
+        print(
+            "Probe failed: one or more requests had a transport error.", file=sys.stderr
+        )
+        return 1
     if has_5xx:
-        print("Probe failed: one or more requests returned 5xx status codes.")
+        print(
+            "Probe failed: one or more requests returned 5xx status codes.",
+            file=sys.stderr,
+        )
         return 1
     return 0
 

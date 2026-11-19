@@ -170,6 +170,26 @@ def strict_read_error_text(code: str, message: str, extra: dict) -> str:
 _STRICT_FIELDS = ("pairs", "reason", "method", "hint", "pairs_not_checked")
 
 
+def backend_tool(func):
+    """Report missing adapter operations and optional dependencies as MCP errors."""
+    from fastmcp.exceptions import ToolError
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except NotImplementedError as exc:
+            raise ToolError(
+                f"not available in this backend: {func.__name__}. {exc}"
+            ) from exc
+        except ImportError as exc:
+            raise ToolError(
+                f"{func.__name__} requires a missing dependency: {exc}"
+            ) from exc
+
+    return wrapper
+
+
 def graceful(func):
     """Wrap MCP tool to return helpful message on infrastructure failure."""
 

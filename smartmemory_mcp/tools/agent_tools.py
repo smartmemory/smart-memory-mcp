@@ -8,7 +8,7 @@ from mcp.types import ToolAnnotations
 
 from smartmemory_mcp.backends.path_guard import path_id
 
-from .common import get_backend, graceful
+from .common import backend_tool, get_backend, graceful
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def agent_evaluation_get(
         agent_id: str,
         dimension: str,
@@ -135,16 +135,10 @@ def register(mcp):
                    reinforcement_balance.
         domain: controlled-vocabulary domain string (e.g. 'python', 'kubernetes').
         """
+        sm = getattr(get_backend(), "_mem", None)
+        if sm is None:
+            raise NotImplementedError("Agent evaluations require local memory.")
+
         from smartmemory.agents.evaluation import get_evaluation as _get_evaluation
 
-        backend = get_backend()
-        sm = getattr(backend, "_mem", None)
-        if sm is None:
-            # Evaluations are read from the graph; passing the MCP backend wrapper
-            # (which has no SmartMemory/_graph) made get_evaluation ALWAYS return
-            # None (2026-06-02 bug hunt). Remote-mode client-side read is a follow-on.
-            logger.debug(
-                "agent_evaluation_get: no local SmartMemory (remote mode); returning None"
-            )
-            return None
         return _get_evaluation(sm, agent_id, dimension, domain)

@@ -4,10 +4,11 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 
+from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from ..backends.models import none_found, partial_note, partial_reasons
-from .common import get_backend, graceful, read_metadata
+from .common import backend_tool, get_backend, graceful, read_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,25 @@ FRICTION_CATEGORIES = (
     "workaround_needed",
 )
 FRICTION_SEVERITIES = ("low", "medium", "high")
+
+
+def _ingest_confirmation(result, action):
+    if isinstance(result, dict):
+        if "error" in result:
+            raise ToolError(f"Ingest failed: {result['error']}")
+        if "schema_version" in result:
+            from ..backends.receipts import read_wire_save
+
+            receipt = read_wire_save(result, op="ingest")
+            if result.get("execution_state") in {"failed", "dead"} or result.get(
+                "outcome"
+            ) in {"failed", "dead"}:
+                raise ToolError(f"Ingest failed: {receipt.summary}")
+            return receipt.summary
+        result = result.get("item_id") or result.get("id")
+    if not isinstance(result, str) or not result.strip():
+        raise ToolError("Ingest did not return a saved item ID.")
+    return f"{action}: {result}"
 
 
 def register(mcp):
@@ -185,7 +205,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def dev_save_session(
         summary: str,
         key_findings: Optional[List[str]] = None,
@@ -223,15 +243,12 @@ def register(mcp):
         all_tags.append("dev-session")
         item_metadata["tags"] = all_tags
 
-        result = backend.ingest(content, memory_type="episodic")
-        if isinstance(result, dict):
-            if result.get("status") == "held":
-                return f"Session held: {result.get('reason')}. Details: {result.get('reasons', [])}"
-            session_id = result.get("item_id", str(result))
-        else:
-            session_id = str(result)
+        result = backend.ingest(content, memory_type="episodic", metadata=item_metadata)
+        if isinstance(result, dict) and result.get("status") == "held":
+            return f"Session held: {result.get('reason')}. Details: {result.get('reasons', [])}"
+        confirmation = _ingest_confirmation(result, "Session saved")
 
-        return f"Session saved: {session_id}\nSummary: {summary}"
+        return f"{confirmation}\nSummary: {summary}"
 
     @mcp.tool(
         title="Load development context",
@@ -401,7 +418,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def dev_log_friction(
         description: str,
         category: str,
@@ -438,16 +455,15 @@ def register(mcp):
         if context:
             item_metadata["context"] = context
 
-        result = backend.ingest(content, memory_type="observation")
-        if isinstance(result, dict):
-            if result.get("status") == "held":
-                return f"Friction held: {result.get('reason')}. Details: {result.get('reasons', [])}"
-            friction_id = result.get("item_id", str(result))
-        else:
-            friction_id = str(result)
+        result = backend.ingest(
+            content, memory_type="observation", metadata=item_metadata
+        )
+        if isinstance(result, dict) and result.get("status") == "held":
+            return f"Friction held: {result.get('reason')}. Details: {result.get('reasons', [])}"
+        confirmation = _ingest_confirmation(result, "Friction logged")
 
         return (
-            f"Friction logged: {friction_id}\n"
+            f"{confirmation}\n"
             f"Category: {category}\n"
             f"Severity: {severity}\n"
             f"Tip: search for friction with memory_search query='{description[:50]}'"

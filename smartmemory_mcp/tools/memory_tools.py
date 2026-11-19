@@ -30,6 +30,7 @@ except ImportError:  # remote-only install: no core, no logged mark
 
 
 from .common import (
+    backend_tool,
     checked_as_of,
     dated,
     get_backend,
@@ -1500,7 +1501,7 @@ def register_pro(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def memory_search_advanced(
         query: str,
         algorithm: str = "query_traversal",
@@ -1513,7 +1514,7 @@ def register_pro(mcp):
         backend = get_backend()
         mem = getattr(backend, "_mem", None)
         if mem is None:
-            return "Advanced search requires local backend."
+            raise NotImplementedError("Advanced search requires local backend.")
         if algorithm not in ("query_traversal", "triangulation_fulldim"):
             return f"Unknown algorithm: {algorithm}. Use 'query_traversal' or 'triangulation_fulldim'"
 
@@ -1615,7 +1616,7 @@ def register_feedback(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def memory_feedback(search_session_id: str, result_used: List[str]) -> str:
         """Report which search results you used from a previous memory_search call.
 
@@ -1633,10 +1634,20 @@ def register_feedback(mcp):
         result = backend.submit_feedback(
             search_session_id=search_session_id, result_used=result_used
         )
-        if isinstance(result, dict):
-            if "error" in result:
-                return f"Feedback failed: {result['error']}"
-            used = result.get("result_used_count", len(result_used))
-            shown = result.get("result_shown_count", "?")
-            return f"Feedback recorded: used {used} of {shown} shown results (session: {search_session_id})"
-        return f"Feedback recorded for session: {search_session_id}"
+        from fastmcp.exceptions import ToolError
+
+        if not isinstance(result, dict) or not result:
+            raise ToolError("Feedback failed: backend did not confirm feedback")
+        if "error" in result:
+            raise ToolError(f"Feedback failed: {result['error']}")
+        if result.get("status") == "skipped":
+            raise ToolError(
+                f"Feedback skipped: {result.get('reason', 'backend skipped feedback')}"
+            )
+        if result.get("status") != "ok":
+            raise ToolError(
+                f"Feedback failed: unexpected status {result.get('status')!r}"
+            )
+        used = result.get("result_used_count", len(result_used))
+        shown = result.get("result_shown_count", "?")
+        return f"Feedback recorded: used {used} of {shown} shown results (session: {search_session_id})"

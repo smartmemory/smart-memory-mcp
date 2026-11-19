@@ -5,7 +5,7 @@ import logging
 from mcp.types import ToolAnnotations
 
 from ..backends.models import partial_note, partial_reasons
-from .common import get_backend, graceful
+from .common import backend_tool, get_backend, graceful
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def evolution_trigger() -> str:
         """Trigger a memory evolution cycle — runs clustering, deduplication, and consolidation."""
         backend = get_backend()
@@ -60,20 +60,19 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def evolution_status() -> str:
         """Get status of memory evolution processes."""
         backend = get_backend()
 
-        partial: tuple[str, ...] = ()
+        from fastmcp.exceptions import ToolError
+
         try:
-            # CORE-MEMORY-DYNAMICS-1 M1b: "working" memory_type renamed to "pending".
             found = backend.search("*", memory_type="pending", top_k=100)
-            partial = partial_reasons(found)
-            pending_items = found or []
-            pending_count = len(pending_items)
-        except Exception:
-            pending_count = 0
+        except Exception as exc:
+            raise ToolError(f"Could not read pending memories: {exc}") from exc
+        partial = partial_reasons(found)
+        pending_count = len(found)
 
         # a partial answer with nothing visible is not "idle": the count is a lower bound (U5.21 F1)
         status = "ready" if pending_count >= 1 else ("unknown" if partial else "idle")
@@ -94,7 +93,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def evolution_synthesize_opinions() -> str:
         """Run opinion synthesis — detect patterns in episodic memories and form opinions."""
         backend = get_backend()
@@ -110,7 +109,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def evolution_synthesize_observations() -> str:
         """Run observation synthesis — create entity summaries from scattered facts."""
         backend = get_backend()
@@ -126,7 +125,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def evolution_reinforce_opinions() -> str:
         """Run opinion reinforcement — update confidence scores based on new evidence."""
         backend = get_backend()
@@ -142,7 +141,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def clustering_run(distance_threshold: float = 0.1) -> str:
         """Run entity clustering/deduplication — merge duplicate entities by vector similarity."""
         backend = get_backend()

@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from mcp.types import ToolAnnotations
 
-from .common import get_backend, graceful
+from .common import backend_tool, get_backend, graceful
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def memory_plan_create(
         title: str,
         tasks: Optional[List[Dict[str, Any]]] = None,
@@ -62,7 +62,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def memory_plan_active() -> str:
         """Get all active plans."""
         plans = get_backend().plan_active()
@@ -84,7 +84,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def memory_plan_update_task(
         plan_id: str,
         task_id: str,
@@ -103,7 +103,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def memory_log_failure(
         error_type: str,
         content: str,

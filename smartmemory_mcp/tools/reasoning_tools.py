@@ -5,7 +5,7 @@ import logging
 from mcp.types import ToolAnnotations
 
 from ..backends.models import none_found, partial_note, partial_reasons
-from .common import get_backend, graceful, read_metadata
+from .common import backend_tool, get_backend, graceful, read_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -27,20 +27,23 @@ def register(mcp):
             openWorldHint=True,
         ),
     )
-    @graceful
+    @backend_tool
     def reasoning_challenge(
         assertion: str,
         memory_type: str = "semantic",
         use_llm: bool = True,
     ) -> str:
         """Challenge an assertion against existing knowledge to detect contradictions."""
-        from smartmemory.reasoning.challenger import AssertionChallenger
-
         backend = get_backend()
         # Challenger expects MemoryItem objects — requires local SmartMemory instance
         sm = getattr(backend, "_mem", None)
         if sm is None:
-            return "reasoning_challenge requires local backend (smartmemory package)"
+            raise NotImplementedError(
+                "reasoning_challenge requires local backend (smartmemory package)"
+            )
+
+        from smartmemory.reasoning.challenger import AssertionChallenger
+
         challenger = AssertionChallenger(
             sm,
             use_llm=use_llm,
@@ -77,7 +80,7 @@ def register(mcp):
             openWorldHint=True,
         ),
     )
-    @graceful
+    @backend_tool
     def reasoning_resolve_conflict(
         existing_item_id: str,
         new_fact: str,
@@ -85,6 +88,14 @@ def register(mcp):
         use_llm: bool = True,
     ) -> str:
         """Resolve a conflict between assertions via Wikipedia, LLM, grounding, or recency."""
+        backend = get_backend()
+        # Challenger expects MemoryItem objects — requires local SmartMemory instance
+        sm = getattr(backend, "_mem", None)
+        if sm is None:
+            raise NotImplementedError(
+                "reasoning_resolve_conflict requires local backend (smartmemory package)"
+            )
+
         from smartmemory.reasoning.challenger import (
             AssertionChallenger,
             Conflict,
@@ -92,11 +103,6 @@ def register(mcp):
             ResolutionStrategy,
         )
 
-        backend = get_backend()
-        # Challenger expects MemoryItem objects — requires local SmartMemory instance
-        sm = getattr(backend, "_mem", None)
-        if sm is None:
-            return "reasoning_resolve_conflict requires local backend (smartmemory package)"
         existing_item = sm.get(existing_item_id)
         if not existing_item:
             return f"Memory item not found: {existing_item_id}"
@@ -173,11 +179,9 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def reasoning_proof_tree(decision_id: str, max_depth: int = 5) -> str:
         """Build an auditable proof tree for a decision, tracing evidence back to sources."""
-        from smartmemory.reasoning.proof_tree import ProofTreeBuilder
-
         backend = get_backend()
         # Backends expose the SmartMemory instance as `_mem` (see local.py); the
         # graph hangs off that, not off the backend itself.
@@ -185,7 +189,9 @@ def register(mcp):
         graph = getattr(sm, "graph", None) if sm is not None else None
 
         if not graph:
-            return _GRAPH_UNAVAILABLE_MSG
+            raise NotImplementedError(_GRAPH_UNAVAILABLE_MSG)
+
+        from smartmemory.reasoning.proof_tree import ProofTreeBuilder
 
         builder = ProofTreeBuilder(graph)
         tree = builder.build_proof(decision_id, max_depth=max_depth)
@@ -204,18 +210,18 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
-    @graceful
+    @backend_tool
     def reasoning_fuzzy_confidence(decision_id: str) -> str:
         """Get multi-dimensional confidence score for a decision (evidence, recency, consensus, directness)."""
-        from smartmemory.decisions.manager import DecisionManager
-        from smartmemory.reasoning.fuzzy_confidence import FuzzyConfidenceCalculator
-
         backend = get_backend()
         # DecisionManager takes the SmartMemory instance (cf. smart_memory.py's
         # `DecisionManager(self)`), not the MCP backend wrapper.
         sm = getattr(backend, "_mem", None)
         if sm is None:
-            return _GRAPH_UNAVAILABLE_MSG
+            raise NotImplementedError(_GRAPH_UNAVAILABLE_MSG)
+
+        from smartmemory.decisions.manager import DecisionManager
+        from smartmemory.reasoning.fuzzy_confidence import FuzzyConfidenceCalculator
 
         dm = DecisionManager(sm)
         decision = dm.get_decision(decision_id)
@@ -224,7 +230,7 @@ def register(mcp):
 
         graph = getattr(sm, "graph", None)
         if not graph:
-            return _GRAPH_UNAVAILABLE_MSG
+            raise NotImplementedError(_GRAPH_UNAVAILABLE_MSG)
 
         calc = FuzzyConfidenceCalculator(graph)
         score = calc.calculate(decision)

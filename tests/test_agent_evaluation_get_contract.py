@@ -12,6 +12,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+from fastmcp.exceptions import ToolError
+
 
 class _FakeMCP:
     """Capture tool functions registered via @mcp.tool() decorator."""
@@ -132,8 +135,8 @@ class TestAgentEvaluationGetReturnType:
             "must pass backend._mem (SmartMemory), not the wrapper"
         )
 
-    def test_remote_mode_returns_none_without_calling_get_evaluation(self):
-        """Remote backend has no `_mem` -> tool returns None and never calls
+    def test_remote_mode_raises_without_calling_get_evaluation(self):
+        """Remote backend has no `_mem` -> tool raises an error and never calls
         get_evaluation client-side (remote eval read is a follow-on)."""
         fn = self._register()
         with (
@@ -141,6 +144,8 @@ class TestAgentEvaluationGetReturnType:
             patch("smartmemory.agents.evaluation.get_evaluation") as ge,
         ):
             gb.return_value = object()  # remote-mode stand-in: no _mem
-            result = fn(agent_id="alpha", dimension="decision_volume", domain="python")
-        assert result is None
+            with pytest.raises(
+                ToolError, match="not available in this backend: agent_evaluation_get"
+            ):
+                fn(agent_id="alpha", dimension="decision_volume", domain="python")
         ge.assert_not_called()
