@@ -7,6 +7,7 @@ The acting person is answered the way the hosted service answers it (``get_actin
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -97,15 +98,29 @@ def _seed(sm, current):
 
 
 def test_n2_the_decision_read_says_who_recorded_what_replaced_it_who_when_why(world):
-    sm, tools, current = world
+    from fastmcp import Client, FastMCP
+    from smartmemory_mcp.tools import decision_tools
+
+    sm, _, current = world
     d0, d1 = _seed(sm, current)
-    text = tools["decision_get"](decision_id=d0)
+    server = FastMCP("decision-view-notes")
+    decision_tools.register(server)
+
+    async def read():
+        async with Client(server) as client:
+            detail = await client.call_tool("decision_get", {"decision_id": d0})
+            provenance = await client.call_tool("decision_provenance", {"decision_id": d0})
+            return detail.content[0].text, provenance.content[0].text
+
+    text, prov = asyncio.run(read())
+    assert "Status: replaced" in text
+    assert "The site schedule determines where this rule is still in force." in text
     assert "Recorded by: human:bob" in text
     assert f"Replaced by: {d1} on 2026-10-01" in text
     assert "by human:alice" in text and f"reason: {REASON}" in text
     assert "Decided by (as stated, not verified): protocol committee" in text
     # the provenance read answers the same in one call
-    prov = tools["decision_provenance"](decision_id=d0)
+    assert "Status: replaced" in prov
     assert f"Replaced by: {d1} on 2026-10-01" in prov and "by human:alice" in prov and f"reason: {REASON}" in prov
 
 

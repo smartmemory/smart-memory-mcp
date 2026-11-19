@@ -6,6 +6,7 @@
 - `auto-changes` is a reserved decision id segment; the checked-in route table gains the four new decision view routes.
 - Remote decision reads now distinguish a service failure mentioning a missing upstream resource from an HTTP 404 on the requested decision.
 - The MCP route inventory follows the decision-view service snapshot, including the reserved workspace-templates path.
+- Local and hosted decision detail and provenance now show a replaced label for a scheduled replacement and explain how site applicability is determined.
 - The two reads are available at every tier and through the hosted connector.
 
 ## 2.0.2

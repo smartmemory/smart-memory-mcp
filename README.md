@@ -174,6 +174,8 @@ Hosted mode advertises 35 tools, an explicit allowlist rather than a tier:
 `decision_search` `decision_provenance` `decision_history` `decision_sites` `review_queue_list` `review_queue_settle`
 `whoami` `list_workspaces` `switch_workspace` `switch_team`
 
+A decision's detail and provenance say “Status: replaced” when a replacement exists. For a scheduled replacement, the site table shows where the earlier rule still applies.
+
 When a workspace asks a person first (supersession policy `propose`), `decision_supersede`
 answers "held for review" with a review id and the old rule stays in force. The assistant
 tells the user the change is waiting for a person and never settles it itself. A person settles it

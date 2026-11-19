@@ -314,6 +314,14 @@ def who_text(decision):
     if get("decided_by"):
         lines.append(f"Decided by (as stated, not verified): {get('decided_by')}")
     replaced = get("replaced")
+    status = get("status")
+    label = get("display_status")
+    if label is None and (status == "superseded" or (status == "active" and isinstance(replaced, dict))):
+        label = "replaced"
+    if label == "replaced":
+        lines.append("Status: replaced")
+        if status == "active":
+            lines.append("The site schedule determines where this rule is still in force.")
     if isinstance(replaced, dict):
         when = f" on {replaced['at']}" if replaced.get("at") else ""
         if replaced.get("visible") is False:
