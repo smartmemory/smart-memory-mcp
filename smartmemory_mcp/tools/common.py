@@ -287,6 +287,143 @@ def refuse_scoped_options(business_scope, valid_at):
         )
 
 
+_HIDDEN_RULE = "a rule you cannot see"
+_LINKING_ACTIONS = ("supersede", "replaced_by", "restore")
+
+
+def who_text(decision):
+    """STUDIO-DECISION-VIEW-1: who recorded a decision, what replaced it, who, when and why, in plain words.
+
+    One renderer for every backend and tool (the one-call answer of ``decision_get`` and ``decision_provenance``).
+    A field the answer does not carry prints nothing, so an older service reads exactly as before. A replacement or
+    replaced rule the caller cannot read prints the frozen wording, with no id, text or link."""
+    get = decision.get if isinstance(decision, dict) else (lambda k, d=None: getattr(decision, k, d))
+    lines = []
+    if get("recorded_by"):
+        who = f"Recorded by: {get('recorded_by')}"
+        if get("recorded_for"):
+            who += f" for {get('recorded_for')}"
+        lines.append(who)
+    if "created_at" in (decision if isinstance(decision, dict) else {}):
+        created = get("created_at")
+        lines.append(
+            f"Recorded on: {created}"
+            if created
+            else "Recorded on: date unknown (before history was kept)"
+        )
+    if get("decided_by"):
+        lines.append(f"Decided by (as stated, not verified): {get('decided_by')}")
+    replaced = get("replaced")
+    status = get("status")
+    label = get("display_status")
+    if label is None and (status == "superseded" or (status == "active" and isinstance(replaced, dict))):
+        label = "replaced"
+    if label == "replaced":
+        lines.append("Status: replaced")
+        if status == "active":
+            lines.append("The site schedule determines where this rule is still in force.")
+    if isinstance(replaced, dict):
+        when = f" on {replaced['at']}" if replaced.get("at") else ""
+        if replaced.get("visible") is False:
+            lines.append(f"This rule was replaced by {_HIDDEN_RULE}{when}.")
+        else:
+            text = f"Replaced by: {replaced.get('decision_id')}{when}"
+            if replaced.get("by"):
+                text += f" by {replaced['by']}"
+            if replaced.get("reason"):
+                text += f", reason: {replaced['reason']}"
+            if replaced.get("how") == "review":
+                text += " (a held proposal"
+                if replaced.get("proposed_by"):
+                    text += f" from {replaced['proposed_by']}"
+                if replaced.get("approved_by"):
+                    text += f", approved by {replaced['approved_by']}"
+                text += ")"
+            lines.append(text + ".")
+    for link in get("replaces") or []:
+        if not isinstance(link, dict):
+            continue
+        if link.get("visible") is False:
+            lines.append(f"Replaces: {_HIDDEN_RULE}.")
+            continue
+        text = f"Replaces: {link.get('decision_id')}"
+        if link.get("at"):
+            text += f" on {link['at']}"
+        if link.get("by"):
+            text += f" by {link['by']}"
+        if link.get("reason"):
+            text += f", reason: {link['reason']}"
+        lines.append(text + ".")
+    return "\n".join(lines)
+
+
+def history_text(decision_id, history):
+    """STUDIO-DECISION-VIEW-1: a decision's history in plain words, newest first (one wording for every backend)."""
+    lines = [f"History of {decision_id} (newest first):"]
+    for entry in history.get("entries") or []:
+        text = f"- {entry.get('at')} {entry.get('action')}"
+        if entry.get("asked_by"):
+            text += f" by {entry['asked_by']}"
+        if entry.get("approved_by"):
+            text += f", approved by {entry['approved_by']}"
+        if entry.get("reason"):
+            text += f", reason: {entry['reason']}"
+        if entry.get("related_decision_id"):
+            text += f" (other decision: {entry['related_decision_id']})"
+        elif entry.get("action") in _LINKING_ACTIONS and entry.get("related_visible") is False:
+            # ``related_visible`` is false both for "no other decision" and for "one you cannot read": only an action
+            # that always names another rule can mean the second.
+            text += f" (other decision: {_HIDDEN_RULE})"
+        if entry.get("old_content") is not None and entry.get("new_content") is not None:
+            text += f"\n    was: {entry['old_content']}\n    now: {entry['new_content']}"
+        elif entry.get("old_content") is not None:
+            text += f"\n    was: {entry['old_content']}"
+        elif entry.get("new_content") is not None:
+            text += f"\n    text: {entry['new_content']}"
+        lines.append(text)
+    if not history.get("entries"):
+        lines.append("- no entries")
+    start = history.get("start") or {}
+    if start.get("note"):
+        lines.append(start["note"])
+    if history.get("truncated"):
+        lines.append("More entries exist before the last one shown: ask again with before set to its date.")
+    return "\n".join(lines)
+
+
+def _site_rule_text(rule):
+    if not isinstance(rule, dict):
+        return None
+    name = rule.get("decision_id") if rule.get("visible") is not False else _HIDDEN_RULE
+    return f"{name} (from {rule.get('from')})"
+
+
+def sites_text(decision_id, sites):
+    """STUDIO-DECISION-VIEW-1: which rule is in force at each site, in plain words (one wording for every backend)."""
+    at = sites.get("at")
+    if sites.get("all_sites"):
+        return (
+            f"All sites, from {sites.get('all_sites_from')}: decision {decision_id} has no site schedule, so one rule "
+            f"applies everywhere (as of {at})."
+        )
+    lines = [f"Rule in force at each site on {at} (chain of {decision_id}):"]
+    for row in sites.get("rows") or []:
+        scope = row.get("scope") or {}
+        label = f"site {scope['site']}" if scope.get("site") is not None else str(scope)
+        in_force = _site_rule_text(row.get("in_force"))
+        if in_force is None:
+            lines.append(f"- {label}: no rule in force at {label} on {at}")
+        else:
+            text = f"- {label}: {in_force}"
+            upcoming = _site_rule_text(row.get("next"))
+            if upcoming:
+                text += f"; next: {upcoming}"
+            lines.append(text)
+    if not sites.get("rows"):
+        lines.append("- no sites listed")
+    return "\n".join(lines)
+
+
 def resolution_text(value, metadata=_UNSET):
     """Render only response diagnostics, identically for all backends.
 

@@ -1,3 +1,14 @@
+## Unreleased - STUDIO-DECISION-VIEW-1 U5: decision history and site table tools, and the one-call "who replaced it" answer
+
+- New tools `decision_history(decision_id, limit, before, as_of)` and `decision_sites(decision_id, at, scopes)` (local, remote, hosted; read-only): the dated history of a decision with who and why, and which rule of its chain is in force at each site on a date, in one call. A rule you cannot read shows as "a rule you cannot see", with no id or text.
+- `decision_get` and `decision_provenance` now add plain-words lines after the decision: who recorded it (and for whom), the stated decider (marked as not verified), and what replaced it with who, when and why, and what it replaced. A read without the new fields prints nothing extra.
+- Fix: local `decision_provenance` with no `as_of` or site qualifier read core's bare `DecisionQueries`, which does not lay the who and replaced blocks on the decision; it now always reads through the core facade, like the dated read.
+- `auto-changes` is a reserved decision id segment; the checked-in route table gains the four new decision view routes.
+- Remote decision reads now distinguish a service failure mentioning a missing upstream resource from an HTTP 404 on the requested decision.
+- The MCP route inventory follows the decision-view service snapshot, including the reserved workspace-templates path.
+- Local and hosted decision detail and provenance now show a replaced label for a scheduled replacement and explain how site applicability is determined.
+- The two reads are available at every tier and through the hosted connector.
+
 ## 2.0.2
 
 - REL-2-0-2-MERGED-TIP-1: `supersession_policy_set` docstring now says turning the hold off (`retire`, or `inherit` when the inherited value is retire) needs a workspace owner or admin. Docs only.

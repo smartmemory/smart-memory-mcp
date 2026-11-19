@@ -148,6 +148,8 @@ FREE_TOOLS = sorted(
         "decision_reinforce",
         "decision_contradict",
         "decision_provenance",
+        "decision_history",  # STUDIO-DECISION-VIEW-1 U5
+        "decision_sites",  # STUDIO-DECISION-VIEW-1 U5
         "decision_find_conflicts",
         "decision_create_pending",
         "decision_resolve_requirement",
@@ -160,20 +162,20 @@ FREE_TOOLS = sorted(
 
 class TestToolRegistration:
     def test_free_tier_tool_count(self):
-        """FREE tier registers exactly 43 tools (DECISION-RESTORE-ONE-ACTION-1 added decision_restore; WS-POLICY-10 added create_workspace; 18 + the 15 decision-suite tools; MCP-SWITCH-WORKSPACE-1 added switch_workspace; SM-EVIDENCE-TYPE-1 added decision_link_evidence + evidence_record)."""
+        """FREE tier registers exactly 45 tools (DECISION-RESTORE-ONE-ACTION-1 added decision_restore; WS-POLICY-10 added create_workspace; 18 + the 15 decision-suite tools; MCP-SWITCH-WORKSPACE-1 added switch_workspace; SM-EVIDENCE-TYPE-1 added decision_link_evidence + evidence_record)."""
         env = _clean_env()
         data = _run_snippet(env)
-        assert data["count"] == 43, (
-            f"Expected 43 FREE tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 45, (
+            f"Expected 45 FREE tools, got {data['count']}: {data['names']}"
         )
         assert data["names"] == FREE_TOOLS
 
     def test_pro_tier_tool_count(self):
-        """PRO tier registers exactly 83 remote tools (+decision_restore DECISION-RESTORE-ONE-ACTION-1; +create_workspace WS-POLICY-10; +transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed)."""
+        """PRO tier registers exactly 85 remote tools (+decision_restore DECISION-RESTORE-ONE-ACTION-1; +create_workspace WS-POLICY-10; +transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed)."""
         env = _clean_env(SMARTMEMORY_API_KEY="sk_test_key_123")
         data = _run_snippet(env)
-        assert data["count"] == 83, (
-            f"Expected 83 remote PRO tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 85, (
+            f"Expected 85 remote PRO tools, got {data['count']}: {data['names']}"
         )
         assert {"code_blame", "code_read_transcript", "peer_chat"}.isdisjoint(
             data["names"]
@@ -185,13 +187,13 @@ class TestToolRegistration:
             assert tool in data["names"], f"FREE tool {tool!r} missing from PRO tier"
 
     def test_pro_plus_tier_tool_count(self):
-        """PRO_PLUS tier registers exactly 120 remote tools (+decision_restore DECISION-RESTORE-ONE-ACTION-1; +create_workspace WS-POLICY-10; +transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed; +4 OUTREACH-MARIUS-HITL-SURFACE-1: review_queue_list/settle, supersession_policy_get/set; +2 part 7: review_approval_get/set)."""
+        """PRO_PLUS tier registers exactly 122 remote tools (+decision_restore DECISION-RESTORE-ONE-ACTION-1; +create_workspace WS-POLICY-10; +transcript_search/_status, DIST-CC-INGEST-1 Phase 4; +2 SM-EVIDENCE-TYPE-1; +4 SM-PATTERN-CRUD-1: pattern_create/update/retire/seed; +4 OUTREACH-MARIUS-HITL-SURFACE-1: review_queue_list/settle, supersession_policy_get/set; +2 part 7: review_approval_get/set)."""
         env = _clean_env(
             SMARTMEMORY_API_KEY="sk_test_key_123", SMARTMEMORY_MCP_FULL_TOOLS="true"
         )
         data = _run_snippet(env)
-        assert data["count"] == 120, (
-            f"Expected 120 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
+        assert data["count"] == 122, (
+            f"Expected 122 remote PRO_PLUS tools, got {data['count']}: {data['names']}"
         )
         assert {
             "review_queue_list",

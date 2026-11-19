@@ -34,10 +34,10 @@ RESERVED_SEGMENTS: dict[str, frozenset[str]] = {
         opinions patterns personalize pipeline plans platform plugins policy procedures
         progress read-around reasoning recall reflect result-feedback routing schemas search
         sequences sleep subscriptions summary support sync teams telemetry temporal tenant token-usage
-        validate vector worker workspaces zettel
+        validate vector worker workspace-templates workspaces zettel
         """.split()
     ),
-    "/memory/decisions/": frozenset({"create", "pending", "search"}),
+    "/memory/decisions/": frozenset({"create", "pending", "search", "auto-changes"}),
     "/memory/decisions/pending/": frozenset({"create"}),
     "/memory/patterns/": frozenset({"seed"}),
     "/memory/agents/": frozenset(),
