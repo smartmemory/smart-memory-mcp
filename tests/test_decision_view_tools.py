@@ -126,3 +126,11 @@ def test_a_bad_instant_is_refused_naming_it(monkeypatch):
     with pytest.raises(Exception, match="before|as_of|ISO"):
         tools["decision_history"](decision_id="d0", before="last tuesday")
     assert seen == []
+
+
+def test_history_preserves_service_failure_that_mentions_404(monkeypatch):
+    tools, _ = _tools(monkeypatch, lambda *args: {
+        "status_code": 503, "error": "API error 503: upstream API error 404"
+    })
+    with pytest.raises(RuntimeError, match="API error 503"):
+        tools["decision_history"](decision_id="d0")

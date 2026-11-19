@@ -1552,7 +1552,8 @@ class RemoteBackend(BackendCapabilities):
                 str(decided.get("outcome") or decided.get("action") or "settled"),
             )
         if err := self._fmt_error(result):
-            if none_on_404 and "API error 404" in err:
+            status = result.get("status_code")
+            if none_on_404 and (status == 404 or (status is None and err.startswith("API error 404:"))):
                 return None
             raise RuntimeError(f"{method} {path} failed: {err}")
         if result is None:
