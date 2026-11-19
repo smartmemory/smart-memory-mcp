@@ -87,6 +87,10 @@ def _local(**core):
     return backend
 
 
+def _local_core(**methods):
+    return _local(_mem=_Manager(**methods))
+
+
 def _remote(response):
     backend = RemoteBackend.__new__(RemoteBackend)
     backend._request = lambda method, path, **kwargs: response

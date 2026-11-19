@@ -5,6 +5,7 @@
 - Fix: local `decision_provenance` with no `as_of` or site qualifier read core's bare `DecisionQueries`, which does not lay the who and replaced blocks on the decision; it now always reads through the core facade, like the dated read.
 - `auto-changes` is a reserved decision id segment; the checked-in route table gains the four new decision view routes.
 - Remote decision reads now distinguish a service failure mentioning a missing upstream resource from an HTTP 404 on the requested decision.
+- The MCP route inventory follows the decision-view service snapshot, including the reserved workspace-templates path.
 - The two reads are available at every tier and through the hosted connector.
 
 ## 2.0.2

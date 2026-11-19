@@ -84,8 +84,13 @@ def _seed(sm, current):
         scope_go_lives=[{"scope": None, "valid_from": "2026-09-01T00:00:00Z"}],
     ).decision_id
     current["actor"] = "human:alice"
-    with patch("smartmemory.decisions.manager.datetime", wraps=datetime) as clock:
-        clock.now.return_value = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    class ReplacementDay(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            day = cls(2026, 10, 1, tzinfo=timezone.utc)
+            return day.astimezone(tz) if tz else day.replace(tzinfo=None)
+
+    with patch("smartmemory.temporal.version_tracker.datetime", ReplacementDay):
         d1 = sm.supersede_decision(d0, Decision(content=D1), REASON, scope_go_lives=SCHEDULE).decision_id
     current["actor"] = "human:bob"
     return d0, d1
