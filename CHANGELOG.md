@@ -1,3 +1,9 @@
+## Unreleased - BUG-CONFLICT-BACKEND-RECALL-FLAG-1: the two backend `recall` methods honour `fail_if_conflicted` (2026-11-21)
+
+- `backends/remote.py` `recall`: passes `fail_if_conflicted` to the search call that checks it (the same body key `recall_pack` sends). The service's 409 refusals surface as before, and core's `mark` marker is printed as one `conflict_check: {...}` line, unchanged, after the rows (or alone when every row was filtered out). Flag unset: the request and the text are unchanged.
+- `backends/local.py` `recall`: `storage.recall` has no such parameter, so a set flag raises `ValueError` ("fail_if_conflicted is not supported by LocalBackend.recall") instead of answering unchecked. Flag unset or false: unchanged.
+- Tests: `tests/test_recall_conflict_flag.py` (5 new rows).
+
 ## Unreleased - BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: the "could not decide" conflict result reaches the tool caller (2026-11-21)
 
 - `backends/remote.py` `_raise_recall_conflict`: the service's 409 `conflict_check_undecided` is a tool error `conflict_check_undecided: <message>`, as `recall_conflict` already was. It was a generic error before. The rest of the body (`pairs`, `reason`, `method`, `hint`, the not-checked count) follows as one JSON line, unchanged, for both 409s.

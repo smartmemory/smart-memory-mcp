@@ -1173,7 +1173,15 @@ class RemoteBackend(BackendCapabilities):
         """Client-side recall — no /memory/recall endpoint in the hosted API."""
         requested = max(1, top_k)
         # Preserve service ranking and the entire evidence budget in one query.
-        results = self.search(cwd or "", top_k=requested)
+        # BUG-CONFLICT-BACKEND-RECALL-FLAG-1: the flag goes to the search call that checks it (same body key as
+        # recall_pack); search() keeps core's "could not decide" marker in _last_conflict_check, printed below.
+        search_kwargs = {}
+        if "fail_if_conflicted" in kwargs:
+            search_kwargs["fail_if_conflicted"] = kwargs["fail_if_conflicted"]
+        results = self.search(cwd or "", top_k=requested, **search_kwargs)
+        from smartmemory_mcp.tools.common import conflict_check_text
+
+        marker = conflict_check_text(self._last_conflict_check)
         seen: set[str] = set()
         items: list[MemoryResult] = []
         for r in results:
@@ -1190,7 +1198,8 @@ class RemoteBackend(BackendCapabilities):
         ]
         items = [r for r in items if not r.get("reference")]
         if not items:
-            return ""
+            # An empty answer is not "no memories" when the check could not decide.
+            return marker
         lines = ["## SmartMemory Context"]
         for item in items[:top_k]:
             conf = item.get("confidence", 1.0)
@@ -1199,6 +1208,8 @@ class RemoteBackend(BackendCapabilities):
             lines.append(
                 f"- {stale_marker}{conf_marker}[{item['memory_type']}]{supersession_label(item)} {item['content']}"
             )
+        if marker:
+            lines.append(marker)
         return "\n".join(lines)
 
     def ingest(

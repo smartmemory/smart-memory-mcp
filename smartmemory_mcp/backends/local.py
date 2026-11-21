@@ -652,6 +652,13 @@ class LocalBackend(BackendCapabilities):
 
     def recall(self, cwd: str | None = None, top_k: int = 10, **kwargs: Any) -> str:
         """Context-aware recall."""
+        # BUG-CONFLICT-BACKEND-RECALL-FLAG-1: ``storage.recall`` has no ``fail_if_conflicted`` parameter, so a set flag
+        # cannot be honoured here. Say so rather than answer unchecked (search and recall_pack do honour it).
+        if kwargs.get("fail_if_conflicted"):
+            raise ValueError(
+                "fail_if_conflicted is not supported by LocalBackend.recall: the local recall path cannot check for "
+                "conflicts. Use search or recall_pack."
+            )
         from smartmemory_app.storage import recall
 
         return recall(cwd, top_k)
