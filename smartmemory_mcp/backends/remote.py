@@ -37,8 +37,16 @@ from smartmemory_mcp.workspace_select import SwitchResult, refuse, resolve_works
 logger = logging.getLogger(__name__)
 
 
+_STRICT_READ_ERRORS = ("recall_conflict", "conflict_check_undecided")
+
+
 def _raise_recall_conflict(response: httpx.Response) -> None:
-    """Preserve strict read refusals as MCP tool errors, never successful error dicts."""
+    """Preserve strict read refusals as MCP tool errors, never successful error dicts.
+
+    Both 409s of a strict read: ``recall_conflict`` (a proven disagreement) and ``conflict_check_undecided`` (the check
+    could not decide, BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1). The rest of the body (``pairs``, ``reason``, ``method``,
+    ``hint``, the not-checked count) follows the message as one JSON line, unchanged.
+    """
     if response.status_code != 409:
         return
     try:
@@ -46,11 +54,17 @@ def _raise_recall_conflict(response: httpx.Response) -> None:
     except ValueError:
         return
     detail = body.get("detail") if isinstance(body, dict) else None
-    if isinstance(detail, dict) and detail.get("error") == "recall_conflict":
+    if isinstance(detail, dict) and detail.get("error") in _STRICT_READ_ERRORS:
         from fastmcp.exceptions import ToolError
 
+        from smartmemory_mcp.tools.common import strict_read_error_text
+
         raise ToolError(
-            "recall_conflict: " + str(detail.get("message", "Strict recall refused"))
+            strict_read_error_text(
+                detail["error"],
+                str(detail.get("message", "Strict recall refused")),
+                {k: v for k, v in detail.items() if k not in ("error", "message")},
+            )
         )
 
 
@@ -1069,6 +1083,7 @@ class RemoteBackend(BackendCapabilities):
         body = self._search_request_body(body)
         # SELF-IMPROVE-6: capture X-Search-Session-Id header from response
         self._last_search_session_id: str | None = None
+        self._last_conflict_check = None
         try:
             r = httpx.request(
                 "POST",
@@ -1116,6 +1131,8 @@ class RemoteBackend(BackendCapabilities):
             # dropping this discards the only query-level signal that an as-of
             # answer contains present-day content.
             self._last_as_of_diagnostics = result.get("as_of_diagnostics")
+            # BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: the "could not decide" marker, unchanged. Reset on every search.
+            self._last_conflict_check = result.get("conflict_check")
         else:
             # Pre-LINEAGE-1 services returned a bare top-level array.
             raw = result if isinstance(result, list) else []

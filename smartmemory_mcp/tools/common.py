@@ -157,6 +157,19 @@ def dated(as_of) -> dict:
     return {} if as_of is None else {"as_of": as_of}
 
 
+def strict_read_error_text(code: str, message: str, extra: dict) -> str:
+    """The tool error for a strict read refusal: ``<code>: <message>``, then the other fields as one JSON line.
+
+    ``extra`` is passed through unchanged (``pairs``, ``reason``, ``method``, ``hint``, the not-checked count), so the
+    local and the hosted path word the same refusal the same way.
+    """
+    text = f"{code}: {message}"
+    return text + "\n" + json.dumps(extra, sort_keys=True, default=str) if extra else text
+
+
+_STRICT_FIELDS = ("pairs", "reason", "method", "hint", "pairs_not_checked")
+
+
 def graceful(func):
     """Wrap MCP tool to return helpful message on infrastructure failure."""
 
@@ -173,10 +186,14 @@ def graceful(func):
                 f"Detail: {e}"
             )
         except Exception as e:
-            if type(e).__name__ == "RecallConflictError":
+            if type(e).__name__ in ("RecallConflictError", "ConflictCheckUndecidedError"):
                 from fastmcp.exceptions import ToolError
 
-                raise ToolError("recall_conflict: " + str(e)) from e
+                code = getattr(e, "error_code", None) or (
+                    "recall_conflict" if type(e).__name__ == "RecallConflictError" else "conflict_check_undecided"
+                )
+                extra = {n: getattr(e, n) for n in _STRICT_FIELDS if getattr(e, n, None) is not None}
+                raise ToolError(strict_read_error_text(code, str(e), extra)) from e
             code = getattr(e, "code", None)
             if code in {
                 "invalid_scoped_validity",
@@ -285,6 +302,11 @@ def refuse_scoped_options(business_scope, valid_at):
         raise ToolError(
             "invalid_scoped_validity: business_scope and valid_at are unsupported on this tool"
         )
+
+
+def conflict_check_text(marker) -> str:
+    """The ``mark`` setting's "could not decide" marker as one line, unchanged, or "" when there is none."""
+    return "conflict_check: " + json.dumps(marker, sort_keys=True) if marker else ""
 
 
 def resolution_text(value, metadata=_UNSET):

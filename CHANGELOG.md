@@ -1,3 +1,10 @@
+## Unreleased - BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: the "could not decide" conflict result reaches the tool caller (2026-11-21)
+
+- `backends/remote.py` `_raise_recall_conflict`: the service's 409 `conflict_check_undecided` is a tool error `conflict_check_undecided: <message>`, as `recall_conflict` already was. It was a generic error before. The rest of the body (`pairs`, `reason`, `method`, `hint`, the not-checked count) follows as one JSON line, unchanged, for both 409s.
+- `tools/common.py` `graceful`: the local path's `ConflictCheckUndecidedError` (core) is the same tool error with the same line. `RecallConflictError` now carries `method` and `pairs` in it too.
+- `memory_search` prints core's `mark` marker as one `conflict_check: {...}` line, unchanged, from the hosted service (`conflict_check` in the response) and from the local app (`storage.last_conflict_check()`, needs the wrapper change of the same unit). `memory_recall_pack` already returned `manifest.conflict_check` whole.
+- Tests: `tests/test_recall_conflict_flag.py` (4 new rows).
+
 ## 2.0.2
 
 - REL-2-0-2-MERGED-TIP-1: `supersession_policy_set` docstring now says turning the hold off (`retire`, or `inherit` when the inherited value is retire) needs a workspace owner or admin. Docs only.
