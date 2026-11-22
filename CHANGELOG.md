@@ -1,3 +1,5 @@
+## 2.0.4
+
 ## Unreleased - BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: land census fix (2026-11-23)
 
 - `backends/local.py` `search`: imports `last_conflict_check` by name from `smartmemory_app.storage`, falling back to a function returning None for an older wrapper without it. Same behaviour as the earlier `getattr`, but the save-return census (`test_every_mcp_ingest_consumer_is_assessed`) can resolve the site. Census and its assertion unchanged.
