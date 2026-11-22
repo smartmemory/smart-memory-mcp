@@ -10,6 +10,8 @@
 - `tools/common.py` `graceful`: the local path's `ConflictCheckUndecidedError` (core) is the same tool error with the same line. `RecallConflictError` now carries `method` and `pairs` in it too.
 - `memory_search` prints core's `mark` marker as one `conflict_check: {...}` line, unchanged, from the hosted service (`conflict_check` in the response) and from the local app (`storage.last_conflict_check()`, needs the wrapper change of the same unit). `memory_recall_pack` already returned `manifest.conflict_check` whole.
 - Tests: `tests/test_recall_conflict_flag.py` (4 new rows).
+## 2.0.3
+
 ## Unreleased - STUDIO-DECISION-VIEW-1 U5: decision history and site table tools, and the one-call "who replaced it" answer
 
 - New tools `decision_history(decision_id, limit, before, as_of)` and `decision_sites(decision_id, at, scopes)` (local, remote, hosted; read-only): the dated history of a decision with who and why, and which rule of its chain is in force at each site on a date, in one call. A rule you cannot read shows as "a rule you cannot see", with no id or text.
