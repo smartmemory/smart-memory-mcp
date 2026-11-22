@@ -26,6 +26,9 @@ from .common import (
     graceful,
     scoped_options,
     resolution_text,
+    history_text,
+    sites_text,
+    who_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -185,7 +188,8 @@ def register(mcp):
             if not decision:
                 return f"Decision not found: {decision_id}"
 
-            return str(decision)
+            who = who_text(decision)
+            return f"{decision}\n{who}" if who else str(decision)
         except Exception as e:
             logger.error(f"Failed to get decision: {e}", exc_info=True)
             raise
@@ -591,6 +595,8 @@ def register(mcp):
 
             parts = [f"Provenance for {decision_id}:"]
             parts.append(f"Decision: {_field(provenance['decision'], 'content')}")
+            if who := who_text(provenance["decision"]):
+                parts.append(who)
             parts.append(
                 f"Selected decision: {_field(provenance['decision'], 'decision_id')}"
             )
@@ -615,6 +621,78 @@ def register(mcp):
             return "\n".join(parts)
         except Exception as e:
             logger.error(f"Failed to get provenance: {e}", exc_info=True)
+            raise
+
+    @mcp.tool(
+        title="Read a decision's history",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def decision_history(
+        decision_id: str,
+        limit: Optional[int] = None,
+        before: Optional[str] = None,
+        as_of: Optional[str] = None,
+    ) -> str:
+        """A decision's dated history, newest first, in one call: recorded, edited, replaced, retracted, restored,
+        review answers and evidence links, each with who did it and why. A replacement you cannot read shows as
+        "a rule you cannot see", with no id or text.
+
+        limit (1 to 500, default 100) and before (ISO 8601: only entries older than this) page through a long
+        history. as_of (ISO 8601) keeps only entries at or before that instant."""
+        as_of = checked_as_of(as_of)
+        before = checked_as_of(before)
+        try:
+            backend = get_backend()
+            history = backend.decision_history(
+                decision_id, limit=limit, before=before, **dated(as_of)
+            )
+            if not history:
+                return f"Decision not found: {decision_id}"
+            return history_text(decision_id, history)
+        except Exception as e:
+            logger.error(f"Failed to read decision history: {e}", exc_info=True)
+            raise
+
+    @mcp.tool(
+        title="Which rule is in force at each site",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
+    @graceful
+    def decision_sites(
+        decision_id: str,
+        at: Optional[str] = None,
+        scopes: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
+        """The whole site table of a decision in one call: which rule of its replacement chain is in force at each
+        site on a date, and what starts next. A decision with no site schedule answers "All sites, from <date>".
+
+        at (ISO 8601, default now) is the date asked about. scopes lists extra sites to answer for even when no rule
+        names them, each {"site": "05"}: a site with nothing in force says so and is never filled with a default."""
+        at = checked_as_of(at)
+        # Each extra site passes the same check as a business_scope (exactly {"site": <name>}).
+        checked = [
+            scoped_options(business_scope=scope)["business_scope"]
+            for scope in (scopes or [])
+        ]
+        try:
+            backend = get_backend()
+            sites = backend.decision_sites(decision_id, at=at, scopes=checked or None)
+            if not sites:
+                return f"Decision not found: {decision_id}"
+            return sites_text(decision_id, sites)
+        except Exception as e:
+            logger.error(f"Failed to read decision sites: {e}", exc_info=True)
             raise
 
     @mcp.tool(

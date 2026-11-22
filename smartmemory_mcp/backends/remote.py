@@ -1580,7 +1580,8 @@ class RemoteBackend(BackendCapabilities):
                 str(decided.get("outcome") or decided.get("action") or "settled"),
             )
         if err := self._fmt_error(result):
-            if none_on_404 and "API error 404" in err:
+            status = result.get("status_code")
+            if none_on_404 and (status == 404 or (status is None and err.startswith("API error 404:"))):
                 return None
             raise RuntimeError(f"{method} {path} failed: {err}")
         if result is None:
@@ -1751,6 +1752,46 @@ class RemoteBackend(BackendCapabilities):
         if result is None:
             raise RuntimeError(f"POST {path} failed: empty response from the API")
         return self._strip_scope(result)
+
+    def decision_history(
+        self,
+        decision_id: str,
+        limit: int | None = None,
+        before: str | None = None,
+        as_of: str | None = None,
+    ) -> dict[str, Any] | None:
+        """GET /memory/decisions/{decision_id}/history (STUDIO-DECISION-VIEW-1). 404 (unknown or not readable) is None."""
+        params = {
+            key: value
+            for key, value in (("limit", limit), ("before", before), ("as_of", as_of))
+            if value is not None
+        }
+        return self._decision_request(
+            "GET",
+            f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/history",
+            none_on_404=True,
+            **({"params": params} if params else {}),
+        )
+
+    def decision_sites(
+        self,
+        decision_id: str,
+        at: str | None = None,
+        scopes: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | None:
+        """GET /memory/decisions/{decision_id}/sites (STUDIO-DECISION-VIEW-1), one call for the whole table. Each extra
+        site is sent as one repeated ``scope`` query value (JSON object). 404 is None."""
+        params: dict[str, Any] = {}
+        if at is not None:
+            params["at"] = at
+        if scopes:
+            params["scope"] = [json.dumps(s, separators=(",", ":")) for s in scopes]
+        return self._decision_request(
+            "GET",
+            f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/sites",
+            none_on_404=True,
+            **({"params": params} if params else {}),
+        )
 
     def decision_reinforce(
         self, decision_id: str, evidence_id: str

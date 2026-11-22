@@ -1368,6 +1368,28 @@ class LocalBackend(BackendCapabilities):
             ),
         }
 
+    def decision_history(
+        self,
+        decision_id: str,
+        limit: int | None = None,
+        before: str | None = None,
+        as_of: str | None = None,
+    ) -> dict[str, Any] | None:
+        """STUDIO-DECISION-VIEW-1: core ``get_decision_history`` (the history read gate is bound in core)."""
+        kwargs = {k: v for k, v in (("limit", limit), ("before", before), ("as_of", as_of)) if v is not None}
+        return self._mem.get_decision_history(decision_id, **kwargs)
+
+    def decision_sites(
+        self,
+        decision_id: str,
+        at: str | None = None,
+        scopes: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | None:
+        """STUDIO-DECISION-VIEW-1: core ``get_decision_sites``."""
+        return self._mem.get_decision_sites(
+            decision_id, at=at, scopes=tuple(scopes or ())
+        )
+
     def decision_reinforce(
         self, decision_id: str, evidence_id: str
     ) -> dict[str, Any] | None:
@@ -1431,12 +1453,12 @@ class LocalBackend(BackendCapabilities):
         valid_at: str | None = None,
     ) -> dict[str, Any] | None:
         options = scoped_options(business_scope=business_scope, valid_at=valid_at)
-        if as_of is not None or options:
-            provenance = self._mem.get_decision_provenance(
-                decision_id, as_of=as_of, **options
-            )
-        else:
-            provenance = self._decision_queries().get_decision_provenance(decision_id)
+        # Always the facade: it lays the who/replaced blocks on the decision (STUDIO-DECISION-VIEW-1), which the
+        # bare DecisionQueries read (the former no-qualifier branch) did not, so a local read answered less than a
+        # hosted one.
+        provenance = self._mem.get_decision_provenance(
+            decision_id, as_of=as_of, **options
+        )
         if not provenance or provenance.get("decision") is None:
             return None
         return {

@@ -280,6 +280,20 @@ ROWS = [
         lambda b, i: b.decision_provenance(i),
     ),
     (
+        "decision_history",
+        REMOTE,
+        "GET",
+        "/memory/decisions/{decision_id}/history",
+        lambda b, i: b.decision_history(i),
+    ),
+    (
+        "decision_sites",
+        REMOTE,
+        "GET",
+        "/memory/decisions/{decision_id}/sites",
+        lambda b, i: b.decision_sites(i),
+    ),
+    (
         "decision_find_conflicts",
         REMOTE,
         "POST",
@@ -531,6 +545,18 @@ TOOL_ROWS = [
         "GET",
         "/memory/decisions/{decision_id}/provenance",
         _tool(decision_tools.register, "decision_provenance"),
+    ),
+    (
+        "decision_history",
+        "GET",
+        "/memory/decisions/{decision_id}/history",
+        _tool(decision_tools.register, "decision_history"),
+    ),
+    (
+        "decision_sites",
+        "GET",
+        "/memory/decisions/{decision_id}/sites",
+        _tool(decision_tools.register, "decision_sites"),
     ),
     (
         "decision_find_conflicts",

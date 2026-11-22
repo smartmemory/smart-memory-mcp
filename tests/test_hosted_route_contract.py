@@ -71,6 +71,10 @@ TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
     "decision_list": ("get", "/memory/decisions"),
     "decision_search": ("get", "/memory/decisions/search"),
     "decision_provenance": ("get", "/memory/decisions/{decision_id}/provenance"),
+    "decision_history": ("get", "/memory/decisions/{decision_id}/history"),  # STUDIO-DECISION-VIEW-1 U5
+    "decision_sites": ("get", "/memory/decisions/{decision_id}/sites"),  # STUDIO-DECISION-VIEW-1 U5
+    "review_queue_list": ("get", "/memory/reasoning/reviews"),
+    "review_queue_settle": ("post", "/memory/reasoning/reviews/{review_id}/settle"),
     "whoami": None,  # session state only
 }
 
