@@ -510,14 +510,19 @@ class LocalBackend(BackendCapabilities):
 
     def search(self, query: str, top_k: int = 5, **kwargs: Any) -> list[MemoryResult]:
         """Semantic search."""
-        from smartmemory_app import storage
         from smartmemory_app.storage import search
+
+        # BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: core's "could not decide" marker, unchanged. An older wrapper without
+        # the accessor has no marker to give (and no fail_if_conflicted either), so absent means None.
+        try:
+            from smartmemory_app.storage import last_conflict_check
+        except ImportError:
+            def last_conflict_check() -> Any:
+                return None
 
         self._last_conflict_check = None
         results = normalize_items(search(query, top_k, **kwargs))
-        # BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: core's "could not decide" marker, unchanged. An older wrapper without
-        # the accessor has no marker to give (and no fail_if_conflicted either), so absent means None.
-        self._last_conflict_check = getattr(storage, "last_conflict_check", lambda: None)()
+        self._last_conflict_check = last_conflict_check()
         # SELF-IMPROVE-6: track shown IDs for local-mode feedback
         self._last_search_session_id = f"local:{id(results)}:{top_k}"
         self._last_shown_ids = [
