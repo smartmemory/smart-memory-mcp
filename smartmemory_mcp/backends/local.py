@@ -512,7 +512,17 @@ class LocalBackend(BackendCapabilities):
         """Semantic search."""
         from smartmemory_app.storage import search
 
+        # BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: core's "could not decide" marker, unchanged. An older wrapper without
+        # the accessor has no marker to give (and no fail_if_conflicted either), so absent means None.
+        try:
+            from smartmemory_app.storage import last_conflict_check
+        except ImportError:
+            def last_conflict_check() -> Any:
+                return None
+
+        self._last_conflict_check = None
         results = normalize_items(search(query, top_k, **kwargs))
+        self._last_conflict_check = last_conflict_check()
         # SELF-IMPROVE-6: track shown IDs for local-mode feedback
         self._last_search_session_id = f"local:{id(results)}:{top_k}"
         self._last_shown_ids = [
@@ -647,6 +657,13 @@ class LocalBackend(BackendCapabilities):
 
     def recall(self, cwd: str | None = None, top_k: int = 10, **kwargs: Any) -> str:
         """Context-aware recall."""
+        # BUG-CONFLICT-BACKEND-RECALL-FLAG-1: ``storage.recall`` has no ``fail_if_conflicted`` parameter, so a set flag
+        # cannot be honoured here. Say so rather than answer unchecked (search and recall_pack do honour it).
+        if kwargs.get("fail_if_conflicted"):
+            raise ValueError(
+                "fail_if_conflicted is not supported by LocalBackend.recall: the local recall path cannot check for "
+                "conflicts. Use search or recall_pack."
+            )
         from smartmemory_app.storage import recall
 
         return recall(cwd, top_k)
