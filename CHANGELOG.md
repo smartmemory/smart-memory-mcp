@@ -1,3 +1,5 @@
+## 2.0.3
+
 ## Unreleased - STUDIO-DECISION-VIEW-1 U5: decision history and site table tools, and the one-call "who replaced it" answer
 
 - New tools `decision_history(decision_id, limit, before, as_of)` and `decision_sites(decision_id, at, scopes)` (local, remote, hosted; read-only): the dated history of a decision with who and why, and which rule of its chain is in force at each site on a date, in one call. A rule you cannot read shows as "a rule you cannot see", with no id or text.
