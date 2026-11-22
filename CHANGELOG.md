@@ -1,3 +1,7 @@
+## Unreleased - BUG-DECISION-HISTORY-PAGE-TIE-1 (2026-11-23)
+
+- `decision_history` takes a `cursor` argument (an argument, not a new tool: tier counts do not change). When more entries exist the answer now says to pass the returned cursor as `cursor`, and the walk returns every entry exactly once even when several share one instant. `before` still works but is deprecated (it can skip entries that share an instant). Local, remote and hosted backends pass `cursor` through.
+
 ## Unreleased - STUDIO-DECISION-VIEW-1 U5: decision history and site table tools, and the one-call "who replaced it" answer
 
 - New tools `decision_history(decision_id, limit, before, as_of)` and `decision_sites(decision_id, at, scopes)` (local, remote, hosted; read-only): the dated history of a decision with who and why, and which rule of its chain is in force at each site on a date, in one call. A rule you cannot read shows as "a rule you cannot see", with no id or text.

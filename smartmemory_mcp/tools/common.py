@@ -387,7 +387,10 @@ def history_text(decision_id, history):
     if start.get("note"):
         lines.append(start["note"])
     if history.get("truncated"):
-        lines.append("More entries exist before the last one shown: ask again with before set to its date.")
+        if history.get("next_cursor"):
+            lines.append(f"More entries exist after the last one shown: ask again with cursor set to {history['next_cursor']}.")
+        else:
+            lines.append("More entries exist before the last one shown: ask again with before set to its date.")
     return "\n".join(lines)
 
 

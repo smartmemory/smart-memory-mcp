@@ -1362,9 +1362,10 @@ class LocalBackend(BackendCapabilities):
         limit: int | None = None,
         before: str | None = None,
         as_of: str | None = None,
+        cursor: str | None = None,
     ) -> dict[str, Any] | None:
         """STUDIO-DECISION-VIEW-1: core ``get_decision_history`` (the history read gate is bound in core)."""
-        kwargs = {k: v for k, v in (("limit", limit), ("before", before), ("as_of", as_of)) if v is not None}
+        kwargs = {k: v for k, v in (("limit", limit), ("before", before), ("cursor", cursor), ("as_of", as_of)) if v is not None}
         return self._mem.get_decision_history(decision_id, **kwargs)
 
     def decision_sites(

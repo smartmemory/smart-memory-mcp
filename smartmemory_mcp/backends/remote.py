@@ -1731,11 +1731,12 @@ class RemoteBackend(BackendCapabilities):
         limit: int | None = None,
         before: str | None = None,
         as_of: str | None = None,
+        cursor: str | None = None,
     ) -> dict[str, Any] | None:
         """GET /memory/decisions/{decision_id}/history (STUDIO-DECISION-VIEW-1). 404 (unknown or not readable) is None."""
         params = {
             key: value
-            for key, value in (("limit", limit), ("before", before), ("as_of", as_of))
+            for key, value in (("limit", limit), ("before", before), ("cursor", cursor), ("as_of", as_of))
             if value is not None
         }
         return self._decision_request(
