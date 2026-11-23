@@ -1,5 +1,10 @@
 ## 2.0.4
 
+## Unreleased - BUG-MCP-WITHHELD-STATE-1: a withheld as-of version reads as unavailable (2026-11-24)
+
+- `tools/memory_tools.py` `memory_search` and `memory_recall`: a hit core marks `content_withheld` now shows "[unavailable: the text of this earlier version is withheld]" in the text, catalog and citation (preview, footnote) answers, and the structured item carries `content_withheld: true` with `as_of_resolution: "unavailable"` instead of a blank "resolved". The withheld reason and all other metadata are dropped. Readable hits are unchanged.
+- Tests: `tests/test_withheld_as_of_state.py` (4 rows).
+
 ## Unreleased - BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: land census fix (2026-11-23)
 
 - `backends/local.py` `search`: imports `last_conflict_check` by name from `smartmemory_app.storage`, falling back to a function returning None for an older wrapper without it. Same behaviour as the earlier `getattr`, but the save-return census (`test_every_mcp_ingest_consumer_is_assessed`) can resolve the site. Census and its assertion unchanged.
