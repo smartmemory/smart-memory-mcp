@@ -630,14 +630,28 @@ def register(mcp):
         ),
     )
     @graceful
-    def decision_retract(decision_id: str, reason: str) -> str:
-        """Retract a decision, marking it as no longer valid."""
+    def decision_retract(decision_id: str, reason: str, alternative_id: Optional[str] = None) -> str:
+        """Retract a decision, marking it as no longer valid.
+
+        ``alternative_id`` (optional): the decision to keep instead. It is only read, never changed; the reply
+        shows its statement and status when you can read it, so you can confirm the right one remains."""
         try:
             backend = get_backend()
             result = backend.decision_retract(decision_id, reason=reason)
             if result is None:
                 return f"Decision not found: {decision_id}"
-            return f"Decision retracted: {decision_id}"
+            text = f"Decision retracted: {decision_id}"
+            if alternative_id is None:
+                return text
+            # RETRACT-ALT-READBACK: one ordinary read; absent and unreadable look the same.
+            try:
+                alt = backend.decision_get(alternative_id)
+            except Exception as read_error:
+                logger.error(f"Retract readback failed: {read_error}", exc_info=True)
+                return f"{text}\nThe alternative {alternative_id} could not be read back."
+            if not alt:
+                return f"{text}\nAlternative {alternative_id} not found"
+            return f"{text}\n{_decision_text(alt)}"
         except Exception as e:
             logger.error(f"Failed to retract decision: {e}", exc_info=True)
             raise

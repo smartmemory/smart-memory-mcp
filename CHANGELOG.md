@@ -9,6 +9,10 @@
 
 - `tools/decision_tools.py` `_provenance_rows`: a successor line takes its reason and date from the selected decision's own snapshot note only on a dated (`as_of`) read, where core serves no replacement link. An undated read prints a reason/date only from a visible `replaced` link naming that row; a hidden link, another id or no link leaves the line without them. Tests (`tests/test_decision_provenance_text.py`): hidden/mismatched/missing link cases, a sparse receipt (check time, no kind) in both modes, dated evidence cells on the block-free selected decision, and a section guard that records the keys the renderer asks for.
 
+## Unreleased - BUG-MCP-RETRACT-ALT-READBACK-1: `decision_retract` reads back the alternative (2026-11-24)
+
+- `tools/decision_tools.py` `decision_retract`: new optional `alternative_id`. When given and the retraction succeeded, the reply adds one ordinary read of that decision in the `decision_get` format (statement, status). Not found and not readable read the same (`Alternative <id> not found`); a failing read is named on its own line and the retraction still reads as done. The retract call is unchanged; no `alternative_id` means the reply is byte-identical.
+
 ## Unreleased - BUG-MCP-ACTIVATE-REPLY-1: `decision_try_activate` says why it did not activate (2026-11-24)
 
 - `tools/decision_tools.py` `decision_try_activate`: when the answer is no, one ordinary read words the reply: not found, already active, or still pending naming each open requirement (a requirement the caller may not read is neither named nor counted, and the reply does not hint that one exists). Success text, the activation call and the staged refusal are unchanged. A staged rule change still reads as not found here: telling it apart needs a core signal (redesign note).
