@@ -37,8 +37,16 @@ from smartmemory_mcp.workspace_select import SwitchResult, refuse, resolve_works
 logger = logging.getLogger(__name__)
 
 
+_STRICT_READ_ERRORS = ("recall_conflict", "conflict_check_undecided")
+
+
 def _raise_recall_conflict(response: httpx.Response) -> None:
-    """Preserve strict read refusals as MCP tool errors, never successful error dicts."""
+    """Preserve strict read refusals as MCP tool errors, never successful error dicts.
+
+    Both 409s of a strict read: ``recall_conflict`` (a proven disagreement) and ``conflict_check_undecided`` (the check
+    could not decide, BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1). The rest of the body (``pairs``, ``reason``, ``method``,
+    ``hint``, the not-checked count) follows the message as one JSON line, unchanged.
+    """
     if response.status_code != 409:
         return
     try:
@@ -46,11 +54,17 @@ def _raise_recall_conflict(response: httpx.Response) -> None:
     except ValueError:
         return
     detail = body.get("detail") if isinstance(body, dict) else None
-    if isinstance(detail, dict) and detail.get("error") == "recall_conflict":
+    if isinstance(detail, dict) and detail.get("error") in _STRICT_READ_ERRORS:
         from fastmcp.exceptions import ToolError
 
+        from smartmemory_mcp.tools.common import strict_read_error_text
+
         raise ToolError(
-            "recall_conflict: " + str(detail.get("message", "Strict recall refused"))
+            strict_read_error_text(
+                detail["error"],
+                str(detail.get("message", "Strict recall refused")),
+                {k: v for k, v in detail.items() if k not in ("error", "message")},
+            )
         )
 
 
@@ -1069,6 +1083,7 @@ class RemoteBackend(BackendCapabilities):
         body = self._search_request_body(body)
         # SELF-IMPROVE-6: capture X-Search-Session-Id header from response
         self._last_search_session_id: str | None = None
+        self._last_conflict_check = None
         try:
             r = httpx.request(
                 "POST",
@@ -1116,6 +1131,8 @@ class RemoteBackend(BackendCapabilities):
             # dropping this discards the only query-level signal that an as-of
             # answer contains present-day content.
             self._last_as_of_diagnostics = result.get("as_of_diagnostics")
+            # BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: the "could not decide" marker, unchanged. Reset on every search.
+            self._last_conflict_check = result.get("conflict_check")
         else:
             # Pre-LINEAGE-1 services returned a bare top-level array.
             raw = result if isinstance(result, list) else []
@@ -1156,7 +1173,15 @@ class RemoteBackend(BackendCapabilities):
         """Client-side recall — no /memory/recall endpoint in the hosted API."""
         requested = max(1, top_k)
         # Preserve service ranking and the entire evidence budget in one query.
-        results = self.search(cwd or "", top_k=requested)
+        # BUG-CONFLICT-BACKEND-RECALL-FLAG-1: the flag goes to the search call that checks it (same body key as
+        # recall_pack); search() keeps core's "could not decide" marker in _last_conflict_check, printed below.
+        search_kwargs = {}
+        if "fail_if_conflicted" in kwargs:
+            search_kwargs["fail_if_conflicted"] = kwargs["fail_if_conflicted"]
+        results = self.search(cwd or "", top_k=requested, **search_kwargs)
+        from smartmemory_mcp.tools.common import conflict_check_text
+
+        marker = conflict_check_text(self._last_conflict_check)
         seen: set[str] = set()
         items: list[MemoryResult] = []
         for r in results:
@@ -1173,7 +1198,8 @@ class RemoteBackend(BackendCapabilities):
         ]
         items = [r for r in items if not r.get("reference")]
         if not items:
-            return ""
+            # An empty answer is not "no memories" when the check could not decide.
+            return marker
         lines = ["## SmartMemory Context"]
         for item in items[:top_k]:
             conf = item.get("confidence", 1.0)
@@ -1182,6 +1208,8 @@ class RemoteBackend(BackendCapabilities):
             lines.append(
                 f"- {stale_marker}{conf_marker}[{item['memory_type']}]{supersession_label(item)} {item['content']}"
             )
+        if marker:
+            lines.append(marker)
         return "\n".join(lines)
 
     def ingest(

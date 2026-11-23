@@ -38,6 +38,7 @@ from .common import (
     graceful,
     scoped_options,
     refuse_scoped_options,
+    conflict_check_text,
     resolution_text,
     read_metadata,
     _UNSET,
@@ -694,6 +695,8 @@ def register_free(mcp):
             catalog = _format_catalog(query, results)
             if partial:
                 catalog += f"\n\n{partial_note(partial)}"
+            if marker := conflict_check_text(getattr(backend, "_last_conflict_check", None)):
+                catalog += f"\n\n{marker}"
             if session_id_from_search:
                 catalog += f"\n\nsearch_session_id: {session_id_from_search}"
             return catalog
@@ -739,6 +742,8 @@ def register_free(mcp):
 
         if partial:
             output.append(partial_note(partial))
+        if marker := conflict_check_text(getattr(backend, "_last_conflict_check", None)):
+            output.append(f"\n{marker}")
         if session_id_from_search:
             output.append(f"\nsearch_session_id: {session_id_from_search}")
         return "\n".join(output)
