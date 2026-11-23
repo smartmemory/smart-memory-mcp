@@ -164,6 +164,8 @@ _MODEL_ITEM_FIELDS = frozenset(
         "derived_from",
         "reference",
         "as_of_resolution",
+        # BUG-MCP-WITHHELD-STATE-1: the explicit "text withheld" status (never its reason).
+        "content_withheld",
         "conflict",
         "valid_at_resolution",
         "score_breakdown",
@@ -171,6 +173,47 @@ _MODEL_ITEM_FIELDS = frozenset(
         "read_status",
     }
 )
+
+
+_WITHHELD_FLAG = "content_withheld"
+_WITHHELD_TEXT = "[unavailable: the text of this earlier version is withheld]"
+
+
+def _is_withheld(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    metadata = item.get("metadata")
+    return bool(item.get(_WITHHELD_FLAG)) or (
+        isinstance(metadata, dict) and bool(metadata.get(_WITHHELD_FLAG))
+    )
+
+
+def withheld_view(item: Any) -> Any:
+    """BUG-MCP-WITHHELD-STATE-1: a withheld version as the model may see it.
+
+    Core marks it with ``content_withheld`` and empty content, labelled
+    ``as_of_resolution="resolved"``. Here it says it is unavailable, in its
+    content (so text, catalog and citations all show it) and in two status
+    fields; the reason and every other metadata key are dropped. Any other
+    item is returned unchanged."""
+    if not _is_withheld(item):
+        return item
+    out = {
+        k: v
+        for k, v in item.items()
+        if k not in ("metadata", "content_withheld_reason", "change_reason", "changed_by")
+    }
+    out.update(
+        content=_WITHHELD_TEXT,
+        content_withheld=True,
+        as_of_resolution="unavailable",
+        metadata={},
+    )
+    return out
+
+
+def withheld_views(items: List[Any]) -> List[Any]:
+    return [withheld_view(item) for item in items]
 
 
 def model_item(item: Dict[str, Any], metadata: Any = _UNSET) -> Dict[str, Any]:
@@ -648,7 +691,7 @@ def register_free(mcp):
         except Exception as exc:
             _warn_origin_filter_unavailable(exc)
 
-        results = results[:top_k]
+        results = withheld_views(results[:top_k])
 
         if not results:
             # A partial answer with nothing visible is not "no results": it says it was partial and why.
@@ -842,7 +885,7 @@ def register_free(mcp):
                     scoped.append(r)
             filtered = scoped
 
-        final = filtered[:top_k]
+        final = withheld_views(filtered[:top_k])
         partial = (response.get("partial_answer") or {}).get("reasons") or []
 
         # RECALL-CITATIONS-1: structured response with footnote block when cite=True.
