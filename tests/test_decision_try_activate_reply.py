@@ -67,12 +67,18 @@ def test_a5_success_text_unchanged_and_no_read():
     assert backend.get_calls == []
 
 
-def test_a6_unreadable_requirement_is_counted_not_named():
-    row = {"status": "pending", "pending_requirements": [
-        _req("Wall-load check"), _req("Secret budget review", visible=False), _req("Hidden legal check", visible=False)]}
-    out = _run(_Backend(False, row))
-    assert "Wall-load check" in out and "and 2 more you cannot see" in out
-    assert "Secret budget review" not in out and "Hidden legal check" not in out
+def test_a6_unreadable_requirement_is_neither_named_nor_counted():
+    # fix r1 (review MEDIUM): no count, no hint that hidden requirements exist
+    vis = _req("Wall-load check")
+    hid = [_req("Secret budget review", visible=False), _req("Hidden legal check", visible=False)]
+    out = _run(_Backend(False, {"status": "pending", "pending_requirements": [vis] + hid}))
+    assert "Wall-load check" in out
+    for leak in ("Secret budget review", "Hidden legal check", "more", "cannot see", "hidden", "2"):
+        assert leak not in out
+    replies = {_run(_Backend(False, {"status": "pending", "pending_requirements": [vis] + hid[:n]})) for n in (0, 1, 2)}
+    assert len(replies) == 1
+    only_hidden = {_run(_Backend(False, {"status": "pending", "pending_requirements": hid[:n]})) for n in (0, 1, 2)}
+    assert only_hidden == {OLD}
 
 
 def test_a7_read_failure_and_no_open_requirement_keep_the_old_text():
