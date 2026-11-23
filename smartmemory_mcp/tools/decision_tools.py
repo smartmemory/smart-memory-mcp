@@ -79,6 +79,79 @@ def _summary_line(decision: Any) -> str:
     )
 
 
+def _present(value: Any) -> bool:
+    return value is not None and value != "" and value != [] and value != {}
+
+
+def _requirement_line(req: Any) -> str:
+    done = bool(_field(req, "resolved"))
+    text = f"- [{'done' if done else 'open'}] {_field(req, 'description') or _field(req, 'requirement_id') or 'requirement'}"
+    kind = _field(req, "requirement_type")
+    if _present(kind):
+        text += f" ({kind})"
+    if done:
+        by, at = _field(req, "resolved_by"), _field(req, "resolved_at")
+        if _present(by):
+            text += f", cleared by {by}"
+        if _present(at):
+            text += f" on {at}"
+    return text
+
+
+def _decision_text(decision: Any, as_of: Optional[str] = None) -> str:
+    """DECISION-GET-READABLE: one readable answer for a single decision read.
+
+    Statement, state, rationale, lifecycle reason and requirements come first, then the shared who/replaced lines.
+    Only what the authorized read returned is shown; an absent, None or empty field is omitted. Internal ids,
+    counters and the raw context snapshot are never printed."""
+    notes = _field(decision, "context_snapshot")
+    notes = notes if isinstance(notes, dict) else {}
+    head = f"Decision {_field(decision, 'decision_id')}"
+    if as_of is not None:
+        head += f" as of {as_of}"
+    lines = [f"{head}: {_field(decision, 'content', '')}"]
+    state = _field(decision, "display_status") or _field(decision, "status")
+    if _present(state):
+        extra = [str(x) for x in (_field(decision, "decision_type"),) if _present(x)]
+        conf = _field(decision, "confidence")
+        if isinstance(conf, (int, float)):
+            extra.append(f"confidence {conf:.2f}")
+        lines.append(f"State: {state}" + (f" ({', '.join(extra)})" if extra else "") + _uncertainty_marker(decision))
+    if _present(_field(decision, "rationale")):
+        lines.append(f"Rationale: {_field(decision, 'rationale')}")
+    beliefs = [
+        f"{name}={_field(decision, name):.2f}"
+        for name in ("belief_hold", "plausibility_hold", "ignorance")
+        if isinstance(_field(decision, name), (int, float))
+    ]
+    for label, reason_key, at_key in (
+        ("Retracted", "retraction_reason", "retracted_at"),
+        ("Replaced", "superseded_reason", "superseded_at"),
+    ):
+        reason, when = notes.get(reason_key), notes.get(at_key)
+        if _present(reason):
+            lines.append(f"{label}{f' on {when}' if _present(when) else ''}: {reason}")
+    if beliefs:
+        lines.append("Evidence: " + " ".join(beliefs))
+    reqs = _field(decision, "pending_requirements")
+    if _present(reqs):
+        lines.append("Requirements:")
+        lines.extend(_requirement_line(r) for r in reqs)
+    for name, label in (("rejected_alternatives", "Rejected alternatives"), ("constraints", "Constraints")):
+        if _present(_field(decision, name)):
+            lines.append(f"{label}: {'; '.join(str(x) for x in _field(decision, name))}")
+    who = "\n".join(x for x in who_text(decision).splitlines() if x != "Status: replaced")
+    if who:
+        lines.append(who)
+    diagnostic = resolution_text(decision)
+    if diagnostic:
+        lines.append(diagnostic)
+    unknown = _field(decision, "as_of_unknown_fields")
+    if _present(unknown):
+        lines.append(f"Not known at that instant: {', '.join(str(x) for x in unknown)}")
+    return "\n".join(lines)
+
+
 def register(mcp):
     """Register decision tools with the MCP server (13 tools)."""
 
@@ -188,8 +261,7 @@ def register(mcp):
             if not decision:
                 return f"Decision not found: {decision_id}"
 
-            who = who_text(decision)
-            return f"{decision}\n{who}" if who else str(decision)
+            return _decision_text(decision, as_of)
         except Exception as e:
             logger.error(f"Failed to get decision: {e}", exc_info=True)
             raise
