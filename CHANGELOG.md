@@ -11,7 +11,7 @@
 
 ## Unreleased - BUG-MCP-ACTIVATE-REPLY-1: `decision_try_activate` says why it did not activate (2026-11-24)
 
-- `tools/decision_tools.py` `decision_try_activate`: when the answer is no, one ordinary read words the reply: not found, already active, or still pending naming each open requirement (one the caller may not read is only counted). Success text, the activation call and the staged refusal are unchanged. A staged rule change still reads as not found here: telling it apart needs a core signal (redesign note).
+- `tools/decision_tools.py` `decision_try_activate`: when the answer is no, one ordinary read words the reply: not found, already active, or still pending naming each open requirement (a requirement the caller may not read is neither named nor counted, and the reply does not hint that one exists). Success text, the activation call and the staged refusal are unchanged. A staged rule change still reads as not found here: telling it apart needs a core signal (redesign note).
 
 ## Unreleased - BUG-MCP-DECISION-GET-RAW-1: `decision_get` answers in readable lines (2026-11-24)
 

@@ -305,15 +305,15 @@ def _not_activated_text(backend: Any, decision_id: str) -> str:
     if status != "pending":
         return old
     open_reqs = [r for r in (_field(decision, "pending_requirements") or []) if not _field(r, "resolved")]
-    shown = [r for r in open_reqs if _field(r, "visible") is not False]
-    hidden = len(open_reqs) - len(shown)
-    names = [str(_field(r, "description") or "unnamed requirement") for r in shown]
-    if not names and not hidden:
+    # Never reveal the count or existence of requirements the caller cannot read (review r1).
+    names = [
+        str(_field(r, "description") or "unnamed requirement")
+        for r in open_reqs
+        if _field(r, "visible") is not False
+    ]
+    if not names:
         return old
-    text = f"Decision {decision_id} still pending: waiting on " + "; ".join(names)
-    if hidden:
-        text += (" and " if names else "") + f"{hidden} more you cannot see"
-    return text
+    return f"Decision {decision_id} still pending: waiting on " + "; ".join(names)
 
 
 def register(mcp):
