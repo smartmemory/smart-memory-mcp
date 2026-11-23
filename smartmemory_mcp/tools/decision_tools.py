@@ -56,6 +56,66 @@ def _field(decision: Any, name: str, default: Any = None) -> Any:
     return getattr(decision, name, default)
 
 
+_ROW_CONTENT_MAX = 120
+
+
+def _row_get(row: Any, name: str) -> Any:
+    """One field off a row that may be a dict or an object; empty values read as absent."""
+    value = row.get(name) if isinstance(row, dict) else getattr(row, name, None)
+    return value if value not in (None, "") else None
+
+
+def _trim(text: Any) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= _ROW_CONTENT_MAX else text[: _ROW_CONTENT_MAX - 1].rstrip() + "…"
+
+
+def _decision_row_line(row: Any) -> Optional[str]:
+    """`- <id>: <content> (reason: <why>, <date>)`; a missing part is left out, never printed as None."""
+    ident = _row_get(row, "decision_id")
+    content = _row_get(row, "content")
+    if ident is None and content is None:
+        return None
+    reason = _row_get(row, "superseded_reason") or _row_get(row, "reason")
+    when = _row_get(row, "superseded_at") or _row_get(row, "created_at")
+    head = " ".join(x for x in (f"{ident}:" if ident and content else ident, _trim(content) if content else None) if x)
+    notes = [x for x in (f"reason: {_trim(reason)}" if reason else None, str(when) if when else None) if x]
+    return f"- {head}" + (f" ({', '.join(notes)})" if notes else "")
+
+
+def _evidence_row_line(row: Any) -> Optional[str]:
+    # SM-EVIDENCE-TYPE-1: an evidence-node row names its receipt.
+    ref = _row_get(row, "evidence_ref")
+    if ref:
+        kind, checked = _row_get(row, "kind"), _row_get(row, "checked_at")
+        notes = [x for x in (kind, f"checked {checked}" if checked else None) if x]
+        return f"- {ref}" + (f" ({', '.join(str(n) for n in notes)})" if notes else "")
+    memory = _row_get(row, "memory")
+    content = _row_get(memory, "content") if memory is not None else None
+    ident = _row_get(row, "memory_id") or (_row_get(memory, "item_id") if memory is not None else None)
+    when = _row_get(memory, "created_at") if memory is not None else None
+    if content is None and ident is None:
+        return None
+    head = " ".join(x for x in (f"{ident}:" if ident and content else ident, _trim(content) if content else None) if x)
+    return f"- {head}" + (f" ({when})" if when else "")
+
+
+def _provenance_rows(provenance: Dict[str, Any]) -> List[str]:
+    """Evidence, superseded and successor sections: the count header, then one line per row."""
+    out: List[str] = []
+    for key, header, unit, line in (
+        ("evidence", "Evidence", "items", _evidence_row_line),
+        ("superseded", "Superseded", "decisions", _decision_row_line),
+        ("superseded_by", "Superseded by", "decisions", _decision_row_line),
+    ):
+        rows = provenance.get(key)
+        if not rows:
+            continue
+        out.append(f"{header}: {len(rows)} {unit}")
+        out.extend(text for row in rows if (text := line(row)))
+    return out
+
+
 def _uncertainty_marker(decision: Any) -> str:
     """Return a words-not-maths uncertainty marker, or an empty string."""
     ignorance = _field(decision, "ignorance")
@@ -604,20 +664,7 @@ def register(mcp):
                 parts.append(diagnostic)
             if provenance.get("reasoning_trace"):
                 parts.append(f"Reasoning trace: {provenance['reasoning_trace']}")
-            if provenance.get("evidence"):
-                parts.append(f"Evidence: {len(provenance['evidence'])} items")
-                # SM-EVIDENCE-TYPE-1: an evidence-node row names its receipt.
-                for row in provenance["evidence"]:
-                    if isinstance(row, dict) and row.get("evidence_ref"):
-                        parts.append(
-                            f"- {row['evidence_ref']} ({row.get('kind')}, checked {row.get('checked_at')})"
-                        )
-            if provenance.get("superseded"):
-                parts.append(f"Superseded: {len(provenance['superseded'])} decisions")
-            if provenance.get("superseded_by"):
-                parts.append(
-                    f"Superseded by: {len(provenance['superseded_by'])} decisions"
-                )
+            parts.extend(_provenance_rows(provenance))
             return "\n".join(parts)
         except Exception as e:
             logger.error(f"Failed to get provenance: {e}", exc_info=True)

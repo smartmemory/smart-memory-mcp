@@ -1,5 +1,9 @@
 ## 2.0.4
 
+## Unreleased - BUG-PROVENANCE-COUNTS-ONLY-1: `decision_provenance` lists each row (2026-11-23)
+
+- `tools/decision_tools.py` `decision_provenance`: the `Evidence`, `Superseded` and `Superseded by` count headers stay; each row now gets a line (id, trimmed content, reason, date; evidence rows without a receipt show their memory content and date). A missing field is left out, never printed as `None`; no history prints no headers. Tests: `tests/test_decision_provenance_text.py` (7 rows).
+
 ## Unreleased - BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: land census fix (2026-11-23)
 
 - `backends/local.py` `search`: imports `last_conflict_check` by name from `smartmemory_app.storage`, falling back to a function returning None for an older wrapper without it. Same behaviour as the earlier `getattr`, but the save-return census (`test_every_mcp_ingest_consumer_is_assessed`) can resolve the site. Census and its assertion unchanged.
