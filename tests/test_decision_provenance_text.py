@@ -171,9 +171,6 @@ def test_n12_evidence_dates_from_partial_receipt_and_nested_creation(monkeypatch
 #            on creation time only and keeps the current memory payload (queries.py:823).
 # ---------------------------------------------------------------------------------------------------------------
 
-import inspect
-import re
-
 import pytest
 
 from smartmemory_mcp.tools import decision_tools
@@ -212,6 +209,8 @@ _B_DATED_SUCCESSOR = {
     "context_snapshot": {"superseded_reason": "managed hosting", "superseded_at": "2026-04-01T00:00:00+00:00"},
 }
 _B_DATED_PLAIN = {k: v for k, v in D.items() if k not in ("replaces", "replaced")}
+# R5: dated evidence reads use the block-free dated selected decision (core serves no blocks on a dated read).
+_EVIDENCE_SELECTED = {False: D, True: _B_DATED_PLAIN}
 _C_EDITED = {**NEW, "content": "Use Aurora, edited later"}
 _A_EDITED = {**OLD, "content": "Use MySQL, edited later"}
 
@@ -220,14 +219,14 @@ def _cell_case(kind, dated):
     """(payload kwargs, selected decision, line id, must appear in the line, must not appear in the line)."""
     if kind == "receipt":
         must = ["test", "checked 2026-01-12"]
-        return {"evidence": [_RECEIPT]}, None, "ev:abc", must, ["RECEIPT WORDING", "2026-01-01"]
+        return {"evidence": [_RECEIPT]}, _EVIDENCE_SELECTED[dated], "ev:abc", must, ["RECEIPT WORDING", "2026-01-01"]
     if kind == "noref_receipt":
         must = ["2026-01-13", "checked 2026-02-02"]
         wording = "Checked wording"
-        return ({"evidence": [_NOREF]}, None, "m4", must if dated else must + [wording], [wording] if dated else [])
+        return ({"evidence": [_NOREF]}, _EVIDENCE_SELECTED[dated], "m4", must if dated else must + [wording], [wording] if dated else [])
     if kind == "plain_memory":
         must = ["2026-01-13"] if dated else ["2026-01-13", "Latency report Q1"]
-        return {"evidence": [_PLAIN]}, None, "m2", must, ["Latency report Q1"] if dated else []
+        return {"evidence": [_PLAIN]}, _EVIDENCE_SELECTED[dated], "m2", must, ["Latency report Q1"] if dated else []
     if kind == "predecessor":
         # Two dates per row: created 2026-01-05, replaced 2026-03-10.
         must = ["reason: licence change", "2026-03-10"] + ([] if dated else ["Use MySQL, edited later"])
@@ -251,11 +250,63 @@ def test_n14_census_matrix_cell(monkeypatch, kind, dated):
     assert "None" not in line
 
 
+class _KeyRecorder(dict):
+    """Records every section key the renderer asks for, whatever its header or count-unit spelling."""
+
+    def __init__(self):
+        super().__init__()
+        self.asked = []
+
+    def get(self, key, default=None):
+        self.asked.append(key)
+        return default
+
+
 def test_n15_census_guard_matrix_covers_every_section_and_mode():
-    """A new section in `_provenance_rows` fails here until it gets cells."""
-    source = inspect.getsource(decision_tools._provenance_rows)
-    sections = set(re.findall(r'\(\s*"(\w+)",\s*"[A-Z][\w ]+",\s*"(?:items|decisions)"', source))
+    """A new section in `_provenance_rows` fails here until it gets cells (R6: keys recorded, not parsed)."""
+    recorder = _KeyRecorder()
+    decision_tools._provenance_rows(recorder)
+    sections = set(recorder.asked) - {"decision"}
     assert sections == {"evidence", "superseded", "superseded_by"}
     assert set(KIND_SECTION.values()) == sections
     assert {dated for _, dated in CELLS} == {False, True}
     assert len(CELLS) == len(KIND_SECTION) * len(MODES) == 10
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# BUG-MCP-TRACE-SUCCESSOR-SNAPSHOT-FALLBACK-1 (notes R1..R4). Core serves the `superseded_by` pointer and the
+# `context_snapshot` note on an ordinary decision too; an undated line may use only a visible, matching link.
+# ---------------------------------------------------------------------------------------------------------------
+
+_B_WITH_POINTER = {
+    **D,
+    "superseded_by": "dec_2",
+    "context_snapshot": {"superseded_reason": "SNAPSHOT reason", "superseded_at": "2026-05-05T00:00:00+00:00"},
+}
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [_link("dec_2", "managed hosting", "2026-04-01", visible=False), _link("dec_other", "x", "2026-04-01"), None],
+    ids=["invisible-link", "link-names-another-id", "no-link"],
+)
+def test_r1_r2_undated_successor_without_matching_visible_link_has_no_transition(monkeypatch, bad):
+    line = _line(_text(monkeypatch, superseded_by=[NEW], decision={**_B_WITH_POINTER, "replaced": bad}), "dec_2")
+    assert "dec_2" in line and "Use Aurora" in line
+    for part in ("reason", "SNAPSHOT", "2026-05-05", "managed hosting", "2026-04-01", "WRONG"):
+        assert part not in line, (part, line)
+
+
+def test_r3_visible_link_wins_undated_and_dated_keeps_snapshot(monkeypatch):
+    undated = _line(_text(monkeypatch, superseded_by=[NEW], decision={**_B_WITH_POINTER, "replaced": B_TO_C}), "dec_2")
+    assert "reason: managed hosting" in undated and "2026-04-01" in undated and "SNAPSHOT" not in undated
+    dated_b = {k: v for k, v in _B_WITH_POINTER.items() if k not in ("replaces", "replaced")}
+    dated = _line(_text(monkeypatch, superseded_by=[NEW], decision=dated_b, as_of=AS_OF), "dec_2")
+    assert "reason: SNAPSHOT reason" in dated and "2026-05-05" in dated
+
+
+@pytest.mark.parametrize("dated", MODES, ids=["undated", "dated"])
+def test_r4_receipt_with_check_time_and_no_kind(monkeypatch, dated):
+    sparse = {"memory_id": "m7", "evidence_ref": "ev:sparse", "kind": None, "checked_at": "2026-01-12T00:00:00Z"}
+    t = _text(monkeypatch, evidence=[sparse], decision=_EVIDENCE_SELECTED[dated], as_of=AS_OF if dated else None)
+    assert _line(t, "ev:sparse") == "- ev:sparse (checked 2026-01-12T00:00:00Z)"
