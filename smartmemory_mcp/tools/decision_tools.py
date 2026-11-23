@@ -155,6 +155,35 @@ def _decision_text(decision: Any, as_of: Optional[str] = None) -> str:
     return "\n".join(lines)
 
 
+def _not_activated_text(backend: Any, decision_id: str) -> str:
+    """ACTIVATE-REPLY: why a try_activate answered False, from one ordinary read (what the caller may read, no more).
+
+    A staged record is not in the item store, so it reads as missing here; telling it apart needs a core signal
+    (see units/BUG-MCP-ACTIVATE-REPLY-1/redesign-note.md)."""
+    old = f"Decision {decision_id} still pending (unresolved requirements remain)"
+    try:
+        decision = backend.decision_get(decision_id)
+    except Exception:
+        return old
+    if not decision:
+        return f"Decision {decision_id} not found"
+    status = _field(decision, "status")
+    if status == "active":
+        return f"Decision {decision_id} is already active"
+    if status != "pending":
+        return old
+    open_reqs = [r for r in (_field(decision, "pending_requirements") or []) if not _field(r, "resolved")]
+    shown = [r for r in open_reqs if _field(r, "visible") is not False]
+    hidden = len(open_reqs) - len(shown)
+    names = [str(_field(r, "description") or "unnamed requirement") for r in shown]
+    if not names and not hidden:
+        return old
+    text = f"Decision {decision_id} still pending: waiting on " + "; ".join(names)
+    if hidden:
+        text += (" and " if names else "") + f"{hidden} more you cannot see"
+    return text
+
+
 def register(mcp):
     """Register decision tools with the MCP server (13 tools)."""
 
@@ -893,11 +922,9 @@ def register(mcp):
         try:
             backend = get_backend()
             activated = backend.decision_try_activate(decision_id)
-            return (
-                f"Decision {decision_id} activated (pending -> active)"
-                if activated
-                else f"Decision {decision_id} still pending (unresolved requirements remain)"
-            )
+            if activated:
+                return f"Decision {decision_id} activated (pending -> active)"
+            return _not_activated_text(backend, decision_id)
         except Exception as e:
             logger.error(f"Failed to activate pending decision: {e}", exc_info=True)
             raise
