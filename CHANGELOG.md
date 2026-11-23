@@ -1,3 +1,7 @@
+## Unreleased - BUG-DECISION-HISTORY-GAPS-1 fix round 1: history text names who answered a review (2026-11-23)
+
+- `tools/common.py` `history_text`: a review answer reads "asked by <proposer>, answered by <answered_by>" ("answered by not recorded" for an old row), never "<answer> by <proposer>". A visible replacement whose text at the time was not kept reads "was: text at the time not recorded". Tests: `tests/test_decision_history_answerer_lite.py` (real Lite store).
+
 ## 2.0.4
 
 ## Unreleased - BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: land census fix (2026-11-23)
