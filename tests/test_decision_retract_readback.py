@@ -92,3 +92,12 @@ def test_r6_retract_call_unchanged_and_alternative_only_read():
     _run(backend, alternative_id="dec_2")
     assert backend.retract_calls == [("dec_1", {"reason": "reopened"})]
     assert backend.get_calls == [("dec_2", {})]
+
+
+def test_r7_render_failure_keeps_the_retraction_and_names_the_readback_failure():
+    backend = _Backend(alt=_alt())
+    with patch("smartmemory_mcp.tools.decision_tools._decision_text", side_effect=TypeError("bad payload")):
+        out = _run(backend, alternative_id="dec_2")
+    assert out.splitlines()[0] == PLAIN
+    assert "could not be read back" in out.splitlines()[1] and "dec_2" in out.splitlines()[1]
+    assert backend.retract_calls == [("dec_1", {"reason": "reopened"})]
