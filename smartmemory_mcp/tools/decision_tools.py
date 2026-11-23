@@ -26,6 +26,7 @@ from .common import (
     graceful,
     scoped_options,
     resolution_text,
+    withheld_view,
     history_text,
     sites_text,
     who_text,
@@ -183,7 +184,7 @@ def register(mcp):
         as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
-            decision = backend.decision_get(decision_id, **dated(as_of), **options)
+            decision = withheld_view(backend.decision_get(decision_id, **dated(as_of), **options))
 
             if not decision:
                 return f"Decision not found: {decision_id}"
@@ -586,8 +587,8 @@ def register(mcp):
         as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
-            provenance = backend.decision_provenance(
-                decision_id, **dated(as_of), **options
+            provenance = withheld_view(
+                backend.decision_provenance(decision_id, **dated(as_of), **options)
             )
 
             if not provenance or provenance.get("decision") is None:
@@ -649,8 +650,10 @@ def register(mcp):
         before = checked_as_of(before)
         try:
             backend = get_backend()
-            history = backend.decision_history(
-                decision_id, limit=limit, before=before, **dated(as_of)
+            history = withheld_view(
+                backend.decision_history(
+                    decision_id, limit=limit, before=before, **dated(as_of)
+                )
             )
             if not history:
                 return f"Decision not found: {decision_id}"
