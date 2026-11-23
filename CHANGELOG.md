@@ -1,5 +1,9 @@
 ## 2.0.4
 
+## Unreleased - BUG-MCP-ACTIVATE-REPLY-1: `decision_try_activate` says why it did not activate (2026-11-24)
+
+- `tools/decision_tools.py` `decision_try_activate`: when the answer is no, one ordinary read words the reply: not found, already active, or still pending naming each open requirement (one the caller may not read is only counted). Success text, the activation call and the staged refusal are unchanged. A staged rule change still reads as not found here: telling it apart needs a core signal (redesign note).
+
 ## Unreleased - BUG-MCP-DECISION-GET-RAW-1: `decision_get` answers in readable lines (2026-11-24)
 
 - `tools/decision_tools.py` `decision_get`: replaces the raw object string with statement, state, rationale, lifecycle reason and requirements, then the existing who/replaced lines. Absent fields are omitted, an `as_of` read names its instant, internal ids and counters are no longer printed. The reply for a full decision is under 1 KB (was ~2-2.6 KB). A completed requirement's `resolved_by` is shown as `supporting memory <id>` (it is an evidence memory id, not an actor); a withheld or absent statement leaves the header without text (no `None`); a requirement whose resolution was not returned prints no `[open]`/`[done]` marker.
