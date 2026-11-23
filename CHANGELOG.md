@@ -1,5 +1,9 @@
 ## 2.0.4
 
+## Unreleased - BUG-MCP-DECISION-TOOL-GUIDANCE-1: decision tool descriptions say what an assistant needs (2026-11-24)
+
+- `tools/decision_tools.py`: descriptions only, no behaviour or schema change. `decision_reinforce` and `decision_contradict` say `evidence_id` is a stored memory's id (the `Item ID` from `memory_save`, or from `memory_search`), not the decision id; `decision_create_pending` lists `requirement_type` values (`evidence`, `confirmation`, `data`; default `evidence`) with an example; `decision_try_activate` says it changes state and points to `decision_get` to only look; `decision_get` says it only reads and shows open requirements; `decision_resolve_requirement` says where `requirement_id` and `memory_id` come from and that it does not activate. Tested against the real stdio catalog (`tests/test_decision_tool_guidance_catalog.py`).
+
 ## Unreleased - BUG-MCP-RETRACT-ALT-READBACK-1: `decision_retract` reads back the alternative (2026-11-24)
 
 - `tools/decision_tools.py` `decision_retract`: new optional `alternative_id`. When given and the retraction succeeded, the reply adds one ordinary read of that decision in the `decision_get` format (statement, status). Not found and not readable read the same (`Alternative <id> not found`); a failing read or render of the alternative is named on its own line and the retraction still reads as done. The retract call is unchanged; no `alternative_id` means the reply is byte-identical.
