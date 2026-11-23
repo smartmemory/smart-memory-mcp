@@ -1,6 +1,9 @@
 ## Unreleased - BUG-DECISION-HISTORY-PAGE-TIE-1 (2026-11-23)
 
 - `decision_history` takes a `cursor` argument (an argument, not a new tool: tier counts do not change). When more entries exist the answer now says to pass the returned cursor as `cursor`, and the walk returns every entry exactly once even when several share one instant. `before` still works but is deprecated (it can skip entries that share an instant). Local, remote and hosted backends pass `cursor` through.
+## Unreleased - BUG-DECISION-HISTORY-GAPS-1 fix round 1: history text names who answered a review (2026-11-23)
+
+- `tools/common.py` `history_text`: a review answer reads "asked by <proposer>, answered by <answered_by>" ("answered by not recorded" for an old row), never "<answer> by <proposer>". A visible replacement whose text at the time was not kept reads "was: text at the time not recorded". Tests: `tests/test_decision_history_answerer_lite.py` (real Lite store).
 
 ## 2.0.4
 
