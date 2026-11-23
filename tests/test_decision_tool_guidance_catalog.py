@@ -44,18 +44,23 @@ def test_g08_reinforce_says_where_the_evidence_id_comes_from(catalog):
     d = _d(catalog, "decision_reinforce")
     assert "memory_save" in d and "Item ID" in d and "memory_search" in d
     assert "not the decision id" in d and "decision_link_evidence" in d
+    assert "keeps confidence as it is" in d  # L2: receipt link preserves confidence
+    assert "status is unchanged" in d and "up to 1" in d  # L1
 
 
 def test_g09_contradict_says_where_the_evidence_id_comes_from(catalog):
     d = _d(catalog, "decision_contradict")
     assert "memory_save" in d and "Item ID" in d and "not the decision id" in d
-    assert "stays current" in d
+    assert "status is unchanged" in d and "not below 0" in d  # L1
+    assert "stays current" not in d
 
 
 def test_g17_create_pending_names_requirement_types_and_default(catalog):
     d = _d(catalog, "decision_create_pending")
     for value in ("``evidence``", "``confirmation``", "``data``"):
         assert value in d
+    assert "free label" in d and "capability" in d and "uat" in d and "proof" in d  # M1
+    assert "keep the caller's label" in d
     assert "when left out" in d and '"requirement_type": "evidence"' in d
     assert "req_<uuid8>" in d  # existing guidance kept
 
@@ -65,6 +70,7 @@ def test_g18_activate_vs_inspect(catalog):
     assert "changes the decision's state" in d and "decision_get" in d and "nothing changes" in d
     g = _d(catalog, "decision_get")
     assert "only reads" in g and "still open" in g
+    assert "no open/done marker" in d  # L3
     assert "as_of" in g  # existing guidance kept
 
 
@@ -73,6 +79,7 @@ def test_g19_resolve_requirement_sources_and_next_step(catalog):
     assert "req_" in d and "decision_create_pending" in d
     assert "memory_save" in d and "Item ID" in d
     assert "does not activate" in d and "decision_try_activate" in d
+    assert "only if the caller asks to activate" in d  # M2
 
 
 @pytest.mark.parametrize(
