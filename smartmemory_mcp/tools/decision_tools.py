@@ -173,7 +173,9 @@ def _provenance_rows(provenance: Dict[str, Any], *, dated: bool = False) -> List
             lambda r: _decision_row_line(
                 r,
                 _link_for(selected, "replaced", _row_get(r, "decision_id"))
-                or _dated_successor_link(selected, _row_get(r, "decision_id")),
+                # The snapshot stands in for the missing link only on a dated read (served without blocks); an
+                # undated read whose link is hidden or names another id prints no transition.
+                or (_dated_successor_link(selected, _row_get(r, "decision_id")) if dated else None),
                 show_content=not dated,
             ),
         ),
