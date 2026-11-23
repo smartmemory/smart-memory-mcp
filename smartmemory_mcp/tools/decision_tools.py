@@ -84,15 +84,17 @@ def _present(value: Any) -> bool:
 
 
 def _requirement_line(req: Any) -> str:
-    done = bool(_field(req, "resolved"))
-    text = f"- [{'done' if done else 'open'}] {_field(req, 'description') or _field(req, 'requirement_id') or 'requirement'}"
+    resolved = _field(req, "resolved")
+    done = resolved is True
+    marker = f"[{'done' if done else 'open'}] " if isinstance(resolved, bool) else ""
+    text = f"- {marker}{_field(req, 'description') or _field(req, 'requirement_id') or 'requirement'}"
     kind = _field(req, "requirement_type")
     if _present(kind):
         text += f" ({kind})"
     if done:
         by, at = _field(req, "resolved_by"), _field(req, "resolved_at")
         if _present(by):
-            text += f", cleared by {by}"
+            text += f", supporting memory {by}"  # resolved_by is an evidence memory id, not an actor
         if _present(at):
             text += f" on {at}"
     return text
@@ -109,7 +111,8 @@ def _decision_text(decision: Any, as_of: Optional[str] = None) -> str:
     head = f"Decision {_field(decision, 'decision_id')}"
     if as_of is not None:
         head += f" as of {as_of}"
-    lines = [f"{head}: {_field(decision, 'content', '')}"]
+    content = _field(decision, "content")
+    lines = [f"{head}: {content}" if _present(content) else head]
     state = _field(decision, "display_status") or _field(decision, "status")
     if _present(state):
         extra = [str(x) for x in (_field(decision, "decision_type"),) if _present(x)]
