@@ -413,6 +413,8 @@ def register(mcp):
 
         Retrieve a decision by ID.
 
+        This only reads, so it is the safe way to see which requirements of a pending decision are still open.
+
         ``as_of`` (ISO 8601; omit for now): the decision as it stood then, its status
         from the supersession chain and version history; "not found" if it did not
         exist yet."""
@@ -701,7 +703,12 @@ def register(mcp):
     )
     @graceful
     def decision_reinforce(decision_id: str, evidence_id: str) -> str:
-        """Record supporting evidence for a decision."""
+        """Record supporting evidence for a decision; the decision stays as it is and its confidence rises.
+
+        ``evidence_id`` is the id of a memory you have already stored, not the decision id and not free text:
+        save the evidence first with ``memory_save`` (the ``Item ID`` it returns) or take an id from
+        ``memory_search``, then pass it here. For a stored ``ev:`` receipt use ``decision_link_evidence``.
+        """
         try:
             backend = get_backend()
             result = backend.decision_reinforce(decision_id, evidence_id)
@@ -792,7 +799,12 @@ def register(mcp):
     )
     @graceful
     def decision_contradict(decision_id: str, evidence_id: str) -> str:
-        """Record contradicting evidence against a decision."""
+        """Record contradicting evidence against a decision; the decision stays current and its confidence falls.
+
+        ``evidence_id`` is the id of a memory you have already stored, not the decision id and not free text:
+        save the evidence first with ``memory_save`` (the ``Item ID`` it returns) or take an id from
+        ``memory_search``, then pass it here. To end the decision use ``decision_retract``.
+        """
         try:
             backend = get_backend()
             result = backend.decision_contradict(decision_id, evidence_id)
@@ -986,7 +998,9 @@ def register(mcp):
     ) -> str:
         """Create a pending decision (GTM Acceptance Case) with unresolved requirements.
 
-        requirements: list of {description, requirement_type, query_hint?}. The
+        requirements: list of {description, requirement_type, query_hint?}. requirement_type is one of
+        ``evidence``, ``confirmation`` or ``data`` (``evidence`` when left out), e.g.
+        ``[{"description": "Wall-load check", "requirement_type": "evidence"}]``. The
         server assigns each requirement_id (req_<uuid8>); use those with
         decision_resolve_requirement.
         """
@@ -1026,7 +1040,12 @@ def register(mcp):
     def decision_resolve_requirement(
         decision_id: str, requirement_id: str, memory_id: str
     ) -> str:
-        """Mark a requirement on a pending decision resolved by a memory item."""
+        """Mark a requirement on a pending decision resolved by a memory item.
+
+        ``requirement_id`` is the ``req_...`` id from ``decision_create_pending``'s reply. ``memory_id`` is the
+        stored memory that shows the requirement met: save it first with ``memory_save`` and pass the ``Item ID``
+        it returns. This does not activate the decision; call ``decision_try_activate`` afterwards.
+        """
         try:
             backend = get_backend()
             ok = backend.decision_resolve_requirement(
@@ -1052,7 +1071,11 @@ def register(mcp):
     )
     @graceful
     def decision_try_activate(decision_id: str) -> str:
-        """Activate a pending decision if all requirements are resolved (no-op otherwise)."""
+        """Activate a pending decision if all requirements are resolved (no-op otherwise).
+
+        This changes the decision's state when it can. To only look at what still blocks it, use
+        ``decision_get`` (its Requirements lines show each one open or done); nothing changes then.
+        """
         try:
             backend = get_backend()
             activated = backend.decision_try_activate(decision_id)
