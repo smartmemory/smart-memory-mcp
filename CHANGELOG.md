@@ -1,5 +1,9 @@
 ## 2.0.4
 
+## Unreleased - BUG-MCP-RETRACT-ALT-READBACK-1: `decision_retract` reads back the alternative (2026-11-24)
+
+- `tools/decision_tools.py` `decision_retract`: new optional `alternative_id`. When given and the retraction succeeded, the reply adds one ordinary read of that decision in the `decision_get` format (statement, status). Not found and not readable read the same (`Alternative <id> not found`); a failing read is named on its own line and the retraction still reads as done. The retract call is unchanged; no `alternative_id` means the reply is byte-identical.
+
 ## Unreleased - BUG-MCP-ACTIVATE-REPLY-1: `decision_try_activate` says why it did not activate (2026-11-24)
 
 - `tools/decision_tools.py` `decision_try_activate`: when the answer is no, one ordinary read words the reply: not found, already active, or still pending naming each open requirement (a requirement the caller may not read is neither named nor counted, and the reply does not hint that one exists). Success text, the activation call and the staged refusal are unchanged. A staged rule change still reads as not found here: telling it apart needs a core signal (redesign note).
