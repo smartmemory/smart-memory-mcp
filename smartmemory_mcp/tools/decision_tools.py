@@ -833,19 +833,22 @@ def register(mcp):
         limit: Optional[int] = None,
         before: Optional[str] = None,
         as_of: Optional[str] = None,
+        cursor: Optional[str] = None,
     ) -> str:
         """A decision's dated history, newest first, in one call: recorded, edited, replaced, retracted, restored,
         review answers and evidence links, each with who did it and why. A replacement you cannot read shows as
         "a rule you cannot see", with no id or text.
 
-        limit (1 to 500, default 100) and before (ISO 8601: only entries older than this) page through a long
-        history. as_of (ISO 8601) keeps only entries at or before that instant."""
+        limit (1 to 500, default 100) and cursor page through a long history: when the answer says more entries
+        exist, pass the cursor it gives back as cursor to get the next page, with every entry shown exactly once.
+        before (ISO 8601: only entries older than this) still works but is deprecated: it can skip entries that
+        share one instant. as_of (ISO 8601) keeps only entries at or before that instant."""
         as_of = checked_as_of(as_of)
         before = checked_as_of(before)
         try:
             backend = get_backend()
             history = backend.decision_history(
-                decision_id, limit=limit, before=before, **dated(as_of)
+                decision_id, limit=limit, before=before, cursor=cursor, **dated(as_of)
             )
             if not history:
                 return f"Decision not found: {decision_id}"
