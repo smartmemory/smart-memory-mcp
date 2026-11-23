@@ -70,43 +70,96 @@ def _trim(text: Any) -> str:
     return text if len(text) <= _ROW_CONTENT_MAX else text[: _ROW_CONTENT_MAX - 1].rstrip() + "…"
 
 
-def _decision_row_line(row: Any) -> Optional[str]:
-    """`- <id>: <content> (reason: <why>, <date>)`; a missing part is left out, never printed as None."""
+def _link_for(selected: Any, side: str, row_id: Any) -> Any:
+    """The visible supersession link of the selected decision that names ``row_id``.
+
+    Core serves ``replaced`` (one link, to the successor) and ``replaces`` (links, to the predecessors) on the
+    selected decision; each carries the id, reason and event time of that one transition."""
+    links = _row_get(selected, side)
+    if row_id is None or links is None:
+        return None
+    for link in links if isinstance(links, (list, tuple)) else [links]:
+        if _row_get(link, "decision_id") == row_id and _row_get(link, "visible") is not False:
+            return link
+    return None
+
+
+def _decision_row_line(row: Any, link: Any = None, *, show_content: bool = True, own_note: bool = False) -> Optional[str]:
+    """`- <id>: <content> (reason: <why>, <date>)`; a missing part is left out, never printed as None.
+
+    Reason and date are those of the transition between the selected decision and this row: the ``link`` core
+    returned for it, else (``own_note``, predecessors only) the row's own ``context_snapshot`` note, which describes
+    the change that replaced it. Never the row's creation date."""
     ident = _row_get(row, "decision_id")
-    content = _row_get(row, "content")
+    content = _row_get(row, "content") if show_content else None
     if ident is None and content is None:
         return None
-    reason = _row_get(row, "superseded_reason") or _row_get(row, "reason")
-    when = _row_get(row, "superseded_at") or _row_get(row, "created_at")
+    reason = when = None
+    if link is not None:
+        reason, when = _row_get(link, "reason"), _row_get(link, "at")
+    elif own_note:
+        snapshot = _row_get(row, "context_snapshot")
+        if isinstance(snapshot, dict):
+            reason, when = _row_get(snapshot, "superseded_reason"), _row_get(snapshot, "superseded_at")
     head = " ".join(x for x in (f"{ident}:" if ident and content else ident, _trim(content) if content else None) if x)
     notes = [x for x in (f"reason: {_trim(reason)}" if reason else None, str(when) if when else None) if x]
     return f"- {head}" + (f" ({', '.join(notes)})" if notes else "")
 
 
+def _created_of(obj: Any) -> Any:
+    """A plain memory's creation time where core's dated filter looks: the row, its metadata, `metadata__created_at`."""
+    when = _row_get(obj, "created_at")
+    if when is None:
+        metadata = _row_get(obj, "metadata")
+        if metadata is not None:
+            when = _row_get(metadata, "created_at")
+    return when or _row_get(obj, "metadata__created_at")
+
+
 def _evidence_row_line(row: Any) -> Optional[str]:
     # SM-EVIDENCE-TYPE-1: an evidence-node row names its receipt.
     ref = _row_get(row, "evidence_ref")
+    checked = _row_get(row, "checked_at")
     if ref:
-        kind, checked = _row_get(row, "kind"), _row_get(row, "checked_at")
+        kind = _row_get(row, "kind")
         notes = [x for x in (kind, f"checked {checked}" if checked else None) if x]
         return f"- {ref}" + (f" ({', '.join(str(n) for n in notes)})" if notes else "")
     memory = _row_get(row, "memory")
     content = _row_get(memory, "content") if memory is not None else None
     ident = _row_get(row, "memory_id") or (_row_get(memory, "item_id") if memory is not None else None)
-    when = _row_get(memory, "created_at") if memory is not None else None
+    when = _created_of(memory) if memory is not None else None
     if content is None and ident is None:
         return None
     head = " ".join(x for x in (f"{ident}:" if ident and content else ident, _trim(content) if content else None) if x)
-    return f"- {head}" + (f" ({when})" if when else "")
+    date = str(when) if when else (f"checked {checked}" if checked else None)
+    return f"- {head}" + (f" ({date})" if date else "")
 
 
-def _provenance_rows(provenance: Dict[str, Any]) -> List[str]:
-    """Evidence, superseded and successor sections: the count header, then one line per row."""
+def _provenance_rows(provenance: Dict[str, Any], *, dated: bool = False) -> List[str]:
+    """Evidence, superseded and successor sections: the count header, then one line per row.
+
+    ``dated``: core hands back a neighbor's current wording on an as_of read (it is not the wording at that
+    instant), so a dated line carries the id, reason and date only."""
+    selected = provenance.get("decision")
     out: List[str] = []
     for key, header, unit, line in (
-        ("evidence", "Evidence", "items", _evidence_row_line),
-        ("superseded", "Superseded", "decisions", _decision_row_line),
-        ("superseded_by", "Superseded by", "decisions", _decision_row_line),
+        ("evidence", "Evidence", "items", lambda r: _evidence_row_line(r)),
+        (
+            "superseded",
+            "Superseded",
+            "decisions",
+            lambda r: _decision_row_line(
+                r, _link_for(selected, "replaces", _row_get(r, "decision_id")), show_content=not dated, own_note=True
+            ),
+        ),
+        (
+            "superseded_by",
+            "Superseded by",
+            "decisions",
+            lambda r: _decision_row_line(
+                r, _link_for(selected, "replaced", _row_get(r, "decision_id")), show_content=not dated
+            ),
+        ),
     ):
         rows = provenance.get(key)
         if not rows:
@@ -664,7 +717,7 @@ def register(mcp):
                 parts.append(diagnostic)
             if provenance.get("reasoning_trace"):
                 parts.append(f"Reasoning trace: {provenance['reasoning_trace']}")
-            parts.extend(_provenance_rows(provenance))
+            parts.extend(_provenance_rows(provenance, dated=as_of is not None))
             return "\n".join(parts)
         except Exception as e:
             logger.error(f"Failed to get provenance: {e}", exc_info=True)
