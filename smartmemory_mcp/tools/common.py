@@ -3,6 +3,7 @@
 import json
 import functools
 import logging
+import math
 from typing import Any, Callable, Optional
 
 from smartmemory_mcp.backends.dispatch import rebuild_lock, resolve_backend
@@ -14,8 +15,36 @@ logger = logging.getLogger(__name__)
 # recall, get, explain, decision reads) passes its output through ``withheld_view``.
 WITHHELD_FLAG = "content_withheld"
 WITHHELD_TEXT = "[unavailable: the text of this earlier version is withheld]"
-# The only fields a withheld record keeps besides its status: ids and numbers, never text.
+# BUG-MCP-WITHHELD-TYPED-KEEP-1: the only fields a withheld record keeps besides its status, each kept only when its
+# value has the field's type (below); anything else is dropped.
 _WITHHELD_KEEP = ("item_id", "decision_id", "memory_type", "score", "matched_by", "version")
+# Retrieval lane names core stamps on ``matched_by`` (core ``graph/core/search.py`` lane tuples).
+_KNOWN_LANES = frozenset(
+    {"entity-graph", "spreading-activation", "ssg-traversal", "semantic", "facts", "regex-text", "lexical",
+     "structural-semantic"}
+)
+# Core ``MEMORY_TYPES`` (``models/memory_item.py``). A deployment's extra types are not listed: a withheld record of
+# such a type simply loses its ``memory_type`` field (status-only is the safe side).
+_KNOWN_MEMORY_TYPES = frozenset(
+    {"semantic", "episodic", "procedural", "pending", "zettel", "reasoning", "opinion", "observation", "decision",
+     "code", "tool_call", "plan_task", "conversation_turn", "hook_capture", "evolution_effect", "enforcement_event",
+     "plan", "anchor", "document", "conversation", "constraint", "learned", "pattern", "timeline_entry",
+     "evaluation", "code_provenance", "session", "latent_intent", "peer", "evidence", "snapshot"}
+)
+
+
+def _real_number(v: Any) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+_WITHHELD_VALUE_OK = {
+    "item_id": lambda v: isinstance(v, str),
+    "decision_id": lambda v: isinstance(v, str),
+    "memory_type": lambda v: isinstance(v, str) and v in _KNOWN_MEMORY_TYPES,
+    "score": _real_number,
+    "matched_by": lambda v: isinstance(v, list) and all(isinstance(x, str) and x in _KNOWN_LANES for x in v),
+    "version": lambda v: isinstance(v, int) and not isinstance(v, bool),
+}
 
 
 def is_withheld(item: Any) -> bool:
@@ -30,10 +59,10 @@ def is_withheld(item: Any) -> bool:
 
 def withheld_view(value: Any) -> Any:
     """``value`` as the model may see it: every withheld record, at any depth, is replaced by a status-only
-    projection (allowlisted ids, ``content_withheld``, ``as_of_resolution="unavailable"``, the unavailable text);
+    projection (allowlisted fields whose values have the right type, ``content_withheld``, ``as_of_resolution="unavailable"``, the unavailable text);
     its reason, metadata, conflict, dates, hashes and every other field are dropped. Anything else is unchanged."""
     if is_withheld(value):
-        out = {k: value[k] for k in _WITHHELD_KEEP if k in value}
+        out = {k: value[k] for k in _WITHHELD_KEEP if k in value and _WITHHELD_VALUE_OK[k](value[k])}
         out.update(
             content=WITHHELD_TEXT,
             content_withheld=True,

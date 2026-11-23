@@ -5,6 +5,7 @@
 - `tools/memory_tools.py` `memory_search` and `memory_recall`: a hit core marks `content_withheld` now shows "[unavailable: the text of this earlier version is withheld]" in the text, catalog and citation (preview, footnote) answers, and the structured item carries `content_withheld: true` with `as_of_resolution: "unavailable"` instead of a blank "resolved". The withheld reason and all other metadata are dropped. Readable hits are unchanged.
 - Tests: `tests/test_withheld_as_of_state.py` (4 rows).
 - Fix r1 (security review): one shared boundary, `withheld_view` in `tools/common.py`, replaces the key-stripping helper. A withheld record, at any depth, becomes a status-only projection (ids, score, `content_withheld`, `as_of_resolution: "unavailable"`, the unavailable text), so `conflict`, `derived_from`, `reference`, dates, hashes and the reason no longer pass. `memory_get`, `memory_explain` (withheld audit rows), `decision_get`, `decision_provenance` and `decision_history` route through it. A marker only at the item root is kept by `normalize_item` and the recall working-context entry. Tests: `tests/test_withheld_boundary.py` (7 rows).
+- BUG-MCP-WITHHELD-TYPED-KEEP-1: `withheld_view` keeps an allowlisted field of a withheld record only when its value has the field's type (ids: str; `matched_by`: list of known lane names; `memory_type`: known core type; `score`: finite number; `version`: int); anything else is dropped. Tests: `tests/test_withheld_typed_keep.py` (6 rows).
 
 ## Unreleased - BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: land census fix (2026-11-23)
 
