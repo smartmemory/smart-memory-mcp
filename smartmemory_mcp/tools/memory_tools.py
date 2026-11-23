@@ -40,6 +40,7 @@ from .common import (
     refuse_scoped_options,
     conflict_check_text,
     resolution_text,
+    withheld_view,
     read_metadata,
     _UNSET,
 )
@@ -175,45 +176,7 @@ _MODEL_ITEM_FIELDS = frozenset(
 )
 
 
-_WITHHELD_FLAG = "content_withheld"
-_WITHHELD_TEXT = "[unavailable: the text of this earlier version is withheld]"
-
-
-def _is_withheld(item: Any) -> bool:
-    if not isinstance(item, dict):
-        return False
-    metadata = item.get("metadata")
-    return bool(item.get(_WITHHELD_FLAG)) or (
-        isinstance(metadata, dict) and bool(metadata.get(_WITHHELD_FLAG))
-    )
-
-
-def withheld_view(item: Any) -> Any:
-    """BUG-MCP-WITHHELD-STATE-1: a withheld version as the model may see it.
-
-    Core marks it with ``content_withheld`` and empty content, labelled
-    ``as_of_resolution="resolved"``. Here it says it is unavailable, in its
-    content (so text, catalog and citations all show it) and in two status
-    fields; the reason and every other metadata key are dropped. Any other
-    item is returned unchanged."""
-    if not _is_withheld(item):
-        return item
-    out = {
-        k: v
-        for k, v in item.items()
-        if k not in ("metadata", "content_withheld_reason", "change_reason", "changed_by")
-    }
-    out.update(
-        content=_WITHHELD_TEXT,
-        content_withheld=True,
-        as_of_resolution="unavailable",
-        metadata={},
-    )
-    return out
-
-
-def withheld_views(items: List[Any]) -> List[Any]:
-    return [withheld_view(item) for item in items]
+withheld_views = withheld_view  # one shared boundary (tools/common.py)
 
 
 def model_item(item: Dict[str, Any], metadata: Any = _UNSET) -> Dict[str, Any]:
@@ -412,6 +375,8 @@ def _build_working_context(
                 },
             }
         )
+        if row.get("content_withheld"):
+            entry["content_withheld"] = True  # a root-only marker survives to the final withheld_view
         status = validated_carrier(row.get("read_status"), row.get("item_id"))
         if status is not None:
             entry["read_status"] = status
@@ -1017,6 +982,7 @@ def register_free(mcp):
         if item is None:
             return f"Memory item not found: {item_id}"
 
+        item = withheld_view(item)
         if not include_metadata:
             parts = [
                 f"Memory Item: {item_id}",
@@ -1068,7 +1034,7 @@ def register_free(mcp):
         result = backend.explain(memory_id)
         if result is None:
             return f"Memory item not found: {memory_id}"
-        return result
+        return withheld_view(result)
 
     @mcp.tool(
         title="Answer a question from memory",
