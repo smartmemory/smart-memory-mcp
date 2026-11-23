@@ -571,11 +571,12 @@ def register(mcp):
     )
     @graceful
     def decision_reinforce(decision_id: str, evidence_id: str) -> str:
-        """Record supporting evidence for a decision; the decision stays as it is and its confidence rises.
+        """Record supporting evidence for a decision; its status is unchanged and its confidence rises (up to 1).
 
         ``evidence_id`` is the id of a memory you have already stored, not the decision id and not free text:
         save the evidence first with ``memory_save`` (the ``Item ID`` it returns) or take an id from
-        ``memory_search``, then pass it here. For a stored ``ev:`` receipt use ``decision_link_evidence``.
+        ``memory_search``, then pass it here. For a stored ``ev:`` receipt use ``decision_link_evidence``,
+        which keeps confidence as it is.
         """
         try:
             backend = get_backend()
@@ -667,7 +668,7 @@ def register(mcp):
     )
     @graceful
     def decision_contradict(decision_id: str, evidence_id: str) -> str:
-        """Record contradicting evidence against a decision; the decision stays current and its confidence falls.
+        """Record contradicting evidence against a decision; its status is unchanged and its confidence falls (not below 0).
 
         ``evidence_id`` is the id of a memory you have already stored, not the decision id and not free text:
         save the evidence first with ``memory_save`` (the ``Item ID`` it returns) or take an id from
@@ -879,8 +880,9 @@ def register(mcp):
     ) -> str:
         """Create a pending decision (GTM Acceptance Case) with unresolved requirements.
 
-        requirements: list of {description, requirement_type, query_hint?}. requirement_type is one of
-        ``evidence``, ``confirmation`` or ``data`` (``evidence`` when left out), e.g.
+        requirements: list of {description, requirement_type, query_hint?}. requirement_type is a free label:
+        common values are ``evidence``, ``confirmation`` and ``data`` (``evidence`` when left out), and GTM
+        acceptance cases use ``capability``, ``uat`` and ``proof``; keep the caller's label. Example:
         ``[{"description": "Wall-load check", "requirement_type": "evidence"}]``. The
         server assigns each requirement_id (req_<uuid8>); use those with
         decision_resolve_requirement.
@@ -925,7 +927,8 @@ def register(mcp):
 
         ``requirement_id`` is the ``req_...`` id from ``decision_create_pending``'s reply. ``memory_id`` is the
         stored memory that shows the requirement met: save it first with ``memory_save`` and pass the ``Item ID``
-        it returns. This does not activate the decision; call ``decision_try_activate`` afterwards.
+        it returns. This does not activate the decision; call ``decision_try_activate`` afterwards
+        only if the caller asks to activate (activation also sets confidence to 0.8).
         """
         try:
             backend = get_backend()
@@ -955,7 +958,8 @@ def register(mcp):
         """Activate a pending decision if all requirements are resolved (no-op otherwise).
 
         This changes the decision's state when it can. To only look at what still blocks it, use
-        ``decision_get`` (its Requirements lines show each one open or done); nothing changes then.
+        ``decision_get`` (its Requirements lines show each one open or done when the read reports it;
+        a line with no open/done marker means that status is unknown); nothing changes then.
         """
         try:
             backend = get_backend()
