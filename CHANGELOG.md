@@ -11,7 +11,7 @@
 
 ## Unreleased - BUG-MCP-RETRACT-ALT-READBACK-1: `decision_retract` reads back the alternative (2026-11-24)
 
-- `tools/decision_tools.py` `decision_retract`: new optional `alternative_id`. When given and the retraction succeeded, the reply adds one ordinary read of that decision in the `decision_get` format (statement, status). Not found and not readable read the same (`Alternative <id> not found`); a failing read is named on its own line and the retraction still reads as done. The retract call is unchanged; no `alternative_id` means the reply is byte-identical.
+- `tools/decision_tools.py` `decision_retract`: new optional `alternative_id`. When given and the retraction succeeded, the reply adds one ordinary read of that decision in the `decision_get` format (statement, status). Not found and not readable read the same (`Alternative <id> not found`); a failing read or render of the alternative is named on its own line and the retraction still reads as done. The retract call is unchanged; no `alternative_id` means the reply is byte-identical.
 
 ## Unreleased - BUG-MCP-ACTIVATE-REPLY-1: `decision_try_activate` says why it did not activate (2026-11-24)
 

@@ -644,14 +644,15 @@ def register(mcp):
             if alternative_id is None:
                 return text
             # RETRACT-ALT-READBACK: one ordinary read; absent and unreadable look the same.
+            # The boundary covers reading AND rendering: the write is done, so no readback fault may hide it.
             try:
                 alt = backend.decision_get(alternative_id)
+                if not alt:
+                    return f"{text}\nAlternative {alternative_id} not found"
+                return f"{text}\n{_decision_text(alt)}"
             except Exception as read_error:
                 logger.error(f"Retract readback failed: {read_error}", exc_info=True)
                 return f"{text}\nThe alternative {alternative_id} could not be read back."
-            if not alt:
-                return f"{text}\nAlternative {alternative_id} not found"
-            return f"{text}\n{_decision_text(alt)}"
         except Exception as e:
             logger.error(f"Failed to retract decision: {e}", exc_info=True)
             raise
