@@ -84,6 +84,19 @@ def _link_for(selected: Any, side: str, row_id: Any) -> Any:
     return None
 
 
+def _dated_successor_link(selected: Any, row_id: Any) -> Any:
+    """A dated read is served without blocks, so no ``replaced`` link: the selected decision itself carries
+    ``superseded_by`` (the successor id) and its folded note in ``context_snapshot``. Only that note, never the
+    successor's own (it describes the successor's later change)."""
+    if row_id is None or _row_get(selected, "superseded_by") != row_id:
+        return None
+    snapshot = _row_get(selected, "context_snapshot")
+    if not isinstance(snapshot, dict):
+        return None
+    reason, when = _row_get(snapshot, "superseded_reason"), _row_get(snapshot, "superseded_at")
+    return {"decision_id": row_id, "reason": reason, "at": when} if (reason or when) else None
+
+
 def _decision_row_line(row: Any, link: Any = None, *, show_content: bool = True, own_note: bool = False) -> Optional[str]:
     """`- <id>: <content> (reason: <why>, <date>)`; a missing part is left out, never printed as None.
 
@@ -116,7 +129,7 @@ def _created_of(obj: Any) -> Any:
     return when or _row_get(obj, "metadata__created_at")
 
 
-def _evidence_row_line(row: Any) -> Optional[str]:
+def _evidence_row_line(row: Any, *, dated: bool = False) -> Optional[str]:
     # SM-EVIDENCE-TYPE-1: an evidence-node row names its receipt.
     ref = _row_get(row, "evidence_ref")
     checked = _row_get(row, "checked_at")
@@ -125,14 +138,15 @@ def _evidence_row_line(row: Any) -> Optional[str]:
         notes = [x for x in (kind, f"checked {checked}" if checked else None) if x]
         return f"- {ref}" + (f" ({', '.join(str(n) for n in notes)})" if notes else "")
     memory = _row_get(row, "memory")
-    content = _row_get(memory, "content") if memory is not None else None
+    content = _row_get(memory, "content") if memory is not None and not dated else None
     ident = _row_get(row, "memory_id") or (_row_get(memory, "item_id") if memory is not None else None)
     when = _created_of(memory) if memory is not None else None
     if content is None and ident is None:
         return None
     head = " ".join(x for x in (f"{ident}:" if ident and content else ident, _trim(content) if content else None) if x)
-    date = str(when) if when else (f"checked {checked}" if checked else None)
-    return f"- {head}" + (f" ({date})" if date else "")
+    # The creation date and the check time are different facts; keep both.
+    dates = [x for x in (str(when) if when else None, f"checked {checked}" if checked else None) if x]
+    return f"- {head}" + (f" ({', '.join(dates)})" if dates else "")
 
 
 def _provenance_rows(provenance: Dict[str, Any], *, dated: bool = False) -> List[str]:
@@ -143,7 +157,7 @@ def _provenance_rows(provenance: Dict[str, Any], *, dated: bool = False) -> List
     selected = provenance.get("decision")
     out: List[str] = []
     for key, header, unit, line in (
-        ("evidence", "Evidence", "items", lambda r: _evidence_row_line(r)),
+        ("evidence", "Evidence", "items", lambda r: _evidence_row_line(r, dated=dated)),
         (
             "superseded",
             "Superseded",
@@ -157,7 +171,10 @@ def _provenance_rows(provenance: Dict[str, Any], *, dated: bool = False) -> List
             "Superseded by",
             "decisions",
             lambda r: _decision_row_line(
-                r, _link_for(selected, "replaced", _row_get(r, "decision_id")), show_content=not dated
+                r,
+                _link_for(selected, "replaced", _row_get(r, "decision_id"))
+                or _dated_successor_link(selected, _row_get(r, "decision_id")),
+                show_content=not dated,
             ),
         ),
     ):

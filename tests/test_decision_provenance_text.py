@@ -81,6 +81,7 @@ def test_n4_no_history_has_no_headers(monkeypatch):
     populated = _text(monkeypatch, superseded=[OLD], superseded_by=[NEW], evidence=[MEM_ROW])
     for header in ("Evidence: 1", "Superseded: 1", "Superseded by: 1"):
         assert header in populated
+    assert "Latency report Q1" in _line(populated, "m2")
     t = _text(monkeypatch)
     for header in ("Evidence", "Superseded"):
         assert header not in t
@@ -106,9 +107,11 @@ def test_n6_long_content_trimmed_not_dropped(monkeypatch):
 
 
 def test_n7_as_of_keeps_meaning(monkeypatch):
-    t = _text(monkeypatch, superseded=[OLD], as_of="2026-04-15T00:00:00Z")
+    # Dated shape: a dated read is served without blocks, so the selected decision has no replaces/replaced link.
+    dated = {k: v for k, v in D.items() if k not in ("replaces", "replaced")}
+    t = _text(monkeypatch, superseded=[OLD], decision=dated, as_of="2026-04-15T00:00:00Z")
     assert "Superseded: 1 decisions" in t and "Superseded by" not in t
-    assert "dec_0" in t
+    assert _line(t, "dec_0")
 
 
 def test_n8_predecessor_line_has_change_reason_and_date_not_creation(monkeypatch):
@@ -153,3 +156,106 @@ def test_n12_evidence_dates_from_partial_receipt_and_nested_creation(monkeypatch
     assert "2026-02-02" in _line(t, "m4")
     assert "2026-02-03" in _line(t, "m5") and "Nested one" in _line(t, "m5")
     assert "2026-02-04" in _line(t, "m6")
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Fix round 2: the census matrix (redesign eval round 2). Every cell of
+#   read mode {undated, dated} x row kind {receipt, no-ref receipt, plain memory, predecessor, successor}
+# is pinned on the row's OWN line. Core's two producer shapes:
+#   undated  smart-memory-core queries.py `_provenance_selected` (:699-797): selected decision served with blocks,
+#            so it carries `replaces`/`replaced` links; neighbors are the current rows.
+#   dated    queries.py `_decision_provenance_as_of` (:799-823) + `_decision_who` without blocks
+#            (smart_memory.py:5537): NO `replaced`/`replaces`; the selected decision carries `superseded_by` (a
+#            successor id) with its folded note in context_snapshot (decisions/as_of.py:446-464, :522;
+#            lifecycle_notes.py:568-575); neighbors are at_state copies of their CURRENT rows; evidence is filtered
+#            on creation time only and keeps the current memory payload (queries.py:823).
+# ---------------------------------------------------------------------------------------------------------------
+
+import inspect
+import re
+
+import pytest
+
+from smartmemory_mcp.tools import decision_tools
+
+KIND_SECTION = {
+    "receipt": "evidence",
+    "noref_receipt": "evidence",
+    "plain_memory": "evidence",
+    "predecessor": "superseded",
+    "successor": "superseded_by",
+}
+MODES = (False, True)  # dated?
+AS_OF = "2026-04-15T00:00:00Z"
+CELLS = [(kind, dated) for kind in KIND_SECTION for dated in MODES]
+
+_RECEIPT = {
+    "memory_id": "m1",
+    "evidence_ref": "ev:abc",
+    "kind": "test",
+    "checked_at": "2026-01-12T00:00:00Z",
+    "memory": {"item_id": "m1", "content": "RECEIPT WORDING", "created_at": "2026-01-01"},
+}
+_NOREF = {
+    "memory_id": "m4",
+    "evidence_ref": None,
+    "kind": None,
+    "checked_at": "2026-02-02T00:00:00Z",
+    "memory": {"item_id": "m4", "content": "Checked wording", "created_at": "2026-01-13"},
+}
+_PLAIN = {"memory_id": "m2", "memory": {"item_id": "m2", "content": "Latency report Q1", "created_at": "2026-01-13"}}
+# Dated shape of the selected decision B: no links; B -> C carried as superseded_by + the folded note.
+_B_DATED_SUCCESSOR = {
+    "decision_id": "dec_1",
+    "content": "Use Postgres",
+    "superseded_by": "dec_2",
+    "context_snapshot": {"superseded_reason": "managed hosting", "superseded_at": "2026-04-01T00:00:00+00:00"},
+}
+_B_DATED_PLAIN = {k: v for k, v in D.items() if k not in ("replaces", "replaced")}
+_C_EDITED = {**NEW, "content": "Use Aurora, edited later"}
+_A_EDITED = {**OLD, "content": "Use MySQL, edited later"}
+
+
+def _cell_case(kind, dated):
+    """(payload kwargs, selected decision, line id, must appear in the line, must not appear in the line)."""
+    if kind == "receipt":
+        must = ["test", "checked 2026-01-12"]
+        return {"evidence": [_RECEIPT]}, None, "ev:abc", must, ["RECEIPT WORDING", "2026-01-01"]
+    if kind == "noref_receipt":
+        must = ["2026-01-13", "checked 2026-02-02"]
+        wording = "Checked wording"
+        return ({"evidence": [_NOREF]}, None, "m4", must if dated else must + [wording], [wording] if dated else [])
+    if kind == "plain_memory":
+        must = ["2026-01-13"] if dated else ["2026-01-13", "Latency report Q1"]
+        return {"evidence": [_PLAIN]}, None, "m2", must, ["Latency report Q1"] if dated else []
+    if kind == "predecessor":
+        # Two dates per row: created 2026-01-05, replaced 2026-03-10.
+        must = ["reason: licence change", "2026-03-10"] + ([] if dated else ["Use MySQL, edited later"])
+        not_ = ["2026-01-05"] + (["Use MySQL"] if dated else [])
+        return {"superseded": [_A_EDITED]}, (_B_DATED_PLAIN if dated else D), "dec_0", must, not_
+    # successor: its own note (WRONG, 2026-09-09) and creation (2026-02-20) are never the B -> C transition.
+    must = ["reason: managed hosting", "2026-04-01"] + ([] if dated else ["Use Aurora, edited later"])
+    not_ = ["WRONG", "2026-09-09", "2026-02-20"] + (["Use Aurora"] if dated else [])
+    return {"superseded_by": [_C_EDITED]}, (_B_DATED_SUCCESSOR if dated else D), "dec_2", must, not_
+
+
+@pytest.mark.parametrize("kind,dated", CELLS, ids=[f"{k}-{'dated' if d else 'undated'}" for k, d in CELLS])
+def test_n14_census_matrix_cell(monkeypatch, kind, dated):
+    payload, decision, ident, must, must_not = _cell_case(kind, dated)
+    t = _text(monkeypatch, as_of=AS_OF if dated else None, decision=decision, **payload)
+    line = _line(t, ident)
+    for part in must:
+        assert part in line, (part, line)
+    for part in must_not:
+        assert part not in line, (part, line)
+    assert "None" not in line
+
+
+def test_n15_census_guard_matrix_covers_every_section_and_mode():
+    """A new section in `_provenance_rows` fails here until it gets cells."""
+    source = inspect.getsource(decision_tools._provenance_rows)
+    sections = set(re.findall(r'\(\s*"(\w+)",\s*"[A-Z][\w ]+",\s*"(?:items|decisions)"', source))
+    assert sections == {"evidence", "superseded", "superseded_by"}
+    assert set(KIND_SECTION.values()) == sections
+    assert {dated for _, dated in CELLS} == {False, True}
+    assert len(CELLS) == len(KIND_SECTION) * len(MODES) == 10

@@ -3,6 +3,7 @@
 ## Unreleased - BUG-PROVENANCE-COUNTS-ONLY-1: `decision_provenance` lists each row (2026-11-23)
 
 - `tools/decision_tools.py` `decision_provenance`: the `Evidence`, `Superseded` and `Superseded by` count headers stay; each row now gets a line (id, trimmed content, reason, date; evidence rows without a receipt show their memory content and date). A missing field is left out, never printed as `None`; no history prints no headers. Fix round 1: a predecessor/successor line takes its reason and date from the selected decision's `replaces`/`replaced` link for that row (predecessor falls back to its own `context_snapshot` note; never the creation date, never a successor's own later note); a dated (`as_of`) read prints no neighbor wording; evidence rows without a receipt show `checked_at` or a nested creation date. Tests: `tests/test_decision_provenance_text.py` (12 tests, core's real row shape).
+- Fix round 2 (redesign eval): a dated successor line takes its reason and date from the selected decision's `superseded_by` plus its folded `context_snapshot` note (a dated read has no `replaced` link); dated evidence prints no memory wording (core keeps the current payload); a no-ref evidence row keeps `checked_at` next to the creation date. Tests: 10-cell census matrix (mode x row kind) on each row's own line plus a section-key guard.
 
 ## Unreleased - BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: land census fix (2026-11-23)
 
