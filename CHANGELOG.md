@@ -1,5 +1,9 @@
 ## 2.0.4
 
+## Unreleased - BUG-MCP-DECISION-GET-RAW-1: `decision_get` answers in readable lines (2026-11-24)
+
+- `tools/decision_tools.py` `decision_get`: replaces the raw object string with statement, state, rationale, lifecycle reason and requirements, then the existing who/replaced lines. Absent fields are omitted, an `as_of` read names its instant, internal ids and counters are no longer printed. The reply for a full decision is under 1 KB (was ~2-2.6 KB).
+
 ## Unreleased - BUG-MCP-DATED-SEARCH-REPLY-1: a dated `decision_search` names its instant (2026-11-24)
 
 - `tools/decision_tools.py` `decision_search`: with `as_of`, both the empty and the non-empty reply end the topic phrase with ` as of <instant>`, as `decision_list` does. Undated replies are byte-identical.
