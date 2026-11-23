@@ -2,7 +2,7 @@
 
 ## Unreleased - BUG-MCP-DECISION-GET-RAW-1: `decision_get` answers in readable lines (2026-11-24)
 
-- `tools/decision_tools.py` `decision_get`: replaces the raw object string with statement, state, rationale, lifecycle reason and requirements, then the existing who/replaced lines. Absent fields are omitted, an `as_of` read names its instant, internal ids and counters are no longer printed. The reply for a full decision is under 1 KB (was ~2-2.6 KB).
+- `tools/decision_tools.py` `decision_get`: replaces the raw object string with statement, state, rationale, lifecycle reason and requirements, then the existing who/replaced lines. Absent fields are omitted, an `as_of` read names its instant, internal ids and counters are no longer printed. The reply for a full decision is under 1 KB (was ~2-2.6 KB). A completed requirement's `resolved_by` is shown as `supporting memory <id>` (it is an evidence memory id, not an actor); a withheld or absent statement leaves the header without text (no `None`); a requirement whose resolution was not returned prints no `[open]`/`[done]` marker.
 
 ## Unreleased - BUG-MCP-DATED-SEARCH-REPLY-1: a dated `decision_search` names its instant (2026-11-24)
 
