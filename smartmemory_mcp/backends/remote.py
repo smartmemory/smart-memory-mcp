@@ -37,8 +37,16 @@ from smartmemory_mcp.workspace_select import SwitchResult, refuse, resolve_works
 logger = logging.getLogger(__name__)
 
 
+_STRICT_READ_ERRORS = ("recall_conflict", "conflict_check_undecided")
+
+
 def _raise_recall_conflict(response: httpx.Response) -> None:
-    """Preserve strict read refusals as MCP tool errors, never successful error dicts."""
+    """Preserve strict read refusals as MCP tool errors, never successful error dicts.
+
+    Both 409s of a strict read: ``recall_conflict`` (a proven disagreement) and ``conflict_check_undecided`` (the check
+    could not decide, BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1). The rest of the body (``pairs``, ``reason``, ``method``,
+    ``hint``, the not-checked count) follows the message as one JSON line, unchanged.
+    """
     if response.status_code != 409:
         return
     try:
@@ -46,11 +54,17 @@ def _raise_recall_conflict(response: httpx.Response) -> None:
     except ValueError:
         return
     detail = body.get("detail") if isinstance(body, dict) else None
-    if isinstance(detail, dict) and detail.get("error") == "recall_conflict":
+    if isinstance(detail, dict) and detail.get("error") in _STRICT_READ_ERRORS:
         from fastmcp.exceptions import ToolError
 
+        from smartmemory_mcp.tools.common import strict_read_error_text
+
         raise ToolError(
-            "recall_conflict: " + str(detail.get("message", "Strict recall refused"))
+            strict_read_error_text(
+                detail["error"],
+                str(detail.get("message", "Strict recall refused")),
+                {k: v for k, v in detail.items() if k not in ("error", "message")},
+            )
         )
 
 
@@ -1069,6 +1083,7 @@ class RemoteBackend(BackendCapabilities):
         body = self._search_request_body(body)
         # SELF-IMPROVE-6: capture X-Search-Session-Id header from response
         self._last_search_session_id: str | None = None
+        self._last_conflict_check = None
         try:
             r = httpx.request(
                 "POST",
@@ -1116,6 +1131,8 @@ class RemoteBackend(BackendCapabilities):
             # dropping this discards the only query-level signal that an as-of
             # answer contains present-day content.
             self._last_as_of_diagnostics = result.get("as_of_diagnostics")
+            # BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: the "could not decide" marker, unchanged. Reset on every search.
+            self._last_conflict_check = result.get("conflict_check")
         else:
             # Pre-LINEAGE-1 services returned a bare top-level array.
             raw = result if isinstance(result, list) else []
@@ -1156,7 +1173,15 @@ class RemoteBackend(BackendCapabilities):
         """Client-side recall — no /memory/recall endpoint in the hosted API."""
         requested = max(1, top_k)
         # Preserve service ranking and the entire evidence budget in one query.
-        results = self.search(cwd or "", top_k=requested)
+        # BUG-CONFLICT-BACKEND-RECALL-FLAG-1: the flag goes to the search call that checks it (same body key as
+        # recall_pack); search() keeps core's "could not decide" marker in _last_conflict_check, printed below.
+        search_kwargs = {}
+        if "fail_if_conflicted" in kwargs:
+            search_kwargs["fail_if_conflicted"] = kwargs["fail_if_conflicted"]
+        results = self.search(cwd or "", top_k=requested, **search_kwargs)
+        from smartmemory_mcp.tools.common import conflict_check_text
+
+        marker = conflict_check_text(self._last_conflict_check)
         seen: set[str] = set()
         items: list[MemoryResult] = []
         for r in results:
@@ -1173,7 +1198,8 @@ class RemoteBackend(BackendCapabilities):
         ]
         items = [r for r in items if not r.get("reference")]
         if not items:
-            return ""
+            # An empty answer is not "no memories" when the check could not decide.
+            return marker
         lines = ["## SmartMemory Context"]
         for item in items[:top_k]:
             conf = item.get("confidence", 1.0)
@@ -1182,6 +1208,8 @@ class RemoteBackend(BackendCapabilities):
             lines.append(
                 f"- {stale_marker}{conf_marker}[{item['memory_type']}]{supersession_label(item)} {item['content']}"
             )
+        if marker:
+            lines.append(marker)
         return "\n".join(lines)
 
     def ingest(
@@ -1552,7 +1580,8 @@ class RemoteBackend(BackendCapabilities):
                 str(decided.get("outcome") or decided.get("action") or "settled"),
             )
         if err := self._fmt_error(result):
-            if none_on_404 and "API error 404" in err:
+            status = result.get("status_code")
+            if none_on_404 and (status == 404 or (status is None and err.startswith("API error 404:"))):
                 return None
             raise RuntimeError(f"{method} {path} failed: {err}")
         if result is None:
@@ -1723,6 +1752,46 @@ class RemoteBackend(BackendCapabilities):
         if result is None:
             raise RuntimeError(f"POST {path} failed: empty response from the API")
         return self._strip_scope(result)
+
+    def decision_history(
+        self,
+        decision_id: str,
+        limit: int | None = None,
+        before: str | None = None,
+        as_of: str | None = None,
+    ) -> dict[str, Any] | None:
+        """GET /memory/decisions/{decision_id}/history (STUDIO-DECISION-VIEW-1). 404 (unknown or not readable) is None."""
+        params = {
+            key: value
+            for key, value in (("limit", limit), ("before", before), ("as_of", as_of))
+            if value is not None
+        }
+        return self._decision_request(
+            "GET",
+            f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/history",
+            none_on_404=True,
+            **({"params": params} if params else {}),
+        )
+
+    def decision_sites(
+        self,
+        decision_id: str,
+        at: str | None = None,
+        scopes: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | None:
+        """GET /memory/decisions/{decision_id}/sites (STUDIO-DECISION-VIEW-1), one call for the whole table. Each extra
+        site is sent as one repeated ``scope`` query value (JSON object). 404 is None."""
+        params: dict[str, Any] = {}
+        if at is not None:
+            params["at"] = at
+        if scopes:
+            params["scope"] = [json.dumps(s, separators=(",", ":")) for s in scopes]
+        return self._decision_request(
+            "GET",
+            f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/sites",
+            none_on_404=True,
+            **({"params": params} if params else {}),
+        )
 
     def decision_reinforce(
         self, decision_id: str, evidence_id: str

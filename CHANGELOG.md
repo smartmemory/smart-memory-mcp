@@ -1,3 +1,34 @@
+## 2.0.4
+
+## Unreleased - BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: land census fix (2026-11-23)
+
+- `backends/local.py` `search`: imports `last_conflict_check` by name from `smartmemory_app.storage`, falling back to a function returning None for an older wrapper without it. Same behaviour as the earlier `getattr`, but the save-return census (`test_every_mcp_ingest_consumer_is_assessed`) can resolve the site. Census and its assertion unchanged.
+
+## Unreleased - BUG-CONFLICT-BACKEND-RECALL-FLAG-1: the two backend `recall` methods honour `fail_if_conflicted` (2026-11-21)
+
+- `backends/remote.py` `recall`: passes `fail_if_conflicted` to the search call that checks it (the same body key `recall_pack` sends). The service's 409 refusals surface as before, and core's `mark` marker is printed as one `conflict_check: {...}` line, unchanged, after the rows (or alone when every row was filtered out). Flag unset: the request and the text are unchanged.
+- `backends/local.py` `recall`: `storage.recall` has no such parameter, so a set flag raises `ValueError` ("fail_if_conflicted is not supported by LocalBackend.recall") instead of answering unchecked. Flag unset or false: unchanged.
+- Tests: `tests/test_recall_conflict_flag.py` (5 new rows).
+
+## Unreleased - BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: the "could not decide" conflict result reaches the tool caller (2026-11-21)
+
+- `backends/remote.py` `_raise_recall_conflict`: the service's 409 `conflict_check_undecided` is a tool error `conflict_check_undecided: <message>`, as `recall_conflict` already was. It was a generic error before. The rest of the body (`pairs`, `reason`, `method`, `hint`, the not-checked count) follows as one JSON line, unchanged, for both 409s.
+- `tools/common.py` `graceful`: the local path's `ConflictCheckUndecidedError` (core) is the same tool error with the same line. `RecallConflictError` now carries `method` and `pairs` in it too.
+- `memory_search` prints core's `mark` marker as one `conflict_check: {...}` line, unchanged, from the hosted service (`conflict_check` in the response) and from the local app (`storage.last_conflict_check()`, needs the wrapper change of the same unit). `memory_recall_pack` already returned `manifest.conflict_check` whole.
+- Tests: `tests/test_recall_conflict_flag.py` (4 new rows).
+## 2.0.3
+
+## Unreleased - STUDIO-DECISION-VIEW-1 U5: decision history and site table tools, and the one-call "who replaced it" answer
+
+- New tools `decision_history(decision_id, limit, before, as_of)` and `decision_sites(decision_id, at, scopes)` (local, remote, hosted; read-only): the dated history of a decision with who and why, and which rule of its chain is in force at each site on a date, in one call. A rule you cannot read shows as "a rule you cannot see", with no id or text.
+- `decision_get` and `decision_provenance` now add plain-words lines after the decision: who recorded it (and for whom), the stated decider (marked as not verified), and what replaced it with who, when and why, and what it replaced. A read without the new fields prints nothing extra.
+- Fix: local `decision_provenance` with no `as_of` or site qualifier read core's bare `DecisionQueries`, which does not lay the who and replaced blocks on the decision; it now always reads through the core facade, like the dated read.
+- `auto-changes` is a reserved decision id segment; the checked-in route table gains the four new decision view routes.
+- Remote decision reads now distinguish a service failure mentioning a missing upstream resource from an HTTP 404 on the requested decision.
+- The MCP route inventory follows the decision-view service snapshot, including the reserved workspace-templates path.
+- Local and hosted decision detail and provenance now show a replaced label for a scheduled replacement and explain how site applicability is determined.
+- The two reads are available at every tier and through the hosted connector.
+
 ## 2.0.2
 
 - TEST-TEARDOWN-1: Removed four test cases that pinned a fixed local tool table, a wait helper's imports, or census bookkeeping. Retained the runtime tool and wait coverage.

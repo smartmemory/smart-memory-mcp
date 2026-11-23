@@ -345,7 +345,7 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
 
     assert advertised == set(HOSTED_TOOLS)
     assert (
-        len(advertised) == 38
+        len(advertised) == 40
     )  # SM-SCOPED-VALIDITY-1 six remote decision tools + DRIFT-V3-DHRUV-BOUNDARIES-1 memory_supersede + WS-POLICY-10 create_workspace + OUTREACH-MARIUS-HITL-SURFACE-1 p4 review_queue_list/settle
 
 
@@ -400,6 +400,8 @@ SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
         {"decision_id": "dec-1", "new_content": "new decision", "reason": "amend"},
     ),
     ("decision_provenance", {"decision_id": "dec-1"}),
+    ("decision_history", {"decision_id": "dec-1"}),  # STUDIO-DECISION-VIEW-1 U5
+    ("decision_sites", {"decision_id": "dec-1"}),  # STUDIO-DECISION-VIEW-1 U5
     ("review_queue_list", {}),  # OUTREACH-MARIUS-HITL-SURFACE-1 p4
     (
         "review_queue_settle",
