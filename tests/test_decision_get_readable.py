@@ -97,7 +97,7 @@ def test_g3_pending_requirements_open_and_done_before_attribution():
     lines = _get(_pending()).splitlines()
     assert "State: pending" in lines[1]
     open_line = next(i for i, x in enumerate(lines) if "[open] Wall-load check" in x)
-    done_line = next(i for i, x in enumerate(lines) if "[done] Facilities sign-off" in x and "cleared by user-b" in x)
+    done_line = next(i for i, x in enumerate(lines) if "[done] Facilities sign-off" in x and "supporting memory user-b" in x)
     assert open_line < next(i for i, x in enumerate(lines) if x.startswith("Recorded by"))
     assert done_line > open_line
 
@@ -143,3 +143,31 @@ def test_g9_belief_reads_keep_their_names_and_are_omitted_when_not_returned():
     out = _get(_active())
     assert "Evidence: belief_hold=0.00 plausibility_hold=1.00 ignorance=1.00" in out
     assert "Evidence:" not in _get({"decision_id": "dec_9", "content": "Bare", "status": "active"})
+
+
+def test_r1_m1_resolved_by_is_supporting_memory_not_an_actor():
+    d = _active()
+    d["pending_requirements"] = [
+        PendingRequirement(requirement_id="r2", description="Facilities sign-off", requirement_type="evidence",
+                           resolved=True, resolved_by="memory_evidence_123", resolved_at=None).to_dict()
+    ]
+    out = _get(d)
+    assert "cleared by" not in out
+    assert "supporting memory memory_evidence_123" in out
+
+
+def test_r1_l1_withheld_statement_prints_no_none():
+    row = {"decision_id": "dec_1", "content": None, "as_of_resolution": "unresolved",
+           "as_of_unknown_fields": ["content"]}
+    out = _get(row, as_of=AS_OF)
+    assert out.splitlines()[0] == f"Decision dec_1 as of {AS_OF}"
+    assert "None" not in out and "Not known at that instant: content" in out
+    assert _get({"decision_id": "dec_2", "status": "active"}).splitlines()[0] == "Decision dec_2"
+
+
+def test_r1_l2_unreturned_resolution_has_no_state_marker():
+    out = _get({**_active(), "pending_requirements": [{"description": "Wall-load evidence"}]})
+    assert "- Wall-load evidence" in out
+    assert "[open]" not in out and "[done]" not in out
+    out = _get({**_active(), "pending_requirements": [{"description": "A", "resolved": False}]})
+    assert "- [open] A" in out
