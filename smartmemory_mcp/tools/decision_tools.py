@@ -426,10 +426,11 @@ def register(mcp):
                 topic=topic, limit=limit, **dated(as_of), **options
             )
 
+            when = "" if as_of is None else f" as of {as_of}"
             if not decisions:
-                return f"No decisions found about: {topic}"
+                return f"No decisions found about: {topic}{when}"
 
-            output = [f"Found {len(decisions)} decisions about '{topic}':\n"]
+            output = [f"Found {len(decisions)} decisions about '{topic}'{when}:\n"]
             output.extend(_summary_line(d) for d in decisions)
             return "\n".join(output)
         except Exception as e:
