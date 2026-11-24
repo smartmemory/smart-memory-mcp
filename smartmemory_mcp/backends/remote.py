@@ -1921,12 +1921,20 @@ class RemoteBackend(BackendCapabilities):
 
     def decision_try_activate(self, decision_id: str) -> bool:
         """POST /memory/decisions/pending/{decision_id}/activate."""
+        return self.decision_activate(decision_id)["activated"]
+
+    def decision_activate(self, decision_id: str) -> dict[str, Any]:
+        """POST /memory/decisions/pending/{decision_id}/activate: ``activated`` and the optional ``reason``.
+
+        The route sends ``reason`` only when it may tell this caller why (BUG-MCP-ACTIVATE-STAGED-REASON-1); anything
+        that is not a string reads as no reason."""
         result = self._decision_request(
             "POST",
             f"/memory/decisions/pending/{path_id(decision_id, under='/memory/decisions/pending/')}/activate",
             json={},
         )
-        return bool(result.get("activated"))
+        reason = result.get("reason")
+        return {"activated": bool(result.get("activated")), "reason": reason if isinstance(reason, str) else None}
 
     # -- Plans, anchors, failure journal (SM-LOCAL-TOOLS-1) --
     #

@@ -816,11 +816,15 @@ def register(mcp):
         """Activate a pending decision if all requirements are resolved (no-op otherwise)."""
         try:
             backend = get_backend()
-            activated = backend.decision_try_activate(decision_id)
+            outcome = backend.decision_activate(decision_id)
+            if outcome.get("activated"):
+                return f"Decision {decision_id} activated (pending -> active)"
+            # BUG-MCP-ACTIVATE-STAGED-REASON-1: the backend says "staged" only to a caller who may see the staged
+            # decision; without it (missing, hidden, any other state, an unknown value) the reply stays as before.
+            if outcome.get("reason") == "staged":
+                return f"Decision {decision_id} waits for its approval's publish; it was not activated"
             return (
-                f"Decision {decision_id} activated (pending -> active)"
-                if activated
-                else f"Decision {decision_id} still pending (unresolved requirements remain)"
+                f"Decision {decision_id} still pending (unresolved requirements remain)"
             )
         except Exception as e:
             logger.error(f"Failed to activate pending decision: {e}", exc_info=True)

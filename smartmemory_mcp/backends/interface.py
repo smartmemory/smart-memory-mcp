@@ -495,6 +495,14 @@ class MemoryBackend(Protocol):
         """True when the pending decision became active."""
         ...
 
+    def decision_activate(self, decision_id: str) -> dict[str, Any]:
+        """``{"activated": bool, "reason": str | None}`` (BUG-MCP-ACTIVATE-STAGED-REASON-1).
+
+        ``reason`` is ``"staged"`` (approved, waits for its approval's publish) only when not activated and the caller
+        may see the staged decision; None otherwise (missing, hidden, every other state). Contract smart-memory-docs
+        ``docs/plans/contracts/decisions.json`` ``api.activate_response``."""
+        ...
+
     # --- Patterns, plans, anchors, failure journal (SM-LOCAL-TOOLS-1) ------------
     # Plain dicts/lists/strings, as the decision block. Local runs the core managers on
     # the real store; remote raises NotImplementedError (no client for the routes yet).

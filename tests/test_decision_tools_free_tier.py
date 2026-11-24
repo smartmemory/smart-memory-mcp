@@ -110,7 +110,9 @@ for name, args in rows:
         err = None
     except Exception as exc:  # rendering errors still prove the tool was callable
         err = type(exc).__name__ + ": " + str(exc)
-    out[name] = {"reached": name in reached, "error": err}
+    # BUG-MCP-ACTIVATE-STAGED-REASON-1: decision_try_activate reaches backend.decision_activate (activated + reason).
+    method = {"decision_try_activate": "decision_activate"}.get(name, name)
+    out[name] = {"reached": method in reached, "error": err}
 print(json.dumps(out))
 """
 

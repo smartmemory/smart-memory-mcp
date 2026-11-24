@@ -1,3 +1,9 @@
+## Unreleased - BUG-MCP-ACTIVATE-STAGED-REASON-1: `decision_try_activate` says a staged decision waits for its publish (2026-11-24)
+
+- `decision_try_activate` answers `Decision <id> waits for its approval's publish; it was not activated` when the backend reports `reason: "staged"` (BUG-MCP-ACTIVATE-REPLY-1 note A4). The backend says so only to a caller who may see the staged decision. Every other answer is unchanged, and an unknown reason reads as none.
+- New backend method `decision_activate(decision_id) -> {"activated", "reason"}`: local calls core `try_activate`, then (if not activated) core's scoped `activation_blocker`; remote reads the route's optional `reason`. `decision_try_activate` (bool) is unchanged; remote now delegates to it. Path census row renamed to `decision_activate` (the request site).
+- Tests: `tests/test_activate_staged_reason.py` (new; remote, and local over a real core Lite store). Needs core (local) or the service (remote) change of the same unit.
+
 ## 2.0.4
 
 ## Unreleased - BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: land census fix (2026-11-23)

@@ -1517,6 +1517,13 @@ class LocalBackend(BackendCapabilities):
     def decision_try_activate(self, decision_id: str) -> bool:
         return bool(self._residuation().try_activate(decision_id))
 
+    def decision_activate(self, decision_id: str) -> dict[str, Any]:
+        """Core ``try_activate``, then (only when it did not activate) core's scoped ``activation_blocker``."""
+        residuation = self._residuation()
+        activated = bool(residuation.try_activate(decision_id))
+        reason = None if activated else residuation.activation_blocker(decision_id)
+        return {"activated": activated, "reason": reason}
+
     # -- Patterns, plans, anchors, failure journal (SM-LOCAL-TOOLS-1) --
     #
     # Same rule as the decision block above: the core managers take the REAL SmartMemory

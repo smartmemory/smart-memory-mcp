@@ -308,11 +308,11 @@ ROWS = [
         lambda b, i: b.decision_resolve_requirement(i, "req", "mem"),
     ),
     (
-        "decision_try_activate",
+        "decision_activate",
         REMOTE,
         "POST",
         "/memory/decisions/pending/{decision_id}/activate",
-        lambda b, i: b.decision_try_activate(i),
+        lambda b, i: b.decision_activate(i),
     ),
     (
         "pattern_get",
