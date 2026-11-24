@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
+import pytest
+
 from smartmemory_mcp.tools.common import withheld_view
 from tests._tools import tool_fn
 
@@ -29,27 +31,39 @@ def _dump(x):
     return json.dumps(x, default=str)
 
 
-def test_n1_matched_by_values_dropped():
-    for bad in ([SECRET], [{"note": SECRET}], ["lexical", SECRET], ["not-a-lane"], SECRET, {"a": SECRET}, 7):
-        out = withheld_view(_flagged(matched_by=bad))
-        assert "matched_by" not in out, bad
-        assert SECRET not in _dump(out)
+# R5 (fix r1): one case per field/value pair, so each pair fails or passes on its own.
+@pytest.mark.parametrize(
+    "bad", [[SECRET], [{"note": SECRET}], ["lexical", SECRET], ["not-a-lane"], SECRET, {"a": SECRET}, 7], ids=repr
+)
+def test_n1_matched_by_values_dropped(bad):
+    out = withheld_view(_flagged(matched_by=bad))
+    assert "matched_by" not in out, bad
+    assert SECRET not in _dump(out)
 
 
-def test_n2_memory_type_and_ids_dropped():
-    for bad in (SECRET, {"note": SECRET}, ["semantic"], 5):
-        assert "memory_type" not in withheld_view(_flagged(memory_type=bad)), bad
-    for bad in ({"note": SECRET}, [SECRET], 5):
-        assert "item_id" not in withheld_view(_flagged(item_id=bad)), bad
-        assert "decision_id" not in withheld_view(_flagged(decision_id=bad)), bad
+@pytest.mark.parametrize("bad", [SECRET, {"note": SECRET}, ["semantic"], 5], ids=repr)
+def test_n2_memory_type_dropped(bad):
+    assert "memory_type" not in withheld_view(_flagged(memory_type=bad)), bad
+
+
+@pytest.mark.parametrize("field", ["item_id", "decision_id"])
+@pytest.mark.parametrize("bad", [{"note": SECRET}, [SECRET], 5], ids=repr)
+def test_n2_ids_dropped(field, bad):
+    assert field not in withheld_view(_flagged(**{field: bad})), bad
+
+
+def test_n2_str_decision_id_kept():
     assert withheld_view(_flagged(decision_id="d-1"))["decision_id"] == "d-1"
 
 
-def test_n3_score_and_version_dropped():
-    for bad in ("0.5", True, float("nan"), float("inf"), {"n": SECRET}, None):
-        assert "score" not in withheld_view(_flagged(score=bad)), bad
-    for bad in ("2", True, 1.5, {"n": SECRET}):
-        assert "version" not in withheld_view(_flagged(version=bad)), bad
+@pytest.mark.parametrize("bad", ["0.5", True, float("nan"), float("inf"), {"n": SECRET}, None], ids=repr)
+def test_n3_score_dropped(bad):
+    assert "score" not in withheld_view(_flagged(score=bad)), bad
+
+
+@pytest.mark.parametrize("bad", ["2", True, 1.5, {"n": SECRET}], ids=repr)
+def test_n3_version_dropped(bad):
+    assert "version" not in withheld_view(_flagged(version=bad)), bad
 
 
 def test_n4_negative_control_clean_values_kept():

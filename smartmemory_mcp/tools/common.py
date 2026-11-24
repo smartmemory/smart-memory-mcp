@@ -4,6 +4,7 @@ import json
 import functools
 import logging
 import math
+import sys
 from typing import Any, Callable, Optional
 
 from smartmemory_mcp.backends.dispatch import rebuild_lock, resolve_backend
@@ -34,7 +35,13 @@ _KNOWN_MEMORY_TYPES = frozenset(
 
 
 def _real_number(v: Any) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    """A real, finite number a renderer can format as a float (``f"{v:.3f}"``, ``float(v)``) without raising."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return False
+    if isinstance(v, int):
+        # fix r1: int/float comparison is exact and never converts, so a huge int is dropped instead of raising.
+        return abs(v) <= sys.float_info.max
+    return math.isfinite(v)
 
 
 _WITHHELD_VALUE_OK = {

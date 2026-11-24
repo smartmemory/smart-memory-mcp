@@ -41,6 +41,7 @@ from .common import (
     conflict_check_text,
     resolution_text,
     withheld_view,
+    is_withheld,
     read_metadata,
     _UNSET,
 )
@@ -352,21 +353,27 @@ def _build_working_context(
     tokens_used = 0
     for row in raw[:k]:
         # ``row`` is a MemoryResult dict returned by backend.search.
-        content = row.get("content", "")
+        # BUG-MCP-WITHHELD-TYPED-KEEP-1 fix r1: a withheld row is projected BEFORE any of its values is read, so its
+        # id, type and score are the checked ones (a raw score is never converted, a raw id never reaches an error).
+        # Its raw metadata is still carried for memory_recall's internal session filter; every returned item passes
+        # ``withheld_view`` again below (get_working_context) or in memory_recall.
+        withheld = is_withheld(row)
+        seen = withheld_view(row) if withheld else row
+        content = seen.get("content", "")
         item_tokens = _estimate_tokens(content)
         if max_tokens is not None and tokens_used + item_tokens > max_tokens:
             break
-        activation_score = compute_activation_score(row)
+        activation_score = compute_activation_score(seen)
         entry = _strip_identity_metadata(
             {
-                "item_id": row.get("item_id"),
+                "item_id": seen.get("item_id"),
                 "content": content,
-                "memory_type": row.get("memory_type"),
+                "memory_type": seen.get("memory_type"),
                 "metadata": row.get("metadata") or {},
                 "via_supersession_of": row.get("via_supersession_of"),
                 "score_breakdown": {
                     "activation": activation_score,
-                    "relevance": float(row.get("score") or 0.0),
+                    "relevance": float(seen.get("score") or 0.0),
                     "recency": 1.0,
                     "centrality": 1.0,
                     "anchor_forced": False,
@@ -375,9 +382,9 @@ def _build_working_context(
                 },
             }
         )
-        if row.get("content_withheld"):
-            entry["content_withheld"] = True  # a root-only marker survives to the final withheld_view
-        status = validated_carrier(row.get("read_status"), row.get("item_id"))
+        if withheld:
+            entry["content_withheld"] = True  # the marker survives to the final withheld_view, wherever it was
+        status = validated_carrier(row.get("read_status"), seen.get("item_id"))
         if status is not None:
             entry["read_status"] = status
         items.append(entry)
@@ -391,7 +398,8 @@ def _build_working_context(
 
     response = {
         "decision_id": decision_id,
-        "items": [model_item(item) for item in items] if model_facing else items,
+        # fix r1: projected while the marker is still present (model_item empties metadata).
+        "items": [model_item(withheld_view(item)) for item in items] if model_facing else items,
         "drift_warnings": [],
         "strategy_used": "fast:recency",
         "tokens_used": tokens_used,
@@ -456,8 +464,8 @@ def _format_catalog(query: str, results: list) -> str:
         content = str(item["content"]).replace("\n", " ")
         snippet = (content[:100] + "...") if len(content) > 100 else content
 
-        item_id = item["item_id"]
-        mtype = item["memory_type"]
+        # fix r1: a withheld projection may have dropped its id or type; the absent field is omitted.
+        id_type = "  ".join(str(item[k]) for k in ("item_id", "memory_type") if k in item)
         score = item.get("score")
         score_str = f"  {score:.3f}" if score is not None else ""
         score_str += found_by_text(item, "  ")
@@ -466,7 +474,7 @@ def _format_catalog(query: str, results: list) -> str:
         stale_str = "  ⚠ stale" if (meta or {}).get("stale", False) else ""
 
         lines.append(
-            f"{i}. {item_id}  {mtype}{score_str}  {age_str}{stale_str}{supersession_label(item)}"
+            f"{i}. {f'{id_type}{score_str}'.lstrip()}  {age_str}{stale_str}{supersession_label(item)}"
         )
         lines.append(f"   {snippet}")
         if diagnostic := resolution_text(item, meta):
@@ -505,7 +513,7 @@ def _format_recall(
         lines.append(f"[{i}]{supersession_label(item)} {age_part}{snippet}")
         lines.append("")
 
-    item_ids = ", ".join(str(item["item_id"]) for item in results if item["item_id"])
+    item_ids = ", ".join(str(item["item_id"]) for item in results if item.get("item_id"))
     lines.append(
         f"(Retrieved {len(results)} turns."
         + (
@@ -714,8 +722,9 @@ def register_free(mcp):
             # Backends return normalized memory dictionaries.
             content = str(item["content"])
             preview = content[:200] + "..." if len(content) > 200 else content
-            item_id = item["item_id"]
-            mtype = item["memory_type"]
+            # fix r1: a withheld projection may have dropped its id or type; the absent field is omitted.
+            item_id = item.get("item_id")
+            type_str = f" ({item['memory_type']})" if "memory_type" in item else ""
             score = item.get("score")
             score_str = f" (score: {score:.3f})" if score is not None else ""
             score_str += found_by_text(item, " ")
@@ -735,15 +744,15 @@ def register_free(mcp):
 
             # CORE-PROPS-1: low-confidence tilde marker
             id_display = (
-                f"~[{item_id}]"
+                ""
+                if "item_id" not in item
+                else f"~[{item_id}]"
                 if confidence is not None and confidence < 0.5
                 else f"[{item_id}]"
             )
+            head = f"{stale_prefix}{id_display}{type_str}{score_str}{conf_str}{lineage_str}{stale_suffix}"
 
-            output.append(
-                f"{i}. {stale_prefix}{id_display} ({mtype}){score_str}{conf_str}{lineage_str}{stale_suffix}"
-                f"{supersession_label(item)}"
-            )
+            output.append(f"{i}. {head.lstrip()}{supersession_label(item)}")
             output.append(f"   {preview}\n")
             if diagnostic := resolution_text(item):
                 output.append(diagnostic)
@@ -984,10 +993,9 @@ def register_free(mcp):
 
         item = withheld_view(item)
         if not include_metadata:
-            parts = [
-                f"Memory Item: {item_id}",
-                f"Type: {item['memory_type']}",
-            ]
+            parts = [f"Memory Item: {item_id}"]
+            if "memory_type" in item:  # fix r1: a withheld projection may have dropped it
+                parts.append(f"Type: {item['memory_type']}")
             created = _iso_created_line(item, item_id)
             if created:
                 parts.append(created)
@@ -998,14 +1006,12 @@ def register_free(mcp):
             return "\n".join(parts)
 
         content = item["content"]
-        mtype = item["memory_type"]
         meta = item["metadata"]
 
-        parts = [
-            f"Memory Item: {item_id}",
-            f"Type: {mtype}",
-            f"Content: {content}",
-        ]
+        parts = [f"Memory Item: {item_id}"]
+        if "memory_type" in item:  # fix r1: a withheld projection may have dropped it
+            parts.append(f"Type: {item['memory_type']}")
+        parts.append(f"Content: {content}")
         if meta:
             parts.append(f"Metadata: {meta}")
         return "\n".join(parts)
