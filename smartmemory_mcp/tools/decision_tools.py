@@ -275,7 +275,13 @@ def _decision_text(decision: Any, as_of: Optional[str] = None) -> str:
     for name, label in (("rejected_alternatives", "Rejected alternatives"), ("constraints", "Constraints")):
         if _present(_field(decision, name)):
             lines.append(f"{label}: {'; '.join(str(x) for x in _field(decision, name))}")
-    who = "\n".join(x for x in who_text(decision).splitlines() if x != "Status: replaced")
+    # The shared "Status: replaced" line is dropped only when the State line already says so. A decision replaced on a
+    # site schedule stays ``active`` (still in force somewhere), and that line is the only place the read says it was
+    # replaced (REL-2-0-5-POSTLAND-RED-NIGHT-1, decision-view note N2).
+    said = str(state).lower() if _present(state) else ""
+    who = "\n".join(
+        x for x in who_text(decision).splitlines() if not (x == "Status: replaced" and said in ("replaced", "superseded"))
+    )
     if who:
         lines.append(who)
     diagnostic = resolution_text(decision)
