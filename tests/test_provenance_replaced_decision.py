@@ -8,16 +8,16 @@ answered "Decision not found" because the provenance read ran without the histor
   where the history gate lives, so it is the one that fails if the gate is bypassed.
 * hosted leg: the production hosted ASGI app over the wire, with ``svc-api`` stubbed at ``httpx.request`` (no live
   service). The stub answers the provenance route with the body the service returns for a replaced decision. This leg
-  exercises the hosted tool dispatch, ``RemoteBackend`` route/params and rendering (a replaced decision is rendered,
-  its successor named, never "Decision not found"). It does NOT exercise the service's history gate.
+  exercises the hosted tool dispatch, ``RemoteBackend`` route/params and rendering (a replaced decision is rendered
+  with one successor counted, never "Decision not found"; the client sees the successor's count, not its id or text).
+  It does NOT exercise the service's history gate. This leg needs no local core, so it runs in a hosted-only job; only
+  the local leg skips when core is absent.
 """
 
 from __future__ import annotations
 
 import httpx
 import pytest
-
-pytest.importorskip("smartmemory.decisions")
 
 A = "Use Postgres for the ledger."
 B = "Use MySQL for the ledger."
@@ -38,6 +38,7 @@ class _FakeMCP:
 
 @pytest.fixture
 def local(tmp_path, monkeypatch):
+    pytest.importorskip("smartmemory.decisions")
     from smartmemory.pipeline.config import PipelineConfig
     from smartmemory.tools.factory import create_lite_memory
 
@@ -95,6 +96,7 @@ def test_local_trace_of_a_replaced_decision_is_returned_not_not_found(local):
     answer = backend.decision_provenance(a)
     assert answer is not None and answer["decision"] is not None
     assert answer["decision"]["decision_id"] == a
+    assert answer["decision"]["status"] == "superseded"
     assert _ids(answer["superseded_by"]) == [b]
 
     # and B, the current rule, names A as what it replaced
@@ -161,3 +163,5 @@ def test_hosted_trace_of_a_replaced_decision_is_returned_not_not_found(monkeypat
     assert NOT_FOUND not in text
     assert "Provenance for dec-a:" in text and A in text
     assert "Superseded by: 1 decisions" in text
+    # what the client actually sees: the successor only as a count, never its id or text
+    assert "dec-b" not in text and B not in text
