@@ -4,6 +4,9 @@
 ## Unreleased - BUG-DECISION-HISTORY-GAPS-1 fix round 1: history text names who answered a review (2026-11-23)
 
 - `tools/common.py` `history_text`: a review answer reads "asked by <proposer>, answered by <answered_by>" ("answered by not recorded" for an old row), never "<answer> by <proposer>". A visible replacement whose text at the time was not kept reads "was: text at the time not recorded". Tests: `tests/test_decision_history_answerer_lite.py` (real Lite store).
+## Unreleased - MCP-POSTLAND-RED-NIGHT-1: `decision_get` says "Status: replaced" again for a site-scheduled replacement (2026-11-25)
+
+- `tools/decision_tools.py` `_decision_text`: the shared "Status: replaced" line is dropped only when the State line already says replaced or superseded. A decision replaced on a site schedule stays `active`, and BUG-MCP-DECISION-GET-RAW-1 had removed the only line saying it was replaced (decision-view note N2).
 
 ## 2.0.4
 
