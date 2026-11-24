@@ -1,3 +1,7 @@
+## Unreleased - BUG-MCP-ACTIVATE-STAGED-REASON-1 fix round 1: the whole local call reads alike for hidden and missing ids (2026-11-24)
+
+- Review HIGH 2: covered by the core change of the same round (`try_activate` does the item read for a staged id too). New tests record every Lite store statement of `LocalBackend.decision_activate` for a hidden staged id and a missing id (hidden workspace; another workspace): equal statements, equal answers, byte-equal tool replies, no staged content fetched. The local A4 case now uses core's real approve flow stopped at the publish (core says "staged" only for an approved review). Needs the core change of the same round.
+
 ## Unreleased - BUG-MCP-ACTIVATE-STAGED-REASON-1: `decision_try_activate` says a staged decision waits for its publish (2026-11-24)
 
 - `decision_try_activate` answers `Decision <id> waits for its approval's publish; it was not activated` when the backend reports `reason: "staged"` (BUG-MCP-ACTIVATE-REPLY-1 note A4). The backend says so only to a caller who may see the staged decision. Every other answer is unchanged, and an unknown reason reads as none.
