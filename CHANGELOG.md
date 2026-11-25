@@ -1,3 +1,8 @@
+## Unreleased - TEST-TEARDOWN-1
+
+- TEST-TEARDOWN-1 fix round 1 (2026-11-25): put back `test_save_then_read_census.py::test_the_engine_is_pinned_by_its_hash` (it also checks that an engine edit changes the hash). Three removed, not four.
+- TEST-TEARDOWN-1: Removed four test cases that pinned a fixed local tool table, a wait helper's imports, or census bookkeeping. Retained the runtime tool and wait coverage.
+
 ## 2.0.7
 
 ## Unreleased - BUG-MCP-HOSTED-INSTRUCTIONS-NO-DECISION-TOOLS-1: hosted instructions route decisions to the decision tools (2026-11-25)
