@@ -17,7 +17,7 @@ import pytest
 from smartmemory_mcp.backends.remote import RemoteBackend
 from tests.public_wait import await_public, observe_get
 
-# --- SHARED BEGIN (mirrored in smart-memory-client, with two MCP census pins removed) ---
+# --- SHARED BEGIN (byte-identical in smart-memory-client and smart-memory-mcp tests/test_save_then_read_census.py) ---
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "data" / "save_then_read_census.json"
 
@@ -462,6 +462,16 @@ def test_the_command_line_passes_on_this_tree_and_fails_on_a_stale_fixture(
     monkeypatch.setattr(census, "render", lambda doc: "stale\n")
     assert census.main([]) == 1
     assert "STALE" in capsys.readouterr().out
+
+
+def test_the_engine_is_pinned_by_its_hash():
+    doc = json.loads(FIXTURE.read_text())
+    assert doc["engine_sha"] == census.engine_sha(
+        (ROOT / "scripts" / "save_then_read_census.py").read_text()
+    )
+    assert census.engine_sha(
+        "# --- ENGINE BEGIN ---\na\n# --- ENGINE END ---"
+    ) != census.engine_sha("# --- ENGINE BEGIN ---\nb\n# --- ENGINE END ---")
 
 
 # --- SHARED END ---
