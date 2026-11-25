@@ -240,7 +240,14 @@ class LocalBackend(BackendCapabilities):
     @property
     def _last_search_session_id(self) -> str | None:
         """The synchronous search handler reads the ID on the same thread as search()."""
-        return getattr(self._search_call, "session_id", None)
+        return getattr(self._search_state(), "session_id", None)
+
+    def _search_state(self) -> threading.local:
+        """Per-thread search state; created on first use for instances built without __init__."""
+        state = self.__dict__.get("_search_call")
+        if state is None:
+            state = self.__dict__["_search_call"] = threading.local()
+        return state
 
     def _get_memory(self) -> Any:
         """Resolve storage only when an operation needs the local memory."""
@@ -533,7 +540,7 @@ class LocalBackend(BackendCapabilities):
         session_id = f"local:{uuid4().hex}"
         shown = [r["item_id"] for r in results if r.get("item_id")]
         self._feedback_context = (session_id, shown)
-        self._search_call.session_id = session_id
+        self._search_state().session_id = session_id
         return results
 
     def search_by_metadata(

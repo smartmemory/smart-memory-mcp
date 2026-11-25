@@ -2,6 +2,7 @@
 
 - Fixed the Python module launcher and the hosted probe's exit status on transport errors.
 - Process MCP tools now report unavailable operations, failed development saves, failed evolution-status reads and skipped feedback as errors. Local feedback checks the supplied search session. Development saves include their session or friction metadata.
+- Land fix-up (OPS-CLI-WIRING-AUDIT-1): the local search session state is created on first use (a `LocalBackend` built without `__init__` no longer raises), and the hosted allowlist test's feedback fake returns the service's real `status: ok` shape.
 
 ## 2.0.7
 

@@ -208,7 +208,7 @@ def fake_svc_api(
         if path == "/memory/health":
             return ok({"total_items": 1, "items_by_type": {"semantic": 1}})
         if path == "/memory/result-feedback":
-            return ok({"result_used_count": 1, "result_shown_count": 1})
+            return ok({"status": "ok", "search_session_id": "search:ws:abc", "result_used_count": 1, "result_shown_count": 1})
         if path == "/memory/workspaces":
             sent = {k.lower(): v for k, v in (kwargs.get("headers") or {}).items()}
             if team_headers is not None:
