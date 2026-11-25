@@ -1,3 +1,5 @@
+## 2.0.7
+
 ## Unreleased - BUG-MCP-HOSTED-INSTRUCTIONS-NO-DECISION-TOOLS-1: hosted instructions route decisions to the decision tools (2026-11-25)
 
 - `instructions.py` `HOSTED_INSTRUCTIONS` no longer says "This server has no decision tools" (the hosted server registers eight). A stated decision goes to `decision_create` (one sentence, rejected alternatives and rationale when given) and a replaced one to `decision_supersede`. Test: `tests/test_capture_routing.py` asserts the text names both registered tools and does not deny them.
