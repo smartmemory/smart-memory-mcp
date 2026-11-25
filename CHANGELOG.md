@@ -2,7 +2,38 @@
 
 - TEST-TEARDOWN-1: Removed four test cases that pinned a fixed local tool table, a wait helper's imports, or census bookkeeping. Retained the runtime tool and wait coverage.
 
+## 2.0.7
+
+## Unreleased - BUG-MCP-HOSTED-INSTRUCTIONS-NO-DECISION-TOOLS-1: hosted instructions route decisions to the decision tools (2026-11-25)
+
+- `instructions.py` `HOSTED_INSTRUCTIONS` no longer says "This server has no decision tools" (the hosted server registers eight). A stated decision goes to `decision_create` (one sentence, rejected alternatives and rationale when given) and a replaced one to `decision_supersede`. Test: `tests/test_capture_routing.py` asserts the text names both registered tools and does not deny them.
+## Unreleased - BUG-DECISION-HISTORY-PAGE-TIE-1 (2026-11-23)
+
+- `decision_history` takes a `cursor` argument (an argument, not a new tool: tier counts do not change). When more entries exist the answer now says to pass the returned cursor as `cursor`, and the walk returns every entry exactly once even when several share one instant. `before` still works but is deprecated (it can skip entries that share an instant). Local, remote and hosted backends pass `cursor` through.
+## Unreleased - BUG-DECISION-HISTORY-GAPS-1 fix round 1: history text names who answered a review (2026-11-23)
+
+- `tools/common.py` `history_text`: a review answer reads "asked by <proposer>, answered by <answered_by>" ("answered by not recorded" for an old row), never "<answer> by <proposer>". A visible replacement whose text at the time was not kept reads "was: text at the time not recorded". Tests: `tests/test_decision_history_answerer_lite.py` (real Lite store).
+## Unreleased - MCP-POSTLAND-RED-NIGHT-1: `decision_get` says "Status: replaced" again for a site-scheduled replacement (2026-11-25)
+
+- `tools/decision_tools.py` `_decision_text`: the shared "Status: replaced" line is dropped only when the State line already says replaced or superseded. A decision replaced on a site schedule stays `active`, and BUG-MCP-DECISION-GET-RAW-1 had removed the only line saying it was replaced (decision-view note N2).
+
 ## 2.0.4
+
+## Unreleased - BUG-PROVENANCE-COUNTS-ONLY-1: `decision_provenance` lists each row (2026-11-23)
+
+- `tools/decision_tools.py` `decision_provenance`: the `Evidence`, `Superseded` and `Superseded by` count headers stay; each row now gets a line (id, trimmed content, reason, date; evidence rows without a receipt show their memory content and date). A missing field is left out, never printed as `None`; no history prints no headers. Fix round 1: a predecessor/successor line takes its reason and date from the selected decision's `replaces`/`replaced` link for that row (predecessor falls back to its own `context_snapshot` note; never the creation date, never a successor's own later note); a dated (`as_of`) read prints no neighbor wording; evidence rows without a receipt show `checked_at` or a nested creation date. Tests: `tests/test_decision_provenance_text.py` (12 tests, core's real row shape).
+- Fix round 2 (redesign eval): a dated successor line takes its reason and date from the selected decision's `superseded_by` plus its folded `context_snapshot` note (a dated read has no `replaced` link); dated evidence prints no memory wording (core keeps the current payload); a no-ref evidence row keeps `checked_at` next to the creation date. Tests: 10-cell census matrix (mode x row kind) on each row's own line plus a section-key guard.
+
+## Unreleased - BUG-MCP-TRACE-SUCCESSOR-SNAPSHOT-FALLBACK-1: no snapshot transition on an undated successor (2026-11-24)
+
+- `tools/decision_tools.py` `_provenance_rows`: a successor line takes its reason and date from the selected decision's own snapshot note only on a dated (`as_of`) read, where core serves no replacement link. An undated read prints a reason/date only from a visible `replaced` link naming that row; a hidden link, another id or no link leaves the line without them. Tests (`tests/test_decision_provenance_text.py`): hidden/mismatched/missing link cases, a sparse receipt (check time, no kind) in both modes, dated evidence cells on the block-free selected decision, and a section guard that records the keys the renderer asks for.
+## Unreleased - BUG-MCP-DECISION-GET-RAW-1: `decision_get` answers in readable lines (2026-11-24)
+
+- `tools/decision_tools.py` `decision_get`: replaces the raw object string with statement, state, rationale, lifecycle reason and requirements, then the existing who/replaced lines. Absent fields are omitted, an `as_of` read names its instant, internal ids and counters are no longer printed. The reply for a full decision is under 1 KB (was ~2-2.6 KB). A completed requirement's `resolved_by` is shown as `supporting memory <id>` (it is an evidence memory id, not an actor); a withheld or absent statement leaves the header without text (no `None`); a requirement whose resolution was not returned prints no `[open]`/`[done]` marker.
+
+## Unreleased - BUG-MCP-DATED-SEARCH-REPLY-1: a dated `decision_search` names its instant (2026-11-24)
+
+- `tools/decision_tools.py` `decision_search`: with `as_of`, both the empty and the non-empty reply end the topic phrase with ` as of <instant>`, as `decision_list` does. Undated replies are byte-identical.
 
 ## Unreleased - BUG-FAIL-IF-CONFLICTED-SOURCE-DATE-1: land census fix (2026-11-23)
 

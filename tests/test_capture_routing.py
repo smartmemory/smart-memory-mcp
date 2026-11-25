@@ -73,6 +73,9 @@ def test_hosted_instructions_name_only_hosted_tools():
         "decision_search",
         "decision_provenance",
     } <= HOSTED_TOOLS
+    # The hosted server registers decision_create, so the text must route to it and not deny it exists.
+    assert "decision_create" in mentioned and "decision_supersede" in mentioned
+    assert "no decision tools" not in HOSTED_INSTRUCTIONS.lower()
 
 
 def test_local_instructions_route_decisions_and_dates():
