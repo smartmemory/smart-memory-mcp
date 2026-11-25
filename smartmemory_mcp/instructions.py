@@ -4,9 +4,8 @@ Without these, a model sees only per-tool docstrings and picks a write tool by i
 title. The owner's 2026-10-17 report ("I decided..." and dated statements came back as
 plain items) traced partly to that: no server instructions, a `memory_add` docstring
 that was false on the hosted service, and a `decision_create` docstring that never said
-when to use it. The two variants differ because the hosted allowlist has no decision
-tools (`hosted/tools.py`), so pointing a hosted model at `decision_create` would send it
-to a tool it cannot call. On 2.0 the write tools are memory_save, memory_save_document and
+when to use it. Both variants route decisions to decision_create; the hosted one also names
+decision_supersede, and the hosted allowlist registers both (`hosted/tools.py` DECISION_TOOLS). On 2.0 the write tools are memory_save, memory_save_document and
 memory_save_conversation (U4.42-FU-TOOLS retired memory_ingest and memory_add; FWD-MERGE-4 port).
 """
 
@@ -28,7 +27,10 @@ LOCAL_INSTRUCTIONS = _COMMON + (
 
 HOSTED_INSTRUCTIONS = _COMMON + (
     "- memory_save also takes metadata and tags when you need to attach them.\n"
-    "- This server has no decision tools. Record a decision with memory_save as one plain "
-    "sentence that names the choice and what it replaced (for example 'Decided to use X "
-    "instead of Y because Z') so it stays searchable.\n"
+    "- A decision the user states ('I decided X', 'we chose X over Y', 'we are going with X'): "
+    "use decision_create, with the decision as one sentence and "
+    "rejected_alternatives / rationale when the user gave them.\n"
+    "- A decision the user says replaces an earlier one: use decision_supersede with the old "
+    "decision's id (find it with decision_search or decision_list), the new decision as one sentence "
+    "in new_content, and the reason.\n"
 )

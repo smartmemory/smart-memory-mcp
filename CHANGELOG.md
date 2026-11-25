@@ -1,3 +1,6 @@
+## Unreleased - BUG-MCP-HOSTED-INSTRUCTIONS-NO-DECISION-TOOLS-1: hosted instructions route decisions to the decision tools (2026-11-25)
+
+- `instructions.py` `HOSTED_INSTRUCTIONS` no longer says "This server has no decision tools" (the hosted server registers eight). A stated decision goes to `decision_create` (one sentence, rejected alternatives and rationale when given) and a replaced one to `decision_supersede`. Test: `tests/test_capture_routing.py` asserts the text names both registered tools and does not deny them.
 ## Unreleased - BUG-DECISION-HISTORY-PAGE-TIE-1 (2026-11-23)
 
 - `decision_history` takes a `cursor` argument (an argument, not a new tool: tier counts do not change). When more entries exist the answer now says to pass the returned cursor as `cursor`, and the walk returns every entry exactly once even when several share one instant. `before` still works but is deprecated (it can skip entries that share an instant). Local, remote and hosted backends pass `cursor` through.
