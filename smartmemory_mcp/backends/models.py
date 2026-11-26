@@ -76,6 +76,7 @@ class MemoryResult(TypedDict, total=False):
     # is standing in for a historical belief; an agent must not cite it as history.
     conflict: Optional[dict]
     as_of_resolution: Optional[str]
+    content_withheld: bool
     # Business-time resolution, distinct from transaction history.
     valid_at_resolution: Optional[str]
     # U5.22: response-only extraction status ({extraction_state, processing_stage,
@@ -176,6 +177,8 @@ def normalize_item(raw: Any, default_type: str = "semantic") -> MemoryResult:
         valid_at_resolution=d.get("valid_at_resolution")
         or _md.get("valid_at_resolution"),
     )
+    if d.get("content_withheld"):
+        result["content_withheld"] = True  # core's "text withheld" marker, kept when it is only at the item root
     status = validated_carrier(d.get("read_status"), result["item_id"])
     if status is not None:
         result["read_status"] = status

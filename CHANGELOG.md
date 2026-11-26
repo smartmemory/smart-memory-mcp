@@ -28,6 +28,12 @@
 
 ## 2.0.4
 
+## Unreleased - BUG-MCP-WITHHELD-STATE-1: a withheld as-of version reads as unavailable (2026-11-24)
+
+- `tools/memory_tools.py` `memory_search` and `memory_recall`: a hit core marks `content_withheld` now shows "[unavailable: the text of this earlier version is withheld]" in the text, catalog and citation (preview, footnote) answers, and the structured item carries `content_withheld: true` with `as_of_resolution: "unavailable"` instead of a blank "resolved". The withheld reason and all other metadata are dropped. Readable hits are unchanged.
+- Tests: `tests/test_withheld_as_of_state.py` (4 rows).
+- Fix r1 (security review): one shared boundary, `withheld_view` in `tools/common.py`, replaces the key-stripping helper. A withheld record, at any depth, becomes a status-only projection (ids, score, `content_withheld`, `as_of_resolution: "unavailable"`, the unavailable text), so `conflict`, `derived_from`, `reference`, dates, hashes and the reason no longer pass. `memory_get`, `memory_explain` (withheld audit rows), `decision_get`, `decision_provenance` and `decision_history` route through it. A marker only at the item root is kept by `normalize_item` and the recall working-context entry. Tests: `tests/test_withheld_boundary.py` (7 rows).
+
 ## Unreleased - BUG-PROVENANCE-COUNTS-ONLY-1: `decision_provenance` lists each row (2026-11-23)
 
 - `tools/decision_tools.py` `decision_provenance`: the `Evidence`, `Superseded` and `Superseded by` count headers stay; each row now gets a line (id, trimmed content, reason, date; evidence rows without a receipt show their memory content and date). A missing field is left out, never printed as `None`; no history prints no headers. Fix round 1: a predecessor/successor line takes its reason and date from the selected decision's `replaces`/`replaced` link for that row (predecessor falls back to its own `context_snapshot` note; never the creation date, never a successor's own later note); a dated (`as_of`) read prints no neighbor wording; evidence rows without a receipt show `checked_at` or a nested creation date. Tests: `tests/test_decision_provenance_text.py` (12 tests, core's real row shape).

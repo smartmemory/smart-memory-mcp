@@ -40,6 +40,7 @@ from .common import (
     refuse_scoped_options,
     conflict_check_text,
     resolution_text,
+    withheld_view,
     read_metadata,
     _UNSET,
 )
@@ -164,6 +165,8 @@ _MODEL_ITEM_FIELDS = frozenset(
         "derived_from",
         "reference",
         "as_of_resolution",
+        # BUG-MCP-WITHHELD-STATE-1: the explicit "text withheld" status (never its reason).
+        "content_withheld",
         "conflict",
         "valid_at_resolution",
         "score_breakdown",
@@ -171,6 +174,9 @@ _MODEL_ITEM_FIELDS = frozenset(
         "read_status",
     }
 )
+
+
+withheld_views = withheld_view  # one shared boundary (tools/common.py)
 
 
 def model_item(item: Dict[str, Any], metadata: Any = _UNSET) -> Dict[str, Any]:
@@ -369,6 +375,8 @@ def _build_working_context(
                 },
             }
         )
+        if row.get("content_withheld"):
+            entry["content_withheld"] = True  # a root-only marker survives to the final withheld_view
         status = validated_carrier(row.get("read_status"), row.get("item_id"))
         if status is not None:
             entry["read_status"] = status
@@ -648,7 +656,7 @@ def register_free(mcp):
         except Exception as exc:
             _warn_origin_filter_unavailable(exc)
 
-        results = results[:top_k]
+        results = withheld_views(results[:top_k])
 
         if not results:
             # A partial answer with nothing visible is not "no results": it says it was partial and why.
@@ -842,7 +850,7 @@ def register_free(mcp):
                     scoped.append(r)
             filtered = scoped
 
-        final = filtered[:top_k]
+        final = withheld_views(filtered[:top_k])
         partial = (response.get("partial_answer") or {}).get("reasons") or []
 
         # RECALL-CITATIONS-1: structured response with footnote block when cite=True.
@@ -974,6 +982,7 @@ def register_free(mcp):
         if item is None:
             return f"Memory item not found: {item_id}"
 
+        item = withheld_view(item)
         if not include_metadata:
             parts = [
                 f"Memory Item: {item_id}",
@@ -1025,7 +1034,7 @@ def register_free(mcp):
         result = backend.explain(memory_id)
         if result is None:
             return f"Memory item not found: {memory_id}"
-        return result
+        return withheld_view(result)
 
     @mcp.tool(
         title="Answer a question from memory",

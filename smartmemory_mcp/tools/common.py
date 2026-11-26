@@ -10,6 +10,46 @@ from smartmemory_mcp.hosted.identity import resolve_hosted_backend
 
 logger = logging.getLogger(__name__)
 
+# BUG-MCP-WITHHELD-STATE-1 fix r1: the ONE withheld boundary. Every renderer that shows a stored record (search,
+# recall, get, explain, decision reads) passes its output through ``withheld_view``.
+WITHHELD_FLAG = "content_withheld"
+WITHHELD_TEXT = "[unavailable: the text of this earlier version is withheld]"
+# The only fields a withheld record keeps besides its status: ids and numbers, never text.
+_WITHHELD_KEEP = ("item_id", "decision_id", "memory_type", "score", "matched_by", "version")
+
+
+def is_withheld(item: Any) -> bool:
+    """Core's "text withheld" marker, at the item root or in its metadata."""
+    if not isinstance(item, dict):
+        return False
+    metadata = item.get("metadata")
+    return bool(item.get(WITHHELD_FLAG)) or (
+        isinstance(metadata, dict) and bool(metadata.get(WITHHELD_FLAG))
+    )
+
+
+def withheld_view(value: Any) -> Any:
+    """``value`` as the model may see it: every withheld record, at any depth, is replaced by a status-only
+    projection (allowlisted ids, ``content_withheld``, ``as_of_resolution="unavailable"``, the unavailable text);
+    its reason, metadata, conflict, dates, hashes and every other field are dropped. Anything else is unchanged."""
+    if is_withheld(value):
+        out = {k: value[k] for k in _WITHHELD_KEEP if k in value}
+        out.update(
+            content=WITHHELD_TEXT,
+            content_withheld=True,
+            as_of_resolution="unavailable",
+            metadata={},
+        )
+        if "content_preview" in value:
+            out["content_preview"] = WITHHELD_TEXT
+        return out
+    if isinstance(value, dict):
+        return {k: withheld_view(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [withheld_view(v) for v in value]
+    return value
+
+
 
 def read_metadata(item: Any, tool: str = "") -> Optional[dict]:
     """``item["metadata"]`` validated ONCE per item: a dict (``{}`` when absent or
