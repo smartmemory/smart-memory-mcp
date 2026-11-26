@@ -517,6 +517,7 @@ class LocalBackend(BackendCapabilities):
         try:
             from smartmemory_app.storage import last_conflict_check
         except ImportError:
+
             def last_conflict_check() -> Any:
                 return None
 
@@ -1219,6 +1220,8 @@ class LocalBackend(BackendCapabilities):
             rejected_alternatives=kwargs.get("rejected_alternatives") or [],
             rationale=kwargs.get("rationale"),
             constraints=kwargs.get("constraints") or [],
+            recommended_by=kwargs.get("recommended_by"),
+            decided_by=kwargs.get("decided_by"),
             **scoped_options(scope_go_lives=kwargs.get("scope_go_lives")),
         )
         return _decision_dict(decision)
@@ -1289,6 +1292,8 @@ class LocalBackend(BackendCapabilities):
         constraints: list[str] | None = None,
         scope_go_lives: list[dict[str, Any]] | None = None,
         valid_from: str | None = None,
+        recommended_by: str | None = None,
+        decided_by: str | None = None,
     ) -> dict[str, Any] | None:
         from smartmemory.models.decision import Decision
 
@@ -1297,6 +1302,8 @@ class LocalBackend(BackendCapabilities):
             content=new_content,
             decision_type=new_decision_type,
             confidence=new_confidence,
+            recommended_by=recommended_by,
+            decided_by=decided_by,
         )
         try:
             result = self._decision_manager().supersede(
@@ -1382,7 +1389,16 @@ class LocalBackend(BackendCapabilities):
         cursor: str | None = None,
     ) -> dict[str, Any] | None:
         """STUDIO-DECISION-VIEW-1: core ``get_decision_history`` (the history read gate is bound in core)."""
-        kwargs = {k: v for k, v in (("limit", limit), ("before", before), ("cursor", cursor), ("as_of", as_of)) if v is not None}
+        kwargs = {
+            k: v
+            for k, v in (
+                ("limit", limit),
+                ("before", before),
+                ("cursor", cursor),
+                ("as_of", as_of),
+            )
+            if v is not None
+        }
         return self._mem.get_decision_history(decision_id, **kwargs)
 
     def decision_sites(

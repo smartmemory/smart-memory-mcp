@@ -254,7 +254,9 @@ def test_provenance_renders_the_chain(monkeypatch):
             "decision": DECISION,
             "reasoning_trace": None,
             "evidence": [{"memory": {}}],
-            "superseded": [DECISION],
+            "superseded": [
+                {"decision_id": "dec_0", "content": "Use SQLite for the ledger"}
+            ],
         }
     )
     out = _run("decision_provenance", backend, monkeypatch, decision_id="dec_1")
@@ -262,8 +264,10 @@ def test_provenance_renders_the_chain(monkeypatch):
     assert out == (
         "Provenance for dec_1:\n"
         "Decision: Use Postgres for the ledger\n"
+        "Selected decision: dec_1\n"
         "Evidence: 1 items\n"
-        "Superseded: 1 decisions"
+        "Superseded: 1 decisions\n"
+        "- dec_0: Use SQLite for the ledger"
     )
 
 
