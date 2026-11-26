@@ -1,3 +1,7 @@
+## Unreleased - TEST-TEARDOWN-1
+
+- Removed the fixed list of six review tools. Each tool is exercised through registration in the surviving tests.
+
 ## Unreleased - BUG-ASOF-NEEDS-ZONED-TIMESTAMP-1
 
 - Decision and memory tools accept a calendar date or timestamp for `as_of`. Dates use 23:59:59 UTC, times without a zone use UTC, and answers identify the instant whenever either default applies.

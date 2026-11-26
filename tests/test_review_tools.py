@@ -101,18 +101,6 @@ def _use(monkeypatch, backend):
     return backend
 
 
-def test_all_six_tools_register():
-    # Part 7 (2.0.2): the review approval pair joins the four.
-    assert set(_tools()) == {
-        "review_queue_list",
-        "review_queue_settle",
-        "supersession_policy_get",
-        "supersession_policy_set",
-        "review_approval_get",
-        "review_approval_set",
-    }
-
-
 def test_remote_list_sends_only_status_and_paging(monkeypatch):
     backend = _use(
         monkeypatch,
