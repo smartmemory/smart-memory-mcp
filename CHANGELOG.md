@@ -1,3 +1,7 @@
+## Unreleased - BUG-MCP-HISTORY-CURSOR-TEST-RUNS-NOTHING-1 (2026-11-26)
+
+- Removed `tests/integration/test_decision_history_cursor_walk.py`: it needed a seed file nothing produced, so it skipped on every run and its body never ran. The same checks (limit-2 cursor walk returns all six once, the `decision_history` tool's cursor hint, `invalid_cursor` on a garbage cursor) now run in smart-memory-service `tests/security/test_decision_history_cursor_notes_route.py::TestHistoryCursorNotes::test_h2_mcp_tool_cursor_walk_returns_all_six_once`, against the real app, with this repo auto-pinned.
+
 ## Unreleased - TEST-TEARDOWN-1
 
 - TEST-TEARDOWN-1 fix round 1 (2026-11-25): put back `test_save_then_read_census.py::test_the_engine_is_pinned_by_its_hash` (it also checks that an engine edit changes the hash). Three removed, not four.
