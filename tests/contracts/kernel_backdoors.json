@@ -1,0 +1,35 @@
+{
+ "handle_keys": [
+  "private_graph",
+  "debug_clear",
+  "crud_memory"
+ ],
+ "handles": {
+  "crud_memory": {},
+  "debug_clear": {
+   "smartmemory_mcp/backends/local.py": {
+    "count": 1
+   }
+  },
+  "private_graph": {
+   "smartmemory_mcp/backends/local.py": {
+    "count": 2
+   }
+  }
+ },
+ "member_imports": {},
+ "packages": [
+  "smartmemory_mcp"
+ ],
+ "reasons": [
+  {
+   "changes": [
+    "private_graph smartmemory_mcp/backends/local.py 0->2",
+    "debug_clear smartmemory_mcp/backends/local.py 0->1"
+   ],
+   "date": "2026-11-26",
+   "reason": "K1: today's counts"
+  }
+ ],
+ "schema": 1
+}
