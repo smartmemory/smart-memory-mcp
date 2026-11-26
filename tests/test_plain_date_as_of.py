@@ -33,9 +33,10 @@ def history(monkeypatch):
         )
         try:
             # 1. Record the original and replacement at known UTC instants.
-            with freeze_time("2026-02-28 12:00:00"):
+            # Transformers exposes lazy modules whose dir() imports optional backends.
+            with freeze_time("2026-02-28 12:00:00", ignore=["transformers"]):
                 old = memory.add_decision(OLD).decision_id
-            with freeze_time("2026-03-01 08:00:00"):
+            with freeze_time("2026-03-01 08:00:00", ignore=["transformers"]):
                 memory.supersede_decision(old, Decision(content=NEW), reason="revision")
 
             # 2. Wire the registered tools to the same in-process store.

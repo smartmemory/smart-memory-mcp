@@ -1,7 +1,7 @@
 ## Unreleased - BUG-ASOF-NEEDS-ZONED-TIMESTAMP-1
 
 - Decision and memory tools accept a calendar date or timestamp for `as_of`. Dates use 23:59:59 UTC, times without a zone use UTC, and answers identify the instant whenever either default applies.
-- Declared the clock-freezing dependency used by the plain-date regression tests in the MCP test extra.
+- Declared the clock-freezing dependency used by the plain-date regression tests in the MCP test extra. The fixture excludes Transformers from clock patching so optional image backends stay unloaded.
 
 ## Unreleased - ARCH-FOUNDATION-SHAPES-1
 
