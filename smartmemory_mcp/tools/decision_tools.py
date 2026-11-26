@@ -19,6 +19,7 @@ from smartmemory_mcp.backends.interface import (
     DecisionRestoreRefused,
     EvidenceRefused,
 )
+from .as_of import with_as_of
 from .common import (
     checked_as_of,
     dated,
@@ -376,6 +377,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
+    @with_as_of
     @graceful
     def decision_get(
         decision_id: str,
@@ -389,13 +391,10 @@ def register(mcp):
         Omitted valid_at is resolved once at request start. as_of is independent
         transaction-time history.
 
-        Retrieve a decision by ID.
-
-        ``as_of`` (ISO 8601; omit for now): the decision as it stood then, its status
+        Retrieve a decision by ID. ``as_of`` returns the decision as it stood then, its status
         from the supersession chain and version history; "not found" if it did not
         exist yet."""
         options = scoped_options(business_scope=business_scope, valid_at=valid_at)
-        as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
             decision = withheld_view(backend.decision_get(decision_id, **dated(as_of), **options))
@@ -417,6 +416,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
+    @with_as_of
     @graceful
     def decision_list(
         domain: Optional[str] = None,
@@ -437,7 +437,7 @@ def register(mcp):
         waiting for a person is not a decision yet: it is listed by
         review_queue_list, and the rule it would replace stays "active" until a person settles it.
 
-        ``as_of`` (ISO 8601; omit for now) lists the decisions that held that state at that
+        ``as_of`` lists the decisions that held that state at that
         instant: a decision superseded or retracted since is listed as active, one created
         later is not.
 
@@ -449,7 +449,6 @@ def register(mcp):
                 f"status must be one of {', '.join(_LIST_STATES)} (omit it for active)"
             )
         options = scoped_options(business_scope=business_scope, valid_at=valid_at)
-        as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
             decisions = backend.decision_list(
@@ -483,6 +482,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
+    @with_as_of
     @graceful
     def decision_search(
         topic: str,
@@ -499,9 +499,8 @@ def register(mcp):
 
         Search for active decisions related to a topic.
 
-        ``as_of`` (ISO 8601; omit for now): the decisions active at that instant."""
+        ``as_of``: the decisions active at that instant."""
         options = scoped_options(business_scope=business_scope, valid_at=valid_at)
-        as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
             decisions = backend.decision_search(
@@ -780,6 +779,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
+    @with_as_of
     @graceful
     def decision_provenance(
         decision_id: str,
@@ -795,10 +795,9 @@ def register(mcp):
 
         Get full provenance chain for a decision.
 
-        ``as_of`` (ISO 8601; omit for now): the provenance as it stood then; a
+        ``as_of``: the provenance as it stood then; a
         successor that came later is not listed."""
         options = scoped_options(business_scope=business_scope, valid_at=valid_at)
-        as_of = checked_as_of(as_of)
         try:
             backend = get_backend()
             provenance = withheld_view(
@@ -834,6 +833,7 @@ def register(mcp):
             openWorldHint=False,
         ),
     )
+    @with_as_of
     @graceful
     def decision_history(
         decision_id: str,
@@ -849,8 +849,7 @@ def register(mcp):
         limit (1 to 500, default 100) and cursor page through a long history: when the answer says more entries
         exist, pass the cursor it gives back as cursor to get the next page, with every entry shown exactly once.
         before (ISO 8601: only entries older than this) still works but is deprecated: it can skip entries that
-        share one instant. as_of (ISO 8601) keeps only entries at or before that instant."""
-        as_of = checked_as_of(as_of)
+        share one instant. as_of keeps only entries at or before that instant."""
         before = checked_as_of(before)
         try:
             backend = get_backend()

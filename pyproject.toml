@@ -15,6 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+test = ["freezegun>=1.5.5"]
 hosted = ["py-key-value-aio[redis]>=0.2"]
 keyring = ["keyring>=24.0"]
 
