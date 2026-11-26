@@ -3,7 +3,7 @@
 # === 1. IMPORTS ===
 from datetime import datetime
 from functools import wraps
-from inspect import signature
+from inspect import cleandoc, signature
 import re
 
 from fastmcp.exceptions import ToolError
@@ -50,7 +50,9 @@ def with_as_of(fn):
             return {**result, "as_of_note": note}
         return f"{result}\n{note}"
 
-    wrapped.__doc__ = (fn.__doc__ or "").rstrip() + (
+    # Python 3.12 keeps the docstring indent, 3.13 strips it: clean it before the unindented
+    # tail is appended, or no common margin is left and the tool text keeps its indent.
+    wrapped.__doc__ = cleandoc(fn.__doc__ or "") + (
         "\n\nas_of accepts YYYY-MM-DD (end of day UTC at 23:59:59) or an ISO 8601 "
         "timestamp. Times without a zone use UTC. Zoned times keep their offset. "
         "Omit as_of for the current view."

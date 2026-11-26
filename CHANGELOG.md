@@ -1,4 +1,9 @@
 ## 2.0.9
+## Unreleased - SAME-ANSWER-U2
+
+- Server instructions (hosted and local) now send read questions to the decision tools: asked what was decided or which rule applies, use `decision_search` (current decisions only), then `decision_get` or `decision_provenance` for what a decision replaced and why. Write lines are unchanged.
+- `decision_search`, `decision_get` and `decision_provenance` descriptions open with what the tool does; the business-scope paragraph and `as_of` help follow, word for word.
+- `memory_ask` description says a matching current decision comes back in `decision` (evidence item 1) and that a non-empty `lanes_failed` means the answer may be partial.
 
 ## Unreleased - MCP-DECIDED-BY-1
 

@@ -1051,6 +1051,10 @@ def register_free(mcp):
 
         Uses the same answer route as the web app. ``limit`` is the evidence
         budget (1-50). Provider failures are returned as errors, never answers.
+
+        When a current decision matches the question, the answer carries that
+        decision's own record in ``decision`` (and it is evidence item 1). A non-empty
+        ``lanes_failed`` means the answer may be partial.
         """
         return get_backend().ask(question, limit=limit, reasoning=reasoning)
 
