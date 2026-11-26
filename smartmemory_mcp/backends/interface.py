@@ -396,6 +396,8 @@ class MemoryBackend(Protocol):
         constraints: list[str] | None = None,
         scope_go_lives: list[dict[str, Any]] | None = None,
         valid_from: str | None = None,
+        recommended_by: str | None = None,
+        decided_by: str | None = None,
     ) -> dict[str, Any] | None:
         """{old_decision_id, new_decision_id, status}, or None when absent."""
         ...

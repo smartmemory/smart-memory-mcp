@@ -1,3 +1,7 @@
+## Unreleased - MCP-DECIDED-BY-1
+
+- Decision tools accept and display the stated recommender and decider for each decision version.
+
 ## Unreleased - TEST-TEARDOWN-1
 
 - Removed the fixed list of six review tools. Each tool is exercised through registration in the surviving tests.

@@ -1581,7 +1581,9 @@ class RemoteBackend(BackendCapabilities):
             )
         if err := self._fmt_error(result):
             status = result.get("status_code")
-            if none_on_404 and (status == 404 or (status is None and err.startswith("API error 404:"))):
+            if none_on_404 and (
+                status == 404 or (status is None and err.startswith("API error 404:"))
+            ):
                 return None
             raise RuntimeError(f"{method} {path} failed: {err}")
         if result is None:
@@ -1606,6 +1608,8 @@ class RemoteBackend(BackendCapabilities):
             "confidence": kwargs.get("confidence", 0.8),
         }
         for key in (
+            "recommended_by",
+            "decided_by",
             "source_trace_id",
             "evidence_ids",
             "domain",
@@ -1696,6 +1700,8 @@ class RemoteBackend(BackendCapabilities):
         constraints: list[str] | None = None,
         scope_go_lives: list[dict[str, Any]] | None = None,
         valid_from: str | None = None,
+        recommended_by: str | None = None,
+        decided_by: str | None = None,
     ) -> dict[str, Any] | None:
         """POST /memory/decisions/{decision_id}/supersede."""
         body: dict[str, Any] = {
@@ -1704,6 +1710,10 @@ class RemoteBackend(BackendCapabilities):
             "new_confidence": new_confidence,
             "reason": reason,
         }
+        if recommended_by is not None:
+            body["recommended_by"] = recommended_by
+        if decided_by is not None:
+            body["decided_by"] = decided_by
         if rejected_alternatives is not None:
             body["rejected_alternatives"] = rejected_alternatives
         if rationale is not None:
@@ -1764,7 +1774,12 @@ class RemoteBackend(BackendCapabilities):
         """GET /memory/decisions/{decision_id}/history (STUDIO-DECISION-VIEW-1). 404 (unknown or not readable) is None."""
         params = {
             key: value
-            for key, value in (("limit", limit), ("before", before), ("cursor", cursor), ("as_of", as_of))
+            for key, value in (
+                ("limit", limit),
+                ("before", before),
+                ("cursor", cursor),
+                ("as_of", as_of),
+            )
             if value is not None
         }
         return self._decision_request(

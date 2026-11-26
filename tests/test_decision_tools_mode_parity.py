@@ -288,13 +288,20 @@ def _cases():
                 "related_visible": True,
             }
         ],
-        "start": {"at": "2026-09-01T09:00:00+00:00", "kind": "recorded", "note": "Recorded 1 Sep 2026."},
+        "start": {
+            "at": "2026-09-01T09:00:00+00:00",
+            "kind": "recorded",
+            "note": "Recorded 1 Sep 2026.",
+        },
         "truncated": False,
     }
     yield (
         "decision_history",
         {"decision_id": "dec_1"},
-        _local_core(get_decision_history=lambda _id, **kw: history),
+        _local_core(
+            get_decision_history=lambda _id, **kw: history,
+            get_decision=lambda ident, **kw: _Decision({"decision_id": ident}),
+        ),
         _remote(history),
     )
     sites = {
@@ -305,8 +312,16 @@ def _cases():
         "rows": [
             {
                 "scope": {"site": "03"},
-                "in_force": {"decision_id": "dec_0", "visible": True, "from": "2026-09-01T00:00:00+00:00"},
-                "next": {"decision_id": "dec_1", "visible": True, "from": "2026-11-01T00:00:00+00:00"},
+                "in_force": {
+                    "decision_id": "dec_0",
+                    "visible": True,
+                    "from": "2026-09-01T00:00:00+00:00",
+                },
+                "next": {
+                    "decision_id": "dec_1",
+                    "visible": True,
+                    "from": "2026-11-01T00:00:00+00:00",
+                },
             }
         ],
     }

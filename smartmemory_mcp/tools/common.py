@@ -15,7 +15,14 @@ logger = logging.getLogger(__name__)
 WITHHELD_FLAG = "content_withheld"
 WITHHELD_TEXT = "[unavailable: the text of this earlier version is withheld]"
 # The only fields a withheld record keeps besides its status: ids and numbers, never text.
-_WITHHELD_KEEP = ("item_id", "decision_id", "memory_type", "score", "matched_by", "version")
+_WITHHELD_KEEP = (
+    "item_id",
+    "decision_id",
+    "memory_type",
+    "score",
+    "matched_by",
+    "version",
+)
 
 
 def is_withheld(item: Any) -> bool:
@@ -48,7 +55,6 @@ def withheld_view(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [withheld_view(v) for v in value]
     return value
-
 
 
 def read_metadata(item: Any, tool: str = "") -> Optional[dict]:
@@ -204,7 +210,9 @@ def strict_read_error_text(code: str, message: str, extra: dict) -> str:
     local and the hosted path word the same refusal the same way.
     """
     text = f"{code}: {message}"
-    return text + "\n" + json.dumps(extra, sort_keys=True, default=str) if extra else text
+    return (
+        text + "\n" + json.dumps(extra, sort_keys=True, default=str) if extra else text
+    )
 
 
 _STRICT_FIELDS = ("pairs", "reason", "method", "hint", "pairs_not_checked")
@@ -226,13 +234,22 @@ def graceful(func):
                 f"Detail: {e}"
             )
         except Exception as e:
-            if type(e).__name__ in ("RecallConflictError", "ConflictCheckUndecidedError"):
+            if type(e).__name__ in (
+                "RecallConflictError",
+                "ConflictCheckUndecidedError",
+            ):
                 from fastmcp.exceptions import ToolError
 
                 code = getattr(e, "error_code", None) or (
-                    "recall_conflict" if type(e).__name__ == "RecallConflictError" else "conflict_check_undecided"
+                    "recall_conflict"
+                    if type(e).__name__ == "RecallConflictError"
+                    else "conflict_check_undecided"
                 )
-                extra = {n: getattr(e, n) for n in _STRICT_FIELDS if getattr(e, n, None) is not None}
+                extra = {
+                    n: getattr(e, n)
+                    for n in _STRICT_FIELDS
+                    if getattr(e, n, None) is not None
+                }
                 raise ToolError(strict_read_error_text(code, str(e), extra)) from e
             code = getattr(e, "code", None)
             if code in {
@@ -352,7 +369,12 @@ def conflict_check_text(marker) -> str:
 _HIDDEN_RULE = "a rule you cannot see"
 _LINKING_ACTIONS = ("supersede", "replaced_by", "restore")
 #: The answer to a review (BUG-DECISION-HISTORY-GAPS-1 r1 M1): ``asked_by`` is the proposer, ``answered_by`` who answered.
-_ANSWER_ACTIONS = ("review_approved", "review_rejected", "review_kept_both", "review_out_of_date")
+_ANSWER_ACTIONS = (
+    "review_approved",
+    "review_rejected",
+    "review_kept_both",
+    "review_out_of_date",
+)
 _NOT_RECORDED = "not recorded"
 
 
@@ -362,7 +384,13 @@ def who_text(decision):
     One renderer for every backend and tool (the one-call answer of ``decision_get`` and ``decision_provenance``).
     A field the answer does not carry prints nothing, so an older service reads exactly as before. A replacement or
     replaced rule the caller cannot read prints the frozen wording, with no id, text or link."""
-    get = decision.get if isinstance(decision, dict) else (lambda k, d=None: getattr(decision, k, d))
+    from .decision_attribution import attribution_text
+
+    get = (
+        decision.get
+        if isinstance(decision, dict)
+        else (lambda k, d=None: getattr(decision, k, d))
+    )
     lines = []
     if get("recorded_by"):
         who = f"Recorded by: {get('recorded_by')}"
@@ -376,17 +404,21 @@ def who_text(decision):
             if created
             else "Recorded on: date unknown (before history was kept)"
         )
-    if get("decided_by"):
-        lines.append(f"Decided by (as stated, not verified): {get('decided_by')}")
+    if names := attribution_text(decision):
+        lines.append(names)
     replaced = get("replaced")
     status = get("status")
     label = get("display_status")
-    if label is None and (status == "superseded" or (status == "active" and isinstance(replaced, dict))):
+    if label is None and (
+        status == "superseded" or (status == "active" and isinstance(replaced, dict))
+    ):
         label = "replaced"
     if label == "replaced":
         lines.append("Status: replaced")
         if status == "active":
-            lines.append("The site schedule determines where this rule is still in force.")
+            lines.append(
+                "The site schedule determines where this rule is still in force."
+            )
     if isinstance(replaced, dict):
         when = f" on {replaced['at']}" if replaced.get("at") else ""
         if replaced.get("visible") is False:
@@ -431,7 +463,9 @@ def history_text(decision_id, history):
             # Never "by <proposer>": the proposer asked, someone else may have answered.
             if entry.get("asked_by"):
                 text += f", asked by {entry['asked_by']}"
-            if entry.get("review_id"):  # a review this reader may see; who answered, or that it was not recorded
+            if entry.get(
+                "review_id"
+            ):  # a review this reader may see; who answered, or that it was not recorded
                 text += f", answered by {entry.get('answered_by') or _NOT_RECORDED}"
         else:
             if entry.get("asked_by"):
@@ -442,16 +476,28 @@ def history_text(decision_id, history):
             text += f", reason: {entry['reason']}"
         if entry.get("related_decision_id"):
             text += f" (other decision: {entry['related_decision_id']})"
-        elif entry.get("action") in _LINKING_ACTIONS and entry.get("related_visible") is False:
+        elif (
+            entry.get("action") in _LINKING_ACTIONS
+            and entry.get("related_visible") is False
+        ):
             # ``related_visible`` is false both for "no other decision" and for "one you cannot read": only an action
             # that always names another rule can mean the second.
             text += f" (other decision: {_HIDDEN_RULE})"
         old_text = entry.get("old_content")
-        if old_text is None and entry.get("action") in ("supersede", "replaced_by") and entry.get("related_visible"):
+        if (
+            old_text is None
+            and entry.get("action") in ("supersede", "replaced_by")
+            and entry.get("related_visible")
+        ):
             # The text the rule had at that change was not kept (a link older than its history); never today's text.
             entry = {**entry, "old_content": f"text at the time {_NOT_RECORDED}"}
-        if entry.get("old_content") is not None and entry.get("new_content") is not None:
-            text += f"\n    was: {entry['old_content']}\n    now: {entry['new_content']}"
+        if (
+            entry.get("old_content") is not None
+            and entry.get("new_content") is not None
+        ):
+            text += (
+                f"\n    was: {entry['old_content']}\n    now: {entry['new_content']}"
+            )
         elif entry.get("old_content") is not None:
             text += f"\n    was: {entry['old_content']}"
         elif entry.get("new_content") is not None:
@@ -464,9 +510,13 @@ def history_text(decision_id, history):
         lines.append(start["note"])
     if history.get("truncated"):
         if history.get("next_cursor"):
-            lines.append(f"More entries exist after the last one shown: ask again with cursor set to {history['next_cursor']}.")
+            lines.append(
+                f"More entries exist after the last one shown: ask again with cursor set to {history['next_cursor']}."
+            )
         else:
-            lines.append("More entries exist before the last one shown: ask again with before set to its date.")
+            lines.append(
+                "More entries exist before the last one shown: ask again with before set to its date."
+            )
     return "\n".join(lines)
 
 

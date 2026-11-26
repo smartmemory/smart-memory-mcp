@@ -20,6 +20,7 @@ from smartmemory_mcp.backends.interface import (
     EvidenceRefused,
 )
 from .as_of import with_as_of
+from .decision_attribution import with_attribution, with_history_attribution
 from .common import (
     checked_as_of,
     dated,
@@ -69,7 +70,11 @@ def _row_get(row: Any, name: str) -> Any:
 
 def _trim(text: Any) -> str:
     text = " ".join(str(text).split())
-    return text if len(text) <= _ROW_CONTENT_MAX else text[: _ROW_CONTENT_MAX - 1].rstrip() + "…"
+    return (
+        text
+        if len(text) <= _ROW_CONTENT_MAX
+        else text[: _ROW_CONTENT_MAX - 1].rstrip() + "…"
+    )
 
 
 def _link_for(selected: Any, side: str, row_id: Any) -> Any:
@@ -81,7 +86,10 @@ def _link_for(selected: Any, side: str, row_id: Any) -> Any:
     if row_id is None or links is None:
         return None
     for link in links if isinstance(links, (list, tuple)) else [links]:
-        if _row_get(link, "decision_id") == row_id and _row_get(link, "visible") is not False:
+        if (
+            _row_get(link, "decision_id") == row_id
+            and _row_get(link, "visible") is not False
+        ):
             return link
     return None
 
@@ -95,11 +103,20 @@ def _dated_successor_link(selected: Any, row_id: Any) -> Any:
     snapshot = _row_get(selected, "context_snapshot")
     if not isinstance(snapshot, dict):
         return None
-    reason, when = _row_get(snapshot, "superseded_reason"), _row_get(snapshot, "superseded_at")
-    return {"decision_id": row_id, "reason": reason, "at": when} if (reason or when) else None
+    reason, when = (
+        _row_get(snapshot, "superseded_reason"),
+        _row_get(snapshot, "superseded_at"),
+    )
+    return (
+        {"decision_id": row_id, "reason": reason, "at": when}
+        if (reason or when)
+        else None
+    )
 
 
-def _decision_row_line(row: Any, link: Any = None, *, show_content: bool = True, own_note: bool = False) -> Optional[str]:
+def _decision_row_line(
+    row: Any, link: Any = None, *, show_content: bool = True, own_note: bool = False
+) -> Optional[str]:
     """`- <id>: <content> (reason: <why>, <date>)`; a missing part is left out, never printed as None.
 
     Reason and date are those of the transition between the selected decision and this row: the ``link`` core
@@ -115,9 +132,26 @@ def _decision_row_line(row: Any, link: Any = None, *, show_content: bool = True,
     elif own_note:
         snapshot = _row_get(row, "context_snapshot")
         if isinstance(snapshot, dict):
-            reason, when = _row_get(snapshot, "superseded_reason"), _row_get(snapshot, "superseded_at")
-    head = " ".join(x for x in (f"{ident}:" if ident and content else ident, _trim(content) if content else None) if x)
-    notes = [x for x in (f"reason: {_trim(reason)}" if reason else None, str(when) if when else None) if x]
+            reason, when = (
+                _row_get(snapshot, "superseded_reason"),
+                _row_get(snapshot, "superseded_at"),
+            )
+    head = " ".join(
+        x
+        for x in (
+            f"{ident}:" if ident and content else ident,
+            _trim(content) if content else None,
+        )
+        if x
+    )
+    notes = [
+        x
+        for x in (
+            f"reason: {_trim(reason)}" if reason else None,
+            str(when) if when else None,
+        )
+        if x
+    ]
     return f"- {head}" + (f" ({', '.join(notes)})" if notes else "")
 
 
@@ -141,13 +175,29 @@ def _evidence_row_line(row: Any, *, dated: bool = False) -> Optional[str]:
         return f"- {ref}" + (f" ({', '.join(str(n) for n in notes)})" if notes else "")
     memory = _row_get(row, "memory")
     content = _row_get(memory, "content") if memory is not None and not dated else None
-    ident = _row_get(row, "memory_id") or (_row_get(memory, "item_id") if memory is not None else None)
+    ident = _row_get(row, "memory_id") or (
+        _row_get(memory, "item_id") if memory is not None else None
+    )
     when = _created_of(memory) if memory is not None else None
     if content is None and ident is None:
         return None
-    head = " ".join(x for x in (f"{ident}:" if ident and content else ident, _trim(content) if content else None) if x)
+    head = " ".join(
+        x
+        for x in (
+            f"{ident}:" if ident and content else ident,
+            _trim(content) if content else None,
+        )
+        if x
+    )
     # The creation date and the check time are different facts; keep both.
-    dates = [x for x in (str(when) if when else None, f"checked {checked}" if checked else None) if x]
+    dates = [
+        x
+        for x in (
+            str(when) if when else None,
+            f"checked {checked}" if checked else None,
+        )
+        if x
+    ]
     return f"- {head}" + (f" ({', '.join(dates)})" if dates else "")
 
 
@@ -165,7 +215,10 @@ def _provenance_rows(provenance: Dict[str, Any], *, dated: bool = False) -> List
             "Superseded",
             "decisions",
             lambda r: _decision_row_line(
-                r, _link_for(selected, "replaces", _row_get(r, "decision_id")), show_content=not dated, own_note=True
+                r,
+                _link_for(selected, "replaces", _row_get(r, "decision_id")),
+                show_content=not dated,
+                own_note=True,
             ),
         ),
         (
@@ -177,7 +230,11 @@ def _provenance_rows(provenance: Dict[str, Any], *, dated: bool = False) -> List
                 _link_for(selected, "replaced", _row_get(r, "decision_id"))
                 # The snapshot stands in for the missing link only on a dated read (served without blocks); an
                 # undated read whose link is hidden or names another id prints no transition.
-                or (_dated_successor_link(selected, _row_get(r, "decision_id")) if dated else None),
+                or (
+                    _dated_successor_link(selected, _row_get(r, "decision_id"))
+                    if dated
+                    else None
+                ),
                 show_content=not dated,
             ),
         ),
@@ -204,12 +261,14 @@ _LIST_STATES = ("active", "superseded", "retracted", "pending")
 
 def _summary_line(decision: Any) -> str:
     """One list/search row. Shared so both tools cannot drift apart."""
+    decision = withheld_view(decision)
     confidence = _field(decision, "confidence") or 0.0
     diagnostic = resolution_text(decision)  # once: it warns on malformed metadata
-    return (
+    return with_attribution(
         f"- [{_field(decision, 'decision_id')}] "
         f"({_field(decision, 'decision_type')}, conf={confidence:.2f}): "
-        f"{str(_field(decision, 'content', ''))[:100]}{_uncertainty_marker(decision)}{(' ' + diagnostic) if diagnostic else ''}"
+        f"{str(_field(decision, 'content', ''))[:100]}{_uncertainty_marker(decision)}{(' ' + diagnostic) if diagnostic else ''}",
+        decision,
     )
 
 
@@ -253,7 +312,11 @@ def _decision_text(decision: Any, as_of: Optional[str] = None) -> str:
         conf = _field(decision, "confidence")
         if isinstance(conf, (int, float)):
             extra.append(f"confidence {conf:.2f}")
-        lines.append(f"State: {state}" + (f" ({', '.join(extra)})" if extra else "") + _uncertainty_marker(decision))
+        lines.append(
+            f"State: {state}"
+            + (f" ({', '.join(extra)})" if extra else "")
+            + _uncertainty_marker(decision)
+        )
     if _present(_field(decision, "rationale")):
         lines.append(f"Rationale: {_field(decision, 'rationale')}")
     beliefs = [
@@ -274,15 +337,22 @@ def _decision_text(decision: Any, as_of: Optional[str] = None) -> str:
     if _present(reqs):
         lines.append("Requirements:")
         lines.extend(_requirement_line(r) for r in reqs)
-    for name, label in (("rejected_alternatives", "Rejected alternatives"), ("constraints", "Constraints")):
+    for name, label in (
+        ("rejected_alternatives", "Rejected alternatives"),
+        ("constraints", "Constraints"),
+    ):
         if _present(_field(decision, name)):
-            lines.append(f"{label}: {'; '.join(str(x) for x in _field(decision, name))}")
+            lines.append(
+                f"{label}: {'; '.join(str(x) for x in _field(decision, name))}"
+            )
     # The shared "Status: replaced" line is dropped only when the State line already says so. A decision replaced on a
     # site schedule stays ``active`` (still in force somewhere), and that line is the only place the read says it was
     # replaced (REL-2-0-5-POSTLAND-RED-NIGHT-1, decision-view note N2).
     said = str(state).lower() if _present(state) else ""
     who = "\n".join(
-        x for x in who_text(decision).splitlines() if not (x == "Status: replaced" and said in ("replaced", "superseded"))
+        x
+        for x in who_text(decision).splitlines()
+        if not (x == "Status: replaced" and said in ("replaced", "superseded"))
     )
     if who:
         lines.append(who)
@@ -320,18 +390,23 @@ def register(mcp):
         rationale: Optional[str] = None,
         constraints: Optional[List[str]] = None,
         scope_go_lives: Optional[List[Dict[str, Any]]] = None,
+        recommended_by: Optional[str] = None,
+        decided_by: Optional[str] = None,
     ) -> str:
         """Record a decision the user stated, with provenance.
 
         Use this when the user states a decision: "I decided X", "we chose X over
         Y", "we're going with X". Put the decision in `content` as one sentence and
-        pass `rejected_alternatives` and `rationale` when the user gave them.
+        Supply recommended_by and decided_by only as stated by the writer.
+        Pass `rejected_alternatives` and `rationale` when the user gave them.
         scope_go_lives supplies explicit sponsor (scope=null) or exact site activation
         dates. A site falls back to the sponsor until an exact entry activates. A
         decision stored this way can later be reinforced, superseded or checked for
         conflicts; one stored with memory_save may not be.
         """
         options = scoped_options(scope_go_lives=scope_go_lives)
+        attribution = {"recommended_by": recommended_by, "decided_by": decided_by}
+        options.update({k: v for k, v in attribution.items() if v is not None})
         # CORE-EXPERTISE-1 Phase 1: rejected_alternatives, rationale, constraints
         # capture the "why" structure that makes decisions usable expertise.
         try:
@@ -363,7 +438,7 @@ def register(mcp):
                 lines.append(f"Rationale: {_field(decision, 'rationale')}")
             if _field(decision, "constraints"):
                 lines.append(f"Constraints: {_field(decision, 'constraints')}")
-            return "\n".join(lines)
+            return with_attribution("\n".join(lines), decision)
         except Exception as e:
             logger.error(f"Failed to create decision: {e}", exc_info=True)
             raise
@@ -397,7 +472,9 @@ def register(mcp):
         options = scoped_options(business_scope=business_scope, valid_at=valid_at)
         try:
             backend = get_backend()
-            decision = withheld_view(backend.decision_get(decision_id, **dated(as_of), **options))
+            decision = withheld_view(
+                backend.decision_get(decision_id, **dated(as_of), **options)
+            )
 
             if not decision:
                 return f"Decision not found: {decision_id}"
@@ -539,6 +616,8 @@ def register(mcp):
         constraints: Optional[List[str]] = None,
         scope_go_lives: Optional[List[Dict[str, Any]]] = None,
         valid_from: Optional[str] = None,
+        recommended_by: Optional[str] = None,
+        decided_by: Optional[str] = None,
     ) -> str:
         """Replace a decision, preserving its rationale, alternatives and constraints.
 
@@ -549,11 +628,14 @@ def register(mcp):
         change again after a person has decided it answers "already decided: <outcome> (review
         <id>)", not "held".
 
+        recommended_by and decided_by describe only the replacement, as stated by the writer.
         scope_go_lives schedules exact site activation with sponsor fallback. A
         site-only amendment leaves the sponsor and other sites on their prior rule.
         valid_from is the legacy global date and cannot accompany scope_go_lives.
         """
         options = scoped_options(scope_go_lives=scope_go_lives, valid_from=valid_from)
+        attribution = {"recommended_by": recommended_by, "decided_by": decided_by}
+        options.update({k: v for k, v in attribution.items() if v is not None})
         try:
             backend = get_backend()
             result = backend.decision_supersede(
@@ -582,14 +664,16 @@ def register(mcp):
                     "it yourself."
                 )
             if result.get("status") == "scheduled":
-                return (
+                return with_attribution(
                     f"Amendment scheduled for decision {decision_id}.\n"
                     f"New decision: {result['new_item_id']}\n"
-                    f"scope_go_lives: {result['scope_go_lives']}"
+                    f"scope_go_lives: {result['scope_go_lives']}",
+                    attribution,
                 )
-            return (
+            return with_attribution(
                 f"Decision {decision_id} superseded.\n"
-                f"New decision: {result.get('new_decision_id')}"
+                f"New decision: {result.get('new_decision_id')}",
+                attribution,
             )
         except DecisionAlreadyDecided as e:
             return f"already decided: {e.outcome} (review {e.review_id})"
@@ -864,7 +948,12 @@ def register(mcp):
             )
             if not history:
                 return f"Decision not found: {decision_id}"
-            return history_text(decision_id, history)
+            text = history_text(decision_id, history)
+            if history.get("entries"):
+                text = with_history_attribution(
+                    text, history, decision_id, backend, as_of
+                )
+            return text
         except Exception as e:
             logger.error(f"Failed to read decision history: {e}", exc_info=True)
             raise
