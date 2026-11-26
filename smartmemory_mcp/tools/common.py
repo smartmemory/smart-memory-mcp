@@ -351,6 +351,9 @@ def conflict_check_text(marker) -> str:
 
 _HIDDEN_RULE = "a rule you cannot see"
 _LINKING_ACTIONS = ("supersede", "replaced_by", "restore")
+#: The answer to a review (BUG-DECISION-HISTORY-GAPS-1 r1 M1): ``asked_by`` is the proposer, ``answered_by`` who answered.
+_ANSWER_ACTIONS = ("review_approved", "review_rejected", "review_kept_both", "review_out_of_date")
+_NOT_RECORDED = "not recorded"
 
 
 def who_text(decision):
@@ -424,10 +427,17 @@ def history_text(decision_id, history):
     lines = [f"History of {decision_id} (newest first):"]
     for entry in history.get("entries") or []:
         text = f"- {entry.get('at')} {entry.get('action')}"
-        if entry.get("asked_by"):
-            text += f" by {entry['asked_by']}"
-        if entry.get("approved_by"):
-            text += f", approved by {entry['approved_by']}"
+        if entry.get("action") in _ANSWER_ACTIONS:
+            # Never "by <proposer>": the proposer asked, someone else may have answered.
+            if entry.get("asked_by"):
+                text += f", asked by {entry['asked_by']}"
+            if entry.get("review_id"):  # a review this reader may see; who answered, or that it was not recorded
+                text += f", answered by {entry.get('answered_by') or _NOT_RECORDED}"
+        else:
+            if entry.get("asked_by"):
+                text += f" by {entry['asked_by']}"
+            if entry.get("approved_by"):
+                text += f", approved by {entry['approved_by']}"
         if entry.get("reason"):
             text += f", reason: {entry['reason']}"
         if entry.get("related_decision_id"):
@@ -436,6 +446,10 @@ def history_text(decision_id, history):
             # ``related_visible`` is false both for "no other decision" and for "one you cannot read": only an action
             # that always names another rule can mean the second.
             text += f" (other decision: {_HIDDEN_RULE})"
+        old_text = entry.get("old_content")
+        if old_text is None and entry.get("action") in ("supersede", "replaced_by") and entry.get("related_visible"):
+            # The text the rule had at that change was not kept (a link older than its history); never today's text.
+            entry = {**entry, "old_content": f"text at the time {_NOT_RECORDED}"}
         if entry.get("old_content") is not None and entry.get("new_content") is not None:
             text += f"\n    was: {entry['old_content']}\n    now: {entry['new_content']}"
         elif entry.get("old_content") is not None:
@@ -449,7 +463,10 @@ def history_text(decision_id, history):
     if start.get("note"):
         lines.append(start["note"])
     if history.get("truncated"):
-        lines.append("More entries exist before the last one shown: ask again with before set to its date.")
+        if history.get("next_cursor"):
+            lines.append(f"More entries exist after the last one shown: ask again with cursor set to {history['next_cursor']}.")
+        else:
+            lines.append("More entries exist before the last one shown: ask again with before set to its date.")
     return "\n".join(lines)
 
 

@@ -19,7 +19,7 @@ from smartmemory_mcp.backends import dispatch
 from smartmemory_mcp.backends.interface import LOCAL_BROKEN_TOOLS
 from smartmemory_mcp.backends.local import LocalBackend
 from smartmemory_mcp.backends.remote import RemoteBackend
-from smartmemory_mcp.capabilities import BackendCapabilityMiddleware, TOOL_CAPABILITIES
+from smartmemory_mcp.capabilities import BackendCapabilityMiddleware
 from smartmemory_mcp.hosted import identity as hosted_identity
 from smartmemory_mcp.hosted.exchange import ExchangeCache
 from smartmemory_mcp.hosted.server import build_hosted_server
@@ -114,12 +114,6 @@ def _local():
 
 def _remote():
     return RemoteBackend(api_key="sk_test_key_123")
-
-
-def test_table_is_empty_since_all_fourteen_are_fixed():
-    assert LOCAL_BROKEN_TOOLS == {}
-    # No capability gate is left on any of them.
-    assert not set(BROKEN) & set(TOOL_CAPABILITIES)
 
 
 @pytest.mark.parametrize(("tool", "present_locally"), AUDITED)

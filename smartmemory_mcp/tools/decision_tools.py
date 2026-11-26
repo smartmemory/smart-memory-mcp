@@ -57,6 +57,138 @@ def _field(decision: Any, name: str, default: Any = None) -> Any:
     return getattr(decision, name, default)
 
 
+_ROW_CONTENT_MAX = 120
+
+
+def _row_get(row: Any, name: str) -> Any:
+    """One field off a row that may be a dict or an object; empty values read as absent."""
+    value = row.get(name) if isinstance(row, dict) else getattr(row, name, None)
+    return value if value not in (None, "") else None
+
+
+def _trim(text: Any) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= _ROW_CONTENT_MAX else text[: _ROW_CONTENT_MAX - 1].rstrip() + "…"
+
+
+def _link_for(selected: Any, side: str, row_id: Any) -> Any:
+    """The visible supersession link of the selected decision that names ``row_id``.
+
+    Core serves ``replaced`` (one link, to the successor) and ``replaces`` (links, to the predecessors) on the
+    selected decision; each carries the id, reason and event time of that one transition."""
+    links = _row_get(selected, side)
+    if row_id is None or links is None:
+        return None
+    for link in links if isinstance(links, (list, tuple)) else [links]:
+        if _row_get(link, "decision_id") == row_id and _row_get(link, "visible") is not False:
+            return link
+    return None
+
+
+def _dated_successor_link(selected: Any, row_id: Any) -> Any:
+    """A dated read is served without blocks, so no ``replaced`` link: the selected decision itself carries
+    ``superseded_by`` (the successor id) and its folded note in ``context_snapshot``. Only that note, never the
+    successor's own (it describes the successor's later change)."""
+    if row_id is None or _row_get(selected, "superseded_by") != row_id:
+        return None
+    snapshot = _row_get(selected, "context_snapshot")
+    if not isinstance(snapshot, dict):
+        return None
+    reason, when = _row_get(snapshot, "superseded_reason"), _row_get(snapshot, "superseded_at")
+    return {"decision_id": row_id, "reason": reason, "at": when} if (reason or when) else None
+
+
+def _decision_row_line(row: Any, link: Any = None, *, show_content: bool = True, own_note: bool = False) -> Optional[str]:
+    """`- <id>: <content> (reason: <why>, <date>)`; a missing part is left out, never printed as None.
+
+    Reason and date are those of the transition between the selected decision and this row: the ``link`` core
+    returned for it, else (``own_note``, predecessors only) the row's own ``context_snapshot`` note, which describes
+    the change that replaced it. Never the row's creation date."""
+    ident = _row_get(row, "decision_id")
+    content = _row_get(row, "content") if show_content else None
+    if ident is None and content is None:
+        return None
+    reason = when = None
+    if link is not None:
+        reason, when = _row_get(link, "reason"), _row_get(link, "at")
+    elif own_note:
+        snapshot = _row_get(row, "context_snapshot")
+        if isinstance(snapshot, dict):
+            reason, when = _row_get(snapshot, "superseded_reason"), _row_get(snapshot, "superseded_at")
+    head = " ".join(x for x in (f"{ident}:" if ident and content else ident, _trim(content) if content else None) if x)
+    notes = [x for x in (f"reason: {_trim(reason)}" if reason else None, str(when) if when else None) if x]
+    return f"- {head}" + (f" ({', '.join(notes)})" if notes else "")
+
+
+def _created_of(obj: Any) -> Any:
+    """A plain memory's creation time where core's dated filter looks: the row, its metadata, `metadata__created_at`."""
+    when = _row_get(obj, "created_at")
+    if when is None:
+        metadata = _row_get(obj, "metadata")
+        if metadata is not None:
+            when = _row_get(metadata, "created_at")
+    return when or _row_get(obj, "metadata__created_at")
+
+
+def _evidence_row_line(row: Any, *, dated: bool = False) -> Optional[str]:
+    # SM-EVIDENCE-TYPE-1: an evidence-node row names its receipt.
+    ref = _row_get(row, "evidence_ref")
+    checked = _row_get(row, "checked_at")
+    if ref:
+        kind = _row_get(row, "kind")
+        notes = [x for x in (kind, f"checked {checked}" if checked else None) if x]
+        return f"- {ref}" + (f" ({', '.join(str(n) for n in notes)})" if notes else "")
+    memory = _row_get(row, "memory")
+    content = _row_get(memory, "content") if memory is not None and not dated else None
+    ident = _row_get(row, "memory_id") or (_row_get(memory, "item_id") if memory is not None else None)
+    when = _created_of(memory) if memory is not None else None
+    if content is None and ident is None:
+        return None
+    head = " ".join(x for x in (f"{ident}:" if ident and content else ident, _trim(content) if content else None) if x)
+    # The creation date and the check time are different facts; keep both.
+    dates = [x for x in (str(when) if when else None, f"checked {checked}" if checked else None) if x]
+    return f"- {head}" + (f" ({', '.join(dates)})" if dates else "")
+
+
+def _provenance_rows(provenance: Dict[str, Any], *, dated: bool = False) -> List[str]:
+    """Evidence, superseded and successor sections: the count header, then one line per row.
+
+    ``dated``: core hands back a neighbor's current wording on an as_of read (it is not the wording at that
+    instant), so a dated line carries the id, reason and date only."""
+    selected = provenance.get("decision")
+    out: List[str] = []
+    for key, header, unit, line in (
+        ("evidence", "Evidence", "items", lambda r: _evidence_row_line(r, dated=dated)),
+        (
+            "superseded",
+            "Superseded",
+            "decisions",
+            lambda r: _decision_row_line(
+                r, _link_for(selected, "replaces", _row_get(r, "decision_id")), show_content=not dated, own_note=True
+            ),
+        ),
+        (
+            "superseded_by",
+            "Superseded by",
+            "decisions",
+            lambda r: _decision_row_line(
+                r,
+                _link_for(selected, "replaced", _row_get(r, "decision_id"))
+                # The snapshot stands in for the missing link only on a dated read (served without blocks); an
+                # undated read whose link is hidden or names another id prints no transition.
+                or (_dated_successor_link(selected, _row_get(r, "decision_id")) if dated else None),
+                show_content=not dated,
+            ),
+        ),
+    ):
+        rows = provenance.get(key)
+        if not rows:
+            continue
+        out.append(f"{header}: {len(rows)} {unit}")
+        out.extend(text for row in rows if (text := line(row)))
+    return out
+
+
 def _uncertainty_marker(decision: Any) -> str:
     """Return a words-not-maths uncertainty marker, or an empty string."""
     ignorance = _field(decision, "ignorance")
@@ -78,6 +210,88 @@ def _summary_line(decision: Any) -> str:
         f"({_field(decision, 'decision_type')}, conf={confidence:.2f}): "
         f"{str(_field(decision, 'content', ''))[:100]}{_uncertainty_marker(decision)}{(' ' + diagnostic) if diagnostic else ''}"
     )
+
+
+def _present(value: Any) -> bool:
+    return value is not None and value != "" and value != [] and value != {}
+
+
+def _requirement_line(req: Any) -> str:
+    resolved = _field(req, "resolved")
+    done = resolved is True
+    marker = f"[{'done' if done else 'open'}] " if isinstance(resolved, bool) else ""
+    text = f"- {marker}{_field(req, 'description') or _field(req, 'requirement_id') or 'requirement'}"
+    kind = _field(req, "requirement_type")
+    if _present(kind):
+        text += f" ({kind})"
+    if done:
+        by, at = _field(req, "resolved_by"), _field(req, "resolved_at")
+        if _present(by):
+            text += f", supporting memory {by}"  # resolved_by is an evidence memory id, not an actor
+        if _present(at):
+            text += f" on {at}"
+    return text
+
+
+def _decision_text(decision: Any, as_of: Optional[str] = None) -> str:
+    """DECISION-GET-READABLE: one readable answer for a single decision read.
+
+    Statement, state, rationale, lifecycle reason and requirements come first, then the shared who/replaced lines.
+    Only what the authorized read returned is shown; an absent, None or empty field is omitted. Internal ids,
+    counters and the raw context snapshot are never printed."""
+    notes = _field(decision, "context_snapshot")
+    notes = notes if isinstance(notes, dict) else {}
+    head = f"Decision {_field(decision, 'decision_id')}"
+    if as_of is not None:
+        head += f" as of {as_of}"
+    content = _field(decision, "content")
+    lines = [f"{head}: {content}" if _present(content) else head]
+    state = _field(decision, "display_status") or _field(decision, "status")
+    if _present(state):
+        extra = [str(x) for x in (_field(decision, "decision_type"),) if _present(x)]
+        conf = _field(decision, "confidence")
+        if isinstance(conf, (int, float)):
+            extra.append(f"confidence {conf:.2f}")
+        lines.append(f"State: {state}" + (f" ({', '.join(extra)})" if extra else "") + _uncertainty_marker(decision))
+    if _present(_field(decision, "rationale")):
+        lines.append(f"Rationale: {_field(decision, 'rationale')}")
+    beliefs = [
+        f"{name}={_field(decision, name):.2f}"
+        for name in ("belief_hold", "plausibility_hold", "ignorance")
+        if isinstance(_field(decision, name), (int, float))
+    ]
+    for label, reason_key, at_key in (
+        ("Retracted", "retraction_reason", "retracted_at"),
+        ("Replaced", "superseded_reason", "superseded_at"),
+    ):
+        reason, when = notes.get(reason_key), notes.get(at_key)
+        if _present(reason):
+            lines.append(f"{label}{f' on {when}' if _present(when) else ''}: {reason}")
+    if beliefs:
+        lines.append("Evidence: " + " ".join(beliefs))
+    reqs = _field(decision, "pending_requirements")
+    if _present(reqs):
+        lines.append("Requirements:")
+        lines.extend(_requirement_line(r) for r in reqs)
+    for name, label in (("rejected_alternatives", "Rejected alternatives"), ("constraints", "Constraints")):
+        if _present(_field(decision, name)):
+            lines.append(f"{label}: {'; '.join(str(x) for x in _field(decision, name))}")
+    # The shared "Status: replaced" line is dropped only when the State line already says so. A decision replaced on a
+    # site schedule stays ``active`` (still in force somewhere), and that line is the only place the read says it was
+    # replaced (REL-2-0-5-POSTLAND-RED-NIGHT-1, decision-view note N2).
+    said = str(state).lower() if _present(state) else ""
+    who = "\n".join(
+        x for x in who_text(decision).splitlines() if not (x == "Status: replaced" and said in ("replaced", "superseded"))
+    )
+    if who:
+        lines.append(who)
+    diagnostic = resolution_text(decision)
+    if diagnostic:
+        lines.append(diagnostic)
+    unknown = _field(decision, "as_of_unknown_fields")
+    if _present(unknown):
+        lines.append(f"Not known at that instant: {', '.join(str(x) for x in unknown)}")
+    return "\n".join(lines)
 
 
 def register(mcp):
@@ -189,8 +403,7 @@ def register(mcp):
             if not decision:
                 return f"Decision not found: {decision_id}"
 
-            who = who_text(decision)
-            return f"{decision}\n{who}" if who else str(decision)
+            return _decision_text(decision, as_of)
         except Exception as e:
             logger.error(f"Failed to get decision: {e}", exc_info=True)
             raise
@@ -295,10 +508,11 @@ def register(mcp):
                 topic=topic, limit=limit, **dated(as_of), **options
             )
 
+            when = "" if as_of is None else f" as of {as_of}"
             if not decisions:
-                return f"No decisions found about: {topic}"
+                return f"No decisions found about: {topic}{when}"
 
-            output = [f"Found {len(decisions)} decisions about '{topic}':\n"]
+            output = [f"Found {len(decisions)} decisions about '{topic}'{when}:\n"]
             output.extend(_summary_line(d) for d in decisions)
             return "\n".join(output)
         except Exception as e:
@@ -605,20 +819,7 @@ def register(mcp):
                 parts.append(diagnostic)
             if provenance.get("reasoning_trace"):
                 parts.append(f"Reasoning trace: {provenance['reasoning_trace']}")
-            if provenance.get("evidence"):
-                parts.append(f"Evidence: {len(provenance['evidence'])} items")
-                # SM-EVIDENCE-TYPE-1: an evidence-node row names its receipt.
-                for row in provenance["evidence"]:
-                    if isinstance(row, dict) and row.get("evidence_ref"):
-                        parts.append(
-                            f"- {row['evidence_ref']} ({row.get('kind')}, checked {row.get('checked_at')})"
-                        )
-            if provenance.get("superseded"):
-                parts.append(f"Superseded: {len(provenance['superseded'])} decisions")
-            if provenance.get("superseded_by"):
-                parts.append(
-                    f"Superseded by: {len(provenance['superseded_by'])} decisions"
-                )
+            parts.extend(_provenance_rows(provenance, dated=as_of is not None))
             return "\n".join(parts)
         except Exception as e:
             logger.error(f"Failed to get provenance: {e}", exc_info=True)
@@ -639,20 +840,27 @@ def register(mcp):
         limit: Optional[int] = None,
         before: Optional[str] = None,
         as_of: Optional[str] = None,
+        cursor: Optional[str] = None,
     ) -> str:
         """A decision's dated history, newest first, in one call: recorded, edited, replaced, retracted, restored,
         review answers and evidence links, each with who did it and why. A replacement you cannot read shows as
         "a rule you cannot see", with no id or text.
 
-        limit (1 to 500, default 100) and before (ISO 8601: only entries older than this) page through a long
-        history. as_of (ISO 8601) keeps only entries at or before that instant."""
+        limit (1 to 500, default 100) and cursor page through a long history: when the answer says more entries
+        exist, pass the cursor it gives back as cursor to get the next page, with every entry shown exactly once.
+        before (ISO 8601: only entries older than this) still works but is deprecated: it can skip entries that
+        share one instant. as_of (ISO 8601) keeps only entries at or before that instant."""
         as_of = checked_as_of(as_of)
         before = checked_as_of(before)
         try:
             backend = get_backend()
             history = withheld_view(
                 backend.decision_history(
-                    decision_id, limit=limit, before=before, **dated(as_of)
+                    decision_id,
+                    limit=limit,
+                    before=before,
+                    cursor=cursor,
+                    **dated(as_of),
                 )
             )
             if not history:

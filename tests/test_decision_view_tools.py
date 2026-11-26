@@ -119,6 +119,14 @@ def test_history_sends_only_what_is_set_and_404_is_not_found(monkeypatch):
     assert seen[0][2] == {}
     tools["decision_history"](decision_id="nope", limit=5, before="2026-11-01T00:00:00Z")
     assert seen[1][2]["params"] == {"limit": 5, "before": "2026-11-01T00:00:00Z"}
+    tools["decision_history"](decision_id="nope", limit=2, cursor="abc=")
+    assert seen[2][2]["params"] == {"limit": 2, "cursor": "abc="}
+
+
+def test_history_hint_tells_the_reader_to_pass_the_cursor():
+    page = {"entries": [], "truncated": True, "next_cursor": "tok=="}
+    assert "cursor set to tok==" in history_text("d0", page)
+    assert "before set to its date" in history_text("d0", {"entries": [], "truncated": True})
 
 
 def test_a_bad_instant_is_refused_naming_it(monkeypatch):

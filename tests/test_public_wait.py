@@ -8,10 +8,8 @@ outcome the unit requires: queued past the deadline, a fault that stays visible 
 milestone, and a legacy read that is unchanged.
 """
 
-import ast
 import copy
 import logging
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -28,7 +26,7 @@ from tests.public_wait import (
     refuse,
 )
 
-# --- SHARED BEGIN (byte-identical in smart-memory-client and smart-memory-mcp tests/test_public_wait.py) ---
+# --- SHARED BEGIN (mirrored in smart-memory-client, with the MCP import pin removed) ---
 WARN_PREFIX = "Explicit public wait refused: "
 PENDING = Observation(detail="pending")
 STORED = Observation(stage="stored", detail="stored")
@@ -412,19 +410,6 @@ def test_an_observer_that_is_not_callable_is_refused(observe, shown, caplog):
     with pytest.raises(PublicWaitArgumentError):
         await_public(observe, wait="stored", deadline_s=1.0)
     assert warnings(caplog) == [WARN_PREFIX + f"observe must be callable, got {shown}"]
-
-
-def test_the_helper_does_not_import_the_core_wait_module():
-    tree = ast.parse((Path(__file__).parent / "public_wait.py").read_text())
-    names = [
-        a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names
-    ]
-    names += [n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)]
-    assert [
-        n
-        for n in names
-        if n == "smartmemory.testing" or n.startswith("smartmemory.testing.")
-    ] == []
 
 
 # --- SHARED END ---

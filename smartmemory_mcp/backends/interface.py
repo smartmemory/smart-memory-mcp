@@ -415,8 +415,9 @@ class MemoryBackend(Protocol):
         limit: int | None = None,
         before: str | None = None,
         as_of: str | None = None,
+        cursor: str | None = None,
     ) -> dict[str, Any] | None:
-        """STUDIO-DECISION-VIEW-1: {decision_id, entries, start, truncated} (newest first), None when the decision is
+        """STUDIO-DECISION-VIEW-1: {decision_id, entries, start, truncated, next_cursor} (newest first; pass next_cursor as cursor for the next page), None when the decision is
         absent or not readable by the caller."""
         ...
 

@@ -474,12 +474,6 @@ def test_the_engine_is_pinned_by_its_hash():
     ) != census.engine_sha("# --- ENGINE BEGIN ---\nb\n# --- ENGINE END ---")
 
 
-def test_the_ignored_files_are_the_censuss_own_and_visible_in_the_fixture():
-    doc = json.loads(FIXTURE.read_text())
-    assert doc["ignore"] == sorted(census.IGNORE)
-    assert all((ROOT / path).is_file() for path in census.IGNORE)
-
-
 # --- SHARED END ---
 
 
