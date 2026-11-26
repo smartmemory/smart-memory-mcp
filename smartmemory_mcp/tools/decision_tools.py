@@ -460,13 +460,15 @@ def register(mcp):
         business_scope: Optional[Dict[str, Any]] = None,
         valid_at: Optional[str] = None,
     ) -> str:
-        """Business validity uses business_scope (exact site) and valid_at.
+        """Get one decision by id, with its status and version history.
+
+        Business validity uses business_scope (exact site) and valid_at.
 
         Exact activated site entries take precedence, otherwise use sponsor fallback.
         Omitted valid_at is resolved once at request start. as_of is independent
         transaction-time history.
 
-        Retrieve a decision by ID. ``as_of`` returns the decision as it stood then, its status
+        ``as_of`` returns the decision as it stood then, its status
         from the supersession chain and version history; "not found" if it did not
         exist yet."""
         options = scoped_options(business_scope=business_scope, valid_at=valid_at)
@@ -568,13 +570,15 @@ def register(mcp):
         business_scope: Optional[Dict[str, Any]] = None,
         valid_at: Optional[str] = None,
     ) -> str:
-        """Business validity uses business_scope (exact site) and valid_at.
+        """Search the current decisions (rules in force) on a topic; replaced and retracted ones are left out.
+
+        Use it first for 'what did we decide' or 'which rule applies'.
+
+        Business validity uses business_scope (exact site) and valid_at.
 
         Exact activated site entries take precedence, otherwise use sponsor fallback.
         Omitted valid_at is resolved once at request start. as_of is independent
         transaction-time history.
-
-        Search for active decisions related to a topic.
 
         ``as_of``: the decisions active at that instant."""
         options = scoped_options(business_scope=business_scope, valid_at=valid_at)
@@ -871,13 +875,13 @@ def register(mcp):
         business_scope: Optional[Dict[str, Any]] = None,
         valid_at: Optional[str] = None,
     ) -> str:
-        """Business validity uses business_scope (exact site) and valid_at.
+        """Show what a decision replaced, the reason recorded, and the evidence behind it.
+
+        Business validity uses business_scope (exact site) and valid_at.
 
         Exact activated site entries take precedence, otherwise use sponsor fallback.
         Omitted valid_at is resolved once at request start. as_of is independent
         transaction-time history.
-
-        Get full provenance chain for a decision.
 
         ``as_of``: the provenance as it stood then; a
         successor that came later is not listed."""

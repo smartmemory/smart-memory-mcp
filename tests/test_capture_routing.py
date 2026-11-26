@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import re
 
+import anyio
 import pytest
+from fastmcp import Client
 
 from smartmemory_mcp.hosted import identity as hosted_identity
 from smartmemory_mcp.hosted.exchange import ExchangeCache
@@ -106,3 +108,71 @@ def test_tool_descriptions_say_when_to_use_them():
     assert "CORE-EXPERTISE" not in docs["decision_create"]
     for retired in RETIRED_WRITE_TOOLS:
         assert retired not in docs["decision_create"], retired
+
+
+READ_LINE = (
+    "Asked what was decided or which rule applies: use decision_search first (it lists current "
+    "decisions only), then decision_get or decision_provenance for what a decision replaced and why. "
+    "memory_ask answers carry a current-decision record when one matches."
+)
+DOES_FIRST = {
+    "decision_search": "Search the current decisions",
+    "decision_get": "Get one decision by id",
+    "decision_provenance": "Show what a decision replaced",
+}
+SCOPE_PARAGRAPH = (
+    "Business validity uses business_scope (exact site) and valid_at.\n\n"
+    "Exact activated site entries take precedence, otherwise use sponsor fallback.\n"
+    "Omitted valid_at is resolved once at request start. as_of is independent\n"
+    "transaction-time history."
+)
+
+
+def _handshake(server):
+    """initialize + tools/list through the fastmcp protocol client, as an assistant sends them."""
+
+    async def run():
+        async with Client(server) as client:
+            tools = {tool.name: tool.description for tool in await client.list_tools()}
+            return client.instructions, tools
+
+    return anyio.run(run)
+
+
+def test_read_questions_route_to_decision_tools_on_both_servers(_restore_hosted_mode):
+    """SAME-ANSWER-U2 T1-T5: both servers send the read line and lead with what each tool does."""
+    hosted = build_hosted_server(
+        hosted_config(), redis_store=memory_store(), exchange_cache=ExchangeCache()
+    )
+    hosted_identity.set_hosted_mode(False)
+    from smartmemory_mcp.server import mcp as local_server
+
+    for server, text, registered in (
+        (hosted, HOSTED_INSTRUCTIONS, set(HOSTED_TOOLS)),
+        (local_server, LOCAL_INSTRUCTIONS, None),
+    ):
+        instructions, tools = _handshake(server)
+        registered = registered if registered is not None else set(tools)
+        # T1/T2: the read line reaches the client at initialize.
+        assert instructions == text
+        assert READ_LINE in instructions
+        # T4: every named tool is registered on that server.
+        named = _mentioned_tools(instructions) - {
+            "memory_type"
+        }  # a parameter, not a tool
+        assert named <= registered
+        assert named <= set(tools)
+        # T3: the description opens with what the tool does, then the scope text, then as_of help.
+        for name, opening in DOES_FIRST.items():
+            description = tools[name]
+            assert description.startswith(opening), (name, description[:80])
+            assert SCOPE_PARAGRAPH in description, name
+            assert description.index(SCOPE_PARAGRAPH) > len(opening)
+            assert "end of day UTC" in description, name
+        # T5: memory_ask says where the decision record is and what a failed lane means.
+        ask = tools["memory_ask"]
+        assert "``decision``" in ask or "`decision`" in ask
+        assert "evidence item 1" in ask
+        assert "lanes_failed" in ask and "partial" in ask
+        # T6: decision_list already opened with what it does; it is untouched.
+        assert not tools["decision_list"].startswith("Business validity")

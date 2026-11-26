@@ -7,6 +7,9 @@ that was false on the hosted service, and a `decision_create` docstring that nev
 when to use it. Both variants route decisions to decision_create; the hosted one also names
 decision_supersede, and the hosted allowlist registers both (`hosted/tools.py` DECISION_TOOLS). On 2.0 the write tools are memory_save, memory_save_document and
 memory_save_conversation (U4.42-FU-TOOLS retired memory_ingest and memory_add; FWD-MERGE-4 port).
+
+SAME-ANSWER-U2 adds read routing: a question about what was decided or which rule applies goes to
+the decision tools first, so the answer is the current decision and not a recalled note.
 """
 
 from __future__ import annotations
@@ -15,6 +18,9 @@ _COMMON = (
     "SmartMemory keeps what the user tells you so it can be recalled later.\n"
     "- Facts, events, plans and anything naming people, places, organizations or dates: "
     "use memory_save with the text in content. It extracts entities, dates and the relations between them.\n"
+    "- Asked what was decided or which rule applies: use decision_search first (it lists current "
+    "decisions only), then decision_get or decision_provenance for what a decision replaced and why. "
+    "memory_ask answers carry a current-decision record when one matches.\n"
 )
 
 LOCAL_INSTRUCTIONS = _COMMON + (
