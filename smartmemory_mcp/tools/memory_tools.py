@@ -29,8 +29,8 @@ except ImportError:  # remote-only install: no core, no logged mark
     _HAS_CORE = False
 
 
+from .as_of import with_as_of
 from .common import (
-    checked_as_of,
     dated,
     get_backend,
     name_workspace,
@@ -1080,6 +1080,7 @@ def register_free(mcp):
             openWorldHint=False,
         ),
     )
+    @with_as_of
     @graceful
     def memory_recall_pack(
         budget_tokens: int,
@@ -1104,13 +1105,12 @@ def register_free(mcp):
         small budget (~300 tokens) at session start for an L1 orientation card (active
         plan, anchors, workspace topics, last-session headline) — the default sections go
         degenerate at that size. Use ``get_working_context`` for the L2 drill-in.
-        ``as_of`` (ISO 8601; omit for now) answers every section as of that instant:
+        ``as_of`` answers every section as of that instant:
         nothing created later; a section that cannot (active plan, anchors) is left
         out and named in ``manifest.dropped_sections``.
         Returns ``{block, manifest}``.
         """
         refuse_scoped_options(business_scope, valid_at)
-        as_of = checked_as_of(as_of)
         if not isinstance(budget_tokens, int) or budget_tokens < 1:
             return {"error": "`budget_tokens` must be an integer >= 1."}
         if preset is not None:
@@ -1146,6 +1146,7 @@ def register_free(mcp):
             openWorldHint=False,
         ),
     )
+    @with_as_of
     @graceful
     def memory_policy_bundle(
         workflow: Optional[str] = None,
@@ -1157,13 +1158,12 @@ def register_free(mcp):
         """Compile active workspace decisions into a Stratum policy bundle.
 
         ``workflow`` is echoed in the selector for the runner. ``domain`` narrows
-        the source decisions. ``as_of`` (ISO 8601; omit for now) compiles the
+        the source decisions. ``as_of`` compiles the
         decisions active at that instant and the bundle echoes it. The returned
         JSON is the policy-exchange contract bundle and is identical for local
         and hosted backends.
         """
         refuse_scoped_options(business_scope, valid_at)
-        as_of = checked_as_of(as_of)
         return get_backend().policy_bundle(
             workflow=workflow, domain=domain, **dated(as_of)
         )

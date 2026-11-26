@@ -1,3 +1,7 @@
+## Unreleased - BUG-ASOF-NEEDS-ZONED-TIMESTAMP-1
+
+- Decision and memory tools accept a calendar date or timestamp for `as_of`. Dates use 23:59:59 UTC, times without a zone use UTC, and answers identify the instant whenever either default applies.
+
 ## Unreleased - ARCH-FOUNDATION-SHAPES-1
 
 - Added a contract test that flags increases in private graph reads, debug clears and CrudMemory constructions in the MCP package.
