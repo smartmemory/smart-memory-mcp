@@ -176,3 +176,18 @@ def test_read_questions_route_to_decision_tools_on_both_servers(_restore_hosted_
         assert "lanes_failed" in ask and "partial" in ask
         # T6: decision_list already opened with what it does; it is untouched.
         assert not tools["decision_list"].startswith("Business validity")
+
+
+def test_as_of_help_keeps_docstring_dedented_on_every_python():
+    """Python 3.12 leaves the docstring indent in place: the as_of tail must not pin it there."""
+    from inspect import getdoc
+
+    from smartmemory_mcp.tools.as_of import with_as_of
+
+    def tool(as_of=None):
+        pass
+
+    tool.__doc__ = "Opening line.\n\n        Body line.\n\n        ``as_of``: help."  # as 3.12 stores it
+    assert getdoc(with_as_of(tool)).startswith(
+        "Opening line.\n\nBody line.\n\n``as_of``: help."
+    )
