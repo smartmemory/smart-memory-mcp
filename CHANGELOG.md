@@ -1,6 +1,7 @@
 ## Unreleased - DECISION-EFFECTS-GRAPH-1
 
 - Added the read-only `decision_effects` tool for saved decisions and draft previews on local and remote backends, including the hosted connector. It returns a one-line count and the ordered effects snapshot with suggested links.
+- Create, supersede and retract replies now include standing effects counts and a summary in structured content. Their existing text is preserved.
 
 ## 2.0.9
 ## Unreleased - SAME-ANSWER-U2

@@ -179,6 +179,9 @@ A decision's detail and provenance say “Status: replaced” when a replacement
 Use `decision_effects` with a saved `decision_id` or unsaved draft `text`. Its text gives the
 counts. Its structured snapshot includes ordered replacements, conflict reasons, review hops
 and the decisions those hops pass through. Previewing a draft leaves it unsaved.
+Create, supersede and retract replies also include `counts` and `summary` for the resulting
+standing view. If that read fails after a successful write, `counts` is null. Call
+`decision_effects` with the saved ID to retry the read.
 
 When a workspace asks a person first (supersession policy `propose`), `decision_supersede`
 answers "held for review" with a review id and the old rule stays in force. The assistant
