@@ -1,3 +1,7 @@
+## Unreleased - DECISION-EFFECTS-GRAPH-1
+
+- Added the read-only `decision_effects` tool for saved decisions and draft previews on local and remote backends, including the hosted connector. It returns a one-line count and the ordered effects snapshot with suggested links.
+
 ## 2.0.9
 ## Unreleased - SAME-ANSWER-U2
 

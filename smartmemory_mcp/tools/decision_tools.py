@@ -12,6 +12,7 @@ the primary configuration — could not record a decision at all.
 import logging
 from typing import Any, Dict, List, Optional
 
+from fastmcp.tools import ToolResult
 from mcp.types import ToolAnnotations
 
 from smartmemory_mcp.backends.interface import (
@@ -20,6 +21,7 @@ from smartmemory_mcp.backends.interface import (
     EvidenceRefused,
 )
 from .as_of import with_as_of
+from .decision_effects import counts_summary
 from .decision_attribution import with_attribution, with_history_attribution
 from .common import (
     checked_as_of,
@@ -366,7 +368,7 @@ def _decision_text(decision: Any, as_of: Optional[str] = None) -> str:
 
 
 def register(mcp):
-    """Register decision tools with the MCP server (13 tools)."""
+    """Register decision lifecycle and effects tools with the MCP server."""
 
     @mcp.tool(
         title="Create a decision",
@@ -442,6 +444,31 @@ def register(mcp):
         except Exception as e:
             logger.error(f"Failed to create decision: {e}", exc_info=True)
             raise
+
+    @mcp.tool(
+        title="Read decision effects",
+        annotations=ToolAnnotations(
+            readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False,
+        ),
+    )
+    def decision_effects(decision_id: Optional[str] = None, text: Optional[str] = None) -> ToolResult:
+        """Read the effects of a saved decision by decision_id or preview unsaved draft text.
+
+        Supply exactly one. The preview does not save the draft. The structured snapshot lists
+        replacements, conflicts with reasons, and decisions to review with their hop and via.
+        """
+        if (decision_id is None) == (text is None):
+            raise ValueError("Supply exactly one of decision_id and text.")
+        backend = get_backend()
+        if text is not None:
+            if not text.strip():
+                raise ValueError("Draft text must contain a non-whitespace character.")
+            snapshot = backend.decision_effects_preview(text)
+        else:
+            if not decision_id.strip():
+                raise ValueError("A saved decision needs a nonblank decision_id.")
+            snapshot = backend.decision_effects(decision_id)
+        return ToolResult(content=counts_summary(snapshot["counts"]), structured_content=snapshot)
 
     @mcp.tool(
         title="Get a decision",

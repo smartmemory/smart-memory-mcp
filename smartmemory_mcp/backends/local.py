@@ -1226,6 +1226,12 @@ class LocalBackend(BackendCapabilities):
         )
         return _decision_dict(decision)
 
+    def decision_effects(self, decision_id: str) -> dict[str, Any]:
+        return self._mem.get_decision_effects(decision_id)
+
+    def decision_effects_preview(self, text: str) -> dict[str, Any]:
+        return self._mem.preview_decision_effects(text)
+
     def decision_get(
         self,
         decision_id: str,

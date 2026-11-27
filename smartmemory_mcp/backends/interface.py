@@ -347,6 +347,14 @@ class MemoryBackend(Protocol):
         """Create a decision. Returns at least decision_id/decision_type/confidence."""
         ...
 
+    def decision_effects(self, decision_id: str) -> dict[str, Any]:
+        """Read the standing DecisionEffectsSnapshot for a saved decision."""
+        ...
+
+    def decision_effects_preview(self, text: str) -> dict[str, Any]:
+        """Read the DecisionEffectsSnapshot for unsaved text."""
+        ...
+
     def decision_get(
         self,
         decision_id: str,
