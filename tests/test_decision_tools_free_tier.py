@@ -18,6 +18,7 @@ from tests.test_tier_registration import MCP_ROOT, _clean_env, _run_snippet
 # The completeness test below fails when a tool is added there without a row here.
 DECISION_ROWS = (
     ("decision_create", {"content": "Job queue runs on Postgres"}),
+    ("decision_effects", {"decision_id": "dec_1"}),
     ("decision_get", {"decision_id": "dec_1"}),
     ("decision_list", {}),
     ("decision_search", {"topic": "job queue"}),
@@ -85,6 +86,10 @@ class Recorder:
             reached.append(name)
             if name in ("decision_list", "decision_search"):
                 return [DECISION]
+            if name == "decision_effects":
+                return {"counts": {"conflicts": 0, "replaced": 0, "to_review": 0}}
+            if name == "decision_supersede":
+                return {"new_decision_id": "dec_2"}
             if name == "decision_find_conflicts":
                 return {"conflicts": [DECISION]}
             if name in ("decision_resolve_requirement",):

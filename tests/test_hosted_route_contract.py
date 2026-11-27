@@ -67,6 +67,7 @@ TOOL_ROUTES: dict[str, tuple[str, str] | None] = {
     "create_workspace": ("post", "/memory/workspaces"),  # WS-POLICY-10 B: no team_id
     "decision_create": ("post", "/memory/decisions/create"),
     "decision_supersede": ("post", "/memory/decisions/{decision_id}/supersede"),
+    "decision_effects": ("get", "/memory/decisions/{decision_id}/effects"),
     "decision_get": ("get", "/memory/decisions/{decision_id}"),
     "decision_list": ("get", "/memory/decisions"),
     "decision_search": ("get", "/memory/decisions/search"),
@@ -126,7 +127,8 @@ def test_the_route_map_covers_every_hosted_tool() -> None:
 
 @pytest.mark.parametrize(
     ("tool", "route"),
-    sorted((name, route) for name, route in TOOL_ROUTES.items() if route is not None),
+    sorted((name, route) for name, route in TOOL_ROUTES.items() if route is not None)
+    + [("decision_effects", ("post", "/memory/decisions/effects/preview"))],
 )
 def test_every_hosted_tool_route_is_served(tool: str, route: tuple[str, str]) -> None:
     method, path = route

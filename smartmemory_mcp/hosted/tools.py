@@ -47,13 +47,14 @@ CODE_TOOLS = (
 )
 AGENT_TOOLS = ("agent_set_recall_profile", "agent_get_recall_profile")
 REASONING_TOOLS = ("reasoning_query_traces",)
-# These eight decision tools dispatch exclusively through the authenticated backend.
+# These decision tools dispatch exclusively through the authenticated backend.
 DECISION_TOOLS = (
     "decision_create",
     "decision_supersede",
     "decision_list",
     "decision_search",
     "decision_get",
+    "decision_effects",
     "decision_provenance",
     "decision_history",  # STUDIO-DECISION-VIEW-1
     "decision_sites",  # STUDIO-DECISION-VIEW-1

@@ -224,6 +224,13 @@ ROWS = [
     ),
     ("delete", REMOTE, "DELETE", "/memory/{item_id}", lambda b, i: b.delete(i)),
     (
+        "decision_effects",
+        REMOTE,
+        "GET",
+        "/memory/decisions/{decision_id}/effects",
+        lambda b, i: b.decision_effects(i),
+    ),
+    (
         "decision_get",
         REMOTE,
         "GET",
@@ -390,6 +397,8 @@ def wire(monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
+        if request.url.path.endswith("/supersede"):
+            return httpx.Response(200, json={"new_decision_id": "dec_successor"})
         return httpx.Response(200, json={"ok": True, "activated": True})
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
@@ -497,6 +506,12 @@ TOOL_ROWS = [
         "DELETE",
         "/memory/{item_id}",
         _tool(memory_tools.register_pro, "memory_delete"),
+    ),
+    (
+        "decision_effects",
+        "GET",
+        "/memory/decisions/{decision_id}/effects",
+        _tool(decision_tools.register, "decision_effects"),
     ),
     (
         "decision_get",
@@ -614,8 +629,15 @@ def test_every_tool_id_is_refused_or_reaches_only_its_own_route(
             pass  # the fake answer's shape is not under test, the request is
         raw = [r.url.raw_path.decode() for r in seen]
         if item_id not in RESERVED_SEGMENTS[prefix] or raw:
-            routed = [service_routes(method, r) for r in raw]
-            if routed != [[template]]:
+            routed = [service_routes(req.method, path) for req, path in zip(seen, raw)]
+            expected = [[template]]
+            if tool in {"decision_supersede", "decision_retract"}:
+                expected.append(["/memory/decisions/{decision_id}/effects"])
+                focus = "dec_successor" if tool == "decision_supersede" else path_id(item_id, under=prefix)
+                assert [(req.method, req.url.raw_path.decode()) for req in seen[1:]] == [
+                    ("GET", f"/memory/decisions/{focus}/effects")
+                ]
+            if routed != expected:
                 bad.append((item_id, raw, routed))
     assert bad == [], f"{tool}: {bad}"
 

@@ -12,6 +12,7 @@ the primary configuration — could not record a decision at all.
 import logging
 from typing import Any, Dict, List, Optional
 
+from fastmcp.tools import ToolResult
 from mcp.types import ToolAnnotations
 
 from smartmemory_mcp.backends.interface import (
@@ -20,6 +21,7 @@ from smartmemory_mcp.backends.interface import (
     EvidenceRefused,
 )
 from .as_of import with_as_of
+from .decision_effects import counts_summary, write_reply
 from .decision_attribution import with_attribution, with_history_attribution
 from .common import (
     checked_as_of,
@@ -366,7 +368,7 @@ def _decision_text(decision: Any, as_of: Optional[str] = None) -> str:
 
 
 def register(mcp):
-    """Register decision tools with the MCP server (13 tools)."""
+    """Register decision lifecycle and effects tools with the MCP server."""
 
     @mcp.tool(
         title="Create a decision",
@@ -392,7 +394,7 @@ def register(mcp):
         scope_go_lives: Optional[List[Dict[str, Any]]] = None,
         recommended_by: Optional[str] = None,
         decided_by: Optional[str] = None,
-    ) -> str:
+    ) -> ToolResult:
         """Record a decision the user stated, with provenance.
 
         Use this when the user states a decision: "I decided X", "we chose X over
@@ -438,10 +440,34 @@ def register(mcp):
                 lines.append(f"Rationale: {_field(decision, 'rationale')}")
             if _field(decision, "constraints"):
                 lines.append(f"Constraints: {_field(decision, 'constraints')}")
-            return with_attribution("\n".join(lines), decision)
+            return write_reply(with_attribution("\n".join(lines), decision), backend, _field(decision, "decision_id"))
         except Exception as e:
             logger.error(f"Failed to create decision: {e}", exc_info=True)
             raise
+
+    @mcp.tool(
+        title="Read decision effects",
+        annotations=ToolAnnotations(
+            readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False,
+        ),
+    )
+    def decision_effects(decision_id: Optional[str] = None, text: Optional[str] = None) -> ToolResult:
+        """Read the effects of a saved decision by decision_id or preview unsaved draft text.
+
+        Supply exactly one. The preview does not save the draft. The structured snapshot lists
+        replacements, conflicts with reasons, and decisions to review with their hop and via.
+        """
+        if (decision_id is None) == (text is None):
+            raise ValueError("Supply exactly one of decision_id and text.")
+        if text is not None:
+            if not text.strip():
+                raise ValueError("Draft text must contain a non-whitespace character.")
+            snapshot = get_backend().decision_effects_preview(text)
+        else:
+            if not decision_id or not decision_id.strip():
+                raise ValueError("A saved decision needs a nonblank decision_id.")
+            snapshot = get_backend().decision_effects(decision_id)
+        return ToolResult(content=counts_summary(snapshot["counts"]), structured_content=snapshot)
 
     @mcp.tool(
         title="Get a decision",
@@ -622,7 +648,7 @@ def register(mcp):
         valid_from: Optional[str] = None,
         recommended_by: Optional[str] = None,
         decided_by: Optional[str] = None,
-    ) -> str:
+    ) -> ToolResult:
         """Replace a decision, preserving its rationale, alternatives and constraints.
 
         In a workspace that asks a person first (supersession policy "propose"), nothing is
@@ -654,33 +680,36 @@ def register(mcp):
                 **options,
             )
             if result is None:
-                return f"Decision not found: {decision_id}"
+                return ToolResult(content=f"Decision not found: {decision_id}")
 
             if result.get("status") == "held_for_review":
                 # OUTREACH-MARIUS-HITL-SURFACE-1 p2: the workspace holds replacements for a person (review.supersession
                 # propose). Nothing was replaced. The assistant is never told to settle its own change: a person does,
                 # in the review queue (OUTREACH-MARIUS-HITL-SURFACE-1 review M1).
-                return (
+                text = (
                     f"Replacement of decision {decision_id} held for review (the workspace asks a person first).\n"
                     f"The old decision stays in force. Review: {result.get('review_id')}\n"
                     "Tell the user: the change is waiting for a person, who settles it in the review queue, and "
                     "the old rule applies until then. Do not say it was saved as the new rule, and do not settle "
                     "it yourself."
                 )
+                return write_reply(text, backend, decision_id)
             if result.get("status") == "scheduled":
-                return with_attribution(
+                text = with_attribution(
                     f"Amendment scheduled for decision {decision_id}.\n"
                     f"New decision: {result['new_item_id']}\n"
                     f"scope_go_lives: {result['scope_go_lives']}",
                     attribution,
                 )
-            return with_attribution(
+                return write_reply(text, backend, result["new_item_id"])
+            text = with_attribution(
                 f"Decision {decision_id} superseded.\n"
                 f"New decision: {result.get('new_decision_id')}",
                 attribution,
             )
+            return write_reply(text, backend, result["new_decision_id"])
         except DecisionAlreadyDecided as e:
-            return f"already decided: {e.outcome} (review {e.review_id})"
+            return ToolResult(content=f"already decided: {e.outcome} (review {e.review_id})")
         except Exception as e:
             logger.error(f"Failed to supersede decision: {e}", exc_info=True)
             raise
@@ -695,14 +724,14 @@ def register(mcp):
         ),
     )
     @graceful
-    def decision_retract(decision_id: str, reason: str) -> str:
+    def decision_retract(decision_id: str, reason: str) -> ToolResult:
         """Retract a decision, marking it as no longer valid."""
         try:
             backend = get_backend()
             result = backend.decision_retract(decision_id, reason=reason)
             if result is None:
-                return f"Decision not found: {decision_id}"
-            return f"Decision retracted: {decision_id}"
+                return ToolResult(content=f"Decision not found: {decision_id}")
+            return write_reply(f"Decision retracted: {decision_id}", backend, decision_id)
         except Exception as e:
             logger.error(f"Failed to retract decision: {e}", exc_info=True)
             raise

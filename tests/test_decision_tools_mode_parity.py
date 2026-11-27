@@ -81,7 +81,7 @@ class _Decision:
 def _local(**core):
     """LocalBackend whose core managers are replaced by the given fakes."""
     backend = LocalBackend.__new__(LocalBackend)
-    backend._mem = object()
+    backend._mem = _Manager(get_decision_effects=lambda _id: {"counts": {"conflicts": 0, "replaced": 0, "to_review": 0}})
     for name, factory in core.items():
         setattr(backend, name, factory)
     return backend
@@ -93,7 +93,12 @@ def _local_core(**methods):
 
 def _remote(response):
     backend = RemoteBackend.__new__(RemoteBackend)
-    backend._request = lambda method, path, **kwargs: response
+    def request(method, path, **kwargs):
+        if path.endswith("/effects") and "counts" not in response:
+            return {"counts": {"conflicts": 0, "replaced": 0, "to_review": 0}}
+        return response
+
+    backend._request = request
     return backend
 
 
@@ -121,6 +126,19 @@ def _cases():
         },
         _local(_decision_manager=lambda: _Manager(create=lambda **kw: decision)),
         _remote({**DECISION, "user_id": "u", "workspace_id": "w", "tenant_id": "t"}),
+    )
+    snapshot = {"counts": {"conflicts": 0, "replaced": 0, "to_review": 0}}
+    yield (
+        "decision_effects",
+        {"decision_id": "dec_1"},
+        _local_core(get_decision_effects=lambda _id: snapshot),
+        _remote(snapshot),
+    )
+    yield (
+        "decision_effects",
+        {"text": "draft"},
+        _local_core(preview_decision_effects=lambda text: snapshot),
+        _remote(snapshot),
     )
     yield (
         "decision_get",

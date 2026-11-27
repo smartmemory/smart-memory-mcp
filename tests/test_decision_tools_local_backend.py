@@ -74,7 +74,7 @@ def test_decision_create_builds_manager_with_local_sm_not_wrapper():
     assert captured.get("mem") is backend._mem, (
         "DecisionManager must be built with backend._mem (SmartMemory), not the MCP wrapper"
     )
-    assert "dec_abc123" in out
+    assert "dec_abc123" in out.content[0].text
 
 
 def test_decision_list_builds_queries_with_local_sm_not_wrapper(tmp_path):
