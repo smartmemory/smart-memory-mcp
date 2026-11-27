@@ -52,6 +52,7 @@ def n_already_decided(w) -> None:
     out = w["decision_supersede"](
         decision_id=old_id, new_content=new_text, reason="price change"
     )
+    out = base.reply_text(out)
     assert out.startswith("already decided: rejected"), out
     assert f"(review {review_id})" in out, out
     assert "held" not in out.lower(), out

@@ -135,6 +135,8 @@ def fake_svc_api(
             "decision_type": "inference",
             "confidence": 0.8,
         }
+        if path in {"/memory/decisions/effects/preview", "/memory/decisions/dec-1/effects", "/memory/decisions/dec-2/effects"}:
+            return ok({"counts": {"conflicts": 0, "replaced": 0, "to_review": 0}})
         if path == "/memory/decisions/create":
             return ok(decision)
         if path == "/memory/decisions":
@@ -345,7 +347,7 @@ def test_the_advertised_tools_are_exactly_the_allowlist() -> None:
 
     assert advertised == set(HOSTED_TOOLS)
     assert (
-        len(advertised) == 40
+        len(advertised) == 41
     )  # SM-SCOPED-VALIDITY-1 six remote decision tools + DRIFT-V3-DHRUV-BOUNDARIES-1 memory_supersede + WS-POLICY-10 create_workspace + OUTREACH-MARIUS-HITL-SURFACE-1 p4 review_queue_list/settle
 
 
@@ -392,6 +394,8 @@ def test_no_hosted_tool_takes_a_filesystem_path() -> None:
 
 SMOKE_CALLS: list[tuple[str, dict[str, Any]]] = [
     ("decision_create", {"content": "deploy decision"}),
+    ("decision_effects", {"decision_id": "dec-1"}),
+    ("decision_effects", {"text": "Move email."}),
     ("decision_get", {"decision_id": "dec-1"}),
     ("decision_list", {}),
     ("decision_search", {"topic": "deploy"}),

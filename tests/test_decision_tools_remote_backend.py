@@ -18,6 +18,7 @@ Two things are pinned here, both of which a refactor could quietly undo:
 import re
 
 import pytest
+from fastmcp.tools import ToolResult
 
 from smartmemory_mcp.backends.remote import RemoteBackend
 
@@ -68,7 +69,8 @@ def _run(tool_name, backend, monkeypatch, **kwargs):
     from smartmemory_mcp.tools import decision_tools
 
     monkeypatch.setattr(decision_tools, "get_backend", lambda: backend)
-    return _tools()[tool_name](**kwargs)
+    result = _tools()[tool_name](**kwargs)
+    return result.content[0].text if isinstance(result, ToolResult) else result
 
 
 DECISION = {

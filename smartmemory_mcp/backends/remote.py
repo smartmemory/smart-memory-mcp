@@ -1627,8 +1627,8 @@ class RemoteBackend(BackendCapabilities):
         )
 
     def decision_effects(self, decision_id: str) -> dict[str, Any]:
-        segment = path_id(decision_id, under="/memory/decisions/")
-        return self._decision_request("GET", f"/memory/decisions/{segment}/effects")
+        path = f"/memory/decisions/{path_id(decision_id, under='/memory/decisions/')}/effects"
+        return self._decision_request("GET", path)
 
     def decision_effects_preview(self, text: str) -> dict[str, Any]:
         return self._decision_request("POST", "/memory/decisions/effects/preview", json={"text": text})

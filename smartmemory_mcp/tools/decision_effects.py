@@ -23,5 +23,8 @@ def write_reply(text: str, backend: MemoryBackend, decision_id: str) -> ToolResu
         fields = {"counts": counts, "summary": counts_summary(counts)}
     except Exception:
         logger.warning("Could not read decision effects after write", exc_info=True)
-        fields = {"counts": None, "summary": "Effects unavailable. Retry decision_effects for the saved decision."}
+        fields = {
+            "counts": None,
+            "summary": "Effects unavailable. Retry decision_effects for the saved decision.",
+        }
     return ToolResult(content=text, structured_content=fields)

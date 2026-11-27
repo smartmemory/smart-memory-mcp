@@ -459,15 +459,14 @@ def register(mcp):
         """
         if (decision_id is None) == (text is None):
             raise ValueError("Supply exactly one of decision_id and text.")
-        backend = get_backend()
         if text is not None:
             if not text.strip():
                 raise ValueError("Draft text must contain a non-whitespace character.")
-            snapshot = backend.decision_effects_preview(text)
+            snapshot = get_backend().decision_effects_preview(text)
         else:
-            if not decision_id.strip():
+            if not decision_id or not decision_id.strip():
                 raise ValueError("A saved decision needs a nonblank decision_id.")
-            snapshot = backend.decision_effects(decision_id)
+            snapshot = get_backend().decision_effects(decision_id)
         return ToolResult(content=counts_summary(snapshot["counts"]), structured_content=snapshot)
 
     @mcp.tool(

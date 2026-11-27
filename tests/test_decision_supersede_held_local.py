@@ -76,7 +76,7 @@ def test_decision_supersede_is_held_and_settle_applies_it(world):
     old = sm.add_decision("We charge $40 a seat.", decision_type="policy").decision_id
     text = tools["decision_supersede"](
         decision_id=old, new_content="We now charge $45 a seat.", reason="price change"
-    )
+    ).content[0].text
     assert "held for review" in text and "superseded." not in text
     review_id = re.search(r"Review: (conflict_[0-9a-f]+)", text).group(1)
     assert _active(sm) == ["We charge $40 a seat."]
@@ -102,6 +102,6 @@ def test_retire_workspace_still_supersedes_at_once(world):
     old = sm.add_decision("We charge $40 a seat.", decision_type="policy").decision_id
     text = tools["decision_supersede"](
         decision_id=old, new_content="We now charge $45 a seat.", reason="price change"
-    )
+    ).content[0].text
     assert text.startswith(f"Decision {old} superseded.")
     assert _active(sm) == ["We now charge $45 a seat."]

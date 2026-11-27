@@ -1,0 +1,182 @@
+{
+  "text": "Move email to the US vendor to cut cost. This replaces the Frankfurt vendor decision.",
+  "decision_ids": {
+    "1": "dec_97205c0f0706",
+    "2": "dec_ffdde0c438f8",
+    "3": "dec_0bf8a5e0a287",
+    "4": "dec_d65e65307f98",
+    "5": "dec_f836ed6644f2"
+  },
+  "reply": {
+    "freshness": {
+      "kind": "computed"
+    },
+    "replaces": [
+      "dec_ffdde0c438f8"
+    ],
+    "conflicts": [
+      {
+        "id": "dec_97205c0f0706",
+        "why": "Moving email to the US vendor sends customer data and email outside the EU, which the EU-region rule forbids.",
+        "freshness": {
+          "kind": "computed"
+        }
+      }
+    ],
+    "review": [
+      {
+        "id": "dec_0bf8a5e0a287",
+        "via": "dec_ffdde0c438f8",
+        "hop": 1,
+        "state": "preview",
+        "freshness": {
+          "kind": "computed"
+        }
+      },
+      {
+        "id": "dec_d65e65307f98",
+        "via": "dec_ffdde0c438f8",
+        "hop": 1,
+        "state": "preview",
+        "freshness": {
+          "kind": "computed"
+        }
+      },
+      {
+        "id": "dec_f836ed6644f2",
+        "via": "dec_0bf8a5e0a287",
+        "hop": 2,
+        "state": "preview",
+        "freshness": {
+          "kind": "computed"
+        }
+      }
+    ],
+    "possibly_related": [],
+    "overflow": [],
+    "data": {
+      "nodes": [
+        {
+          "id": "draft",
+          "label": "Move email to the US vendor to cut cost",
+          "type": "decision",
+          "hop": 0,
+          "validFrom": "2026-11-27"
+        },
+        {
+          "id": "dec_ffdde0c438f8",
+          "label": "Use the Frankfurt vendor for email",
+          "type": "decision",
+          "hop": 1,
+          "validFrom": "2026-03-18"
+        },
+        {
+          "id": "dec_97205c0f0706",
+          "label": "Customer data stays in the EU region",
+          "type": "decision",
+          "hop": 1,
+          "validFrom": "2026-03-04"
+        },
+        {
+          "id": "dec_0bf8a5e0a287",
+          "label": "Support may export tickets for analysis",
+          "type": "decision",
+          "hop": 2,
+          "validFrom": "2026-04-09"
+        },
+        {
+          "id": "dec_d65e65307f98",
+          "label": "Email templates are owned by the growth team",
+          "type": "decision",
+          "hop": 2,
+          "validFrom": "2026-04-22"
+        },
+        {
+          "id": "dec_f836ed6644f2",
+          "label": "Ticket exports are anonymised before sharing",
+          "type": "decision",
+          "hop": 3,
+          "validFrom": "2026-06-10"
+        },
+        {
+          "id": "4cee5ed3a8e5152d0c0db9ca8234102c",
+          "label": "Acme | 2026-03-04 | Dana (ops lead) | note Decision: customer data stays in the EU region. Why: most customers are in th",
+          "type": "note",
+          "hop": 2,
+          "validFrom": "2026-03-04"
+        }
+      ],
+      "edges": [
+        {
+          "id": "dec_ffdde0c438f8-depends_on-dec_97205c0f0706",
+          "source": "dec_ffdde0c438f8",
+          "target": "dec_97205c0f0706",
+          "type": "depends_on"
+        },
+        {
+          "id": "dec_0bf8a5e0a287-depends_on-dec_ffdde0c438f8",
+          "source": "dec_0bf8a5e0a287",
+          "target": "dec_ffdde0c438f8",
+          "type": "depends_on"
+        },
+        {
+          "id": "dec_d65e65307f98-depends_on-dec_ffdde0c438f8",
+          "source": "dec_d65e65307f98",
+          "target": "dec_ffdde0c438f8",
+          "type": "depends_on"
+        },
+        {
+          "id": "dec_f836ed6644f2-depends_on-dec_0bf8a5e0a287",
+          "source": "dec_f836ed6644f2",
+          "target": "dec_0bf8a5e0a287",
+          "type": "depends_on"
+        },
+        {
+          "id": "dec_97205c0f0706-comes_from-4cee5ed3a8e5152d0c0db9ca8234102c",
+          "source": "dec_97205c0f0706",
+          "target": "4cee5ed3a8e5152d0c0db9ca8234102c",
+          "type": "comes_from"
+        }
+      ]
+    },
+    "focus": "draft",
+    "today": "2026-11-27",
+    "phase": "draft",
+    "policy": "save",
+    "whyPaths": {
+      "dec_ffdde0c438f8": [
+        "4cee5ed3a8e5152d0c0db9ca8234102c",
+        "dec_97205c0f0706",
+        "dec_ffdde0c438f8"
+      ],
+      "dec_97205c0f0706": [
+        "4cee5ed3a8e5152d0c0db9ca8234102c",
+        "dec_97205c0f0706"
+      ],
+      "dec_0bf8a5e0a287": [
+        "4cee5ed3a8e5152d0c0db9ca8234102c",
+        "dec_97205c0f0706",
+        "dec_ffdde0c438f8",
+        "dec_0bf8a5e0a287"
+      ],
+      "dec_d65e65307f98": [
+        "4cee5ed3a8e5152d0c0db9ca8234102c",
+        "dec_97205c0f0706",
+        "dec_ffdde0c438f8",
+        "dec_d65e65307f98"
+      ],
+      "dec_f836ed6644f2": [
+        "4cee5ed3a8e5152d0c0db9ca8234102c",
+        "dec_97205c0f0706",
+        "dec_ffdde0c438f8",
+        "dec_0bf8a5e0a287",
+        "dec_f836ed6644f2"
+      ]
+    },
+    "counts": {
+      "conflicts": 1,
+      "replaced": 1,
+      "to_review": 3
+    }
+  }
+}

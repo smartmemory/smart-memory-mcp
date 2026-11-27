@@ -19,12 +19,18 @@ import uuid
 STATES_HINT = "active, superseded, retracted, pending"
 
 
+def reply_text(result):
+    """Read the first MCP text block when the local harness calls the tool directly."""
+    return result if isinstance(result, str) else result.content[0].text
+
+
 def tag() -> str:
     return uuid.uuid4().hex[:8]
 
 
 def create(tools, text: str) -> str:
     out = tools["decision_create"](content=text, decision_type="policy", confidence=0.9)
+    out = reply_text(out)
     found = re.search(r"Decision created: (\S+)", out)
     assert found, out
     return found.group(1)
@@ -34,6 +40,7 @@ def hold(tools, old_id: str, new_text: str) -> tuple[str, str]:
     out = tools["decision_supersede"](
         decision_id=old_id, new_content=new_text, reason="price change"
     )
+    out = reply_text(out)
     found = re.search(r"Review: (\S+)", out)
     assert found, out
     return out, found.group(1)
@@ -109,7 +116,7 @@ def retracted(w1) -> str:
     text = f"Refunds within 14 days. ({tag()})"
     rid = create(w1, text)
     out = w1["decision_retract"](decision_id=rid, reason="policy dropped")
-    assert "retracted" in out, out
+    assert "retracted" in reply_text(out), out
     return text
 
 
